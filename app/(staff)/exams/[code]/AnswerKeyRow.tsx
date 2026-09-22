@@ -85,7 +85,7 @@ export default function AnswerKeyRow({ code, row, canEdit }: { code: string; row
           disabled={pending}
           onClick={() => {
             if (!confirm(`${row.item_label}번 문항을 삭제할까요?`)) return;
-            start(() => deleteAnswerKeyRow(code, row.id));
+            start(async () => { await deleteAnswerKeyRow(code, row.id); });
           }}
         >
           삭제
