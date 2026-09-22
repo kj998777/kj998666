@@ -34,8 +34,18 @@
 
 ### 1-2. Vercel에 배포하기 (약 10~15분)
 
-1. 이 프로젝트 폴더를 GitHub 저장소로 올립니다(GitHub 계정이 없으면 새로 만듭니다).
-2. https://vercel.com 에서 GitHub 계정으로 로그인하고, 방금 만든 저장소를 "Import" 합니다.
+이 압축파일 안에는 이미 `git init` + 첫 커밋까지 해 둔 저장소가 들어 있습니다(`.git` 폴더 포함).
+GitHub에 빈 저장소만 하나 만들고 아래처럼 바로 올리면 됩니다.
+
+1. https://github.com/new 에서 빈 저장소를 하나 만듭니다(예: `academy-app`, Public/Private 상관없음,
+   "Add a README" 등 초기 파일 옵션은 전부 체크 해제).
+2. 이 폴더(압축을 푼 `academy-app/`)에서 터미널을 열고:
+   ```bash
+   git remote add origin https://github.com/<본인계정>/academy-app.git
+   git branch -M main
+   git push -u origin main
+   ```
+3. https://vercel.com 에서 GitHub 계정으로 로그인하고, 방금 올린 저장소를 "Import" 합니다.
    프레임워크는 Next.js로 자동 인식됩니다.
 3. 배포 설정 화면의 **Environment Variables** 에 아래 4개를 넣습니다.
    - `NEXT_PUBLIC_SUPABASE_URL`
