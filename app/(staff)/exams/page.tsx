@@ -32,7 +32,7 @@ export default async function ExamsPage() {
         {error && <p className="text-sm text-red-600">목록을 불러오지 못했습니다: {error.message}</p>}
         {(exams ?? []).length === 0 && <p className="text-sm text-slate-500">아직 만든 시험이 없습니다.</p>}
         <ul className="divide-y divide-slate-100">
-          {(exams ?? []).map((x) => (
+          {(exams ?? []).map((x: any) => (
             <li key={x.id} className="py-3 flex items-center justify-between">
               <Link href={`/exams/${encodeURIComponent(x.code)}`} className="hover:underline">
                 <span className="font-medium">{x.name}</span>{" "}
