@@ -15,7 +15,7 @@ export async function createExam(formData: FormData) {
   if (!name) return { ok: false, msg: "시험 이름을 입력해 주세요." };
 
   const supabase = await createClient();
-  const { error } = await supabase.from("exams").insert({ code, name, status: "닫힘", created_by: userId });
+  const { error } = await supabase.from("exams").insert({ code, name, status: "닫힘", created_by: userId } as any);
   if (error) {
     const msg = error.message.includes("duplicate") || error.code === "23505"
       ? "이미 사용 중인 시험 코드입니다."
