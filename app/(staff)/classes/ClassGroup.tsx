@@ -32,7 +32,7 @@ export default function ClassGroup({
                 title="삭제"
                 onClick={() => {
                   if (!confirm(`"${level}${grade} ${it.name}" 반을 삭제할까요?`)) return;
-                  start(() => removeClass(it.id));
+                  start(async () => { await removeClass(it.id); });
                 }}
               >
                 ×
