@@ -13,7 +13,7 @@ export default async function ExamDetailPage({ params }: { params: { code: strin
   const code = decodeURIComponent(params.code);
 
   const supabase = await createClient();
-  const { data: exam } = await supabase.from("exams").select("*").eq("code", code).single();
+  const { data: exam } = (await supabase.from("exams").select("*").eq("code", code).single()) as any;
   if (!exam) notFound();
 
   const { data: keys } = await supabase
@@ -23,7 +23,7 @@ export default async function ExamDetailPage({ params }: { params: { code: strin
     .order("sort_order")
     .order("item_label");
 
-  const totalPoints = (keys ?? []).reduce((s, k) => s + Number(k.points), 0);
+  const totalPoints = (keys ?? []).reduce((s: number, k: any) => s + Number(k.points), 0);
   const studentPath = `/s/${encodeURIComponent(exam.code)}`;
 
   return (
@@ -78,7 +78,7 @@ export default async function ExamDetailPage({ params }: { params: { code: strin
               </tr>
             </thead>
             <tbody>
-              {(keys ?? []).map((k) => (
+              {(keys ?? []).map((k: any) => (
                 <AnswerKeyRow key={k.id} code={exam.code} row={k} canEdit={canEdit} />
               ))}
             </tbody>
