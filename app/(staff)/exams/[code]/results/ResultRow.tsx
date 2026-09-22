@@ -35,7 +35,7 @@ export default function ResultRow({ code, row, canDelete }: { code: string; row:
               disabled={pending}
               onClick={() => {
                 if (!confirm(`${row.student_name} 학생의 제출을 삭제할까요? 다시 제출할 수 있게 됩니다.`)) return;
-                start(() => deleteSubmission(code, row.id));
+                start(async () => { await deleteSubmission(code, row.id); });
               }}
             >
               삭제(재제출 허용)
