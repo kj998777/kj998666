@@ -2,6 +2,7 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import InviteForm from "./InviteForm";
 import UserRow from "./UserRow";
+import type { Role } from "@/lib/supabase/types";
 
 export default async function AdminUsersPage() {
   const session = await requireRole("admin");
@@ -41,7 +42,7 @@ export default async function AdminUsersPage() {
             </tr>
           </thead>
           <tbody>
-            {(profiles ?? []).map((p) => (
+            {(profiles ?? []).map((p: { id: string; email: string; role: Role; created_at: string }) => (
               <UserRow key={p.id} profile={p} isMe={p.id === session.userId} />
             ))}
           </tbody>
