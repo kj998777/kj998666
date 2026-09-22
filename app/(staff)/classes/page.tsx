@@ -16,7 +16,7 @@ export default async function ClassesPage() {
     .order("name");
 
   const groups = new Map<string, { level: string; grade: number; items: { id: string; name: string }[] }>();
-  for (const c of classes ?? []) {
+  for (const c of (classes ?? []) as any[]) {
     const key = `${c.level}${c.grade}`;
     if (!groups.has(key)) groups.set(key, { level: c.level, grade: c.grade, items: [] });
     groups.get(key)!.items.push({ id: c.id, name: c.name });
