@@ -5,7 +5,6 @@
 export type Role = "admin" | "editor" | "viewer";
 export type ExamStatus = "열림" | "닫힘";
 export type AnswerType = "객관식" | "주관식";
-
 export interface Database {
   public: {
     Tables: {
@@ -13,6 +12,7 @@ export interface Database {
         Row: { id: string; email: string; role: Role; created_at: string };
         Insert: { id: string; email: string; role?: Role };
         Update: { role?: Role };
+        Relationships: [];
       };
       classes: {
         Row: {
@@ -24,6 +24,7 @@ export interface Database {
         };
         Insert: { level: "초" | "중" | "고"; grade: number; name: string };
         Update: { level?: "초" | "중" | "고"; grade?: number; name?: string };
+        Relationships: [];
       };
       exams: {
         Row: {
@@ -36,6 +37,7 @@ export interface Database {
         };
         Insert: { code: string; name: string; status?: ExamStatus; created_by?: string | null };
         Update: { name?: string; status?: ExamStatus };
+        Relationships: [];
       };
       answer_key: {
         Row: {
@@ -62,6 +64,7 @@ export interface Database {
           points?: number;
           type?: AnswerType;
         };
+        Relationships: [];
       };
       submissions: {
         Row: {
@@ -79,6 +82,7 @@ export interface Database {
           answers: unknown;
         };
         Update: never;
+        Relationships: [];
       };
       grading_results: {
         Row: {
@@ -96,6 +100,7 @@ export interface Database {
           total_score: number;
         };
         Update: never;
+        Relationships: [];
       };
     };
     Views: Record<string, never>;
