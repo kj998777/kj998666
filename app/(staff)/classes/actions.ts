@@ -62,7 +62,7 @@ export async function addClasses(formData: FormData) {
     return { ok: false, msg: "입력한 반이 전부 이미 등록되어 있습니다." };
   }
 
-  const { error } = await supabase.from("classes").insert(rows);
+  const { error } = await supabase.from("classes").insert(rows as any);
   if (error) {
     const msg = error.message.includes("최대 300개")
       ? "반은 최대 300개까지 등록할 수 있습니다. 안 쓰는 반을 먼저 정리해 주세요."
