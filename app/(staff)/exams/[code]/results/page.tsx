@@ -10,7 +10,7 @@ export default async function ResultsPage({ params }: { params: { code: string }
   const code = decodeURIComponent(params.code);
 
   const supabase = await createClient();
-  const { data: exam } = await supabase.from("exams").select("id, name, code").eq("code", code).single();
+  const { data: exam } = (await supabase.from("exams").select("id, name, code").eq("code", code).single()) as any;
   if (!exam) notFound();
 
   const { data: rows, error } = await supabase
@@ -20,7 +20,7 @@ export default async function ResultsPage({ params }: { params: { code: string }
     .order("class_label")
     .order("student_name");
 
-  const submissions = (rows ?? []).map((r) => {
+  const submissions = (rows ?? []).map((r: any) => {
     const gr = Array.isArray(r.grading_results) ? r.grading_results[0] : r.grading_results;
     return {
       id: r.id,
