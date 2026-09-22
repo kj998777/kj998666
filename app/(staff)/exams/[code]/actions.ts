@@ -7,7 +7,7 @@ import type { AnswerType } from "@/lib/supabase/types";
 
 async function getExamId(code: string) {
   const supabase = await createClient();
-  const { data } = await supabase.from("exams").select("id, status").eq("code", code).single();
+  const { data } = (await supabase.from("exams").select("id, status").eq("code", code).single()) as any;
   return data;
 }
 
