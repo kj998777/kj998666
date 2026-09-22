@@ -5,7 +5,7 @@
 export type Role = "admin" | "editor" | "viewer";
 export type ExamStatus = "열림" | "닫힘";
 export type AnswerType = "객관식" | "주관식";
-export interface Database {
+export type Database = {
   public: {
     Tables: {
       profiles: {
