@@ -49,7 +49,7 @@ export default function AddClassForm() {
           placeholder={"2반\n심화A\n3"}
           required
         />
-        <p className="text-xs text-slate-400 mt-1">숫자만 쓰면 자동으로 "반"이 붙습니다 (예: 2 → 2반). 최대 20자.</p>
+                <p className="text-xs text-slate-400 mt-1">숫자만 쓰면 자동으로 &quot;반&quot;이 붙습니다 (예: 2 → 2반). 최대 20자.</p>
       </div>
       {msg && <p className={"text-sm " + (msg.ok ? "text-emerald-600" : "text-red-600")}>{msg.text}</p>}
       <button type="submit" className="btn-primary" disabled={pending}>
