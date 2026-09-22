@@ -50,7 +50,7 @@ export async function addClasses(formData: FormData) {
     .eq("level", level)
     .in("grade", grades);
 
-  const existingKeys = new Set((existing ?? []).map((c) => `${c.level}|${c.grade}|${classKey(c.name)}`));
+  const existingKeys = new Set((existing ?? []).map((c: any) => `${c.level}|${c.grade}|${classKey(c.name)}`));
 
   const rows = grades.flatMap((grade) =>
     names
