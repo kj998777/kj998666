@@ -13,6 +13,8 @@ import UploadPdfForm from "./UploadPdfForm";
 import ApproveReviewButton from "./ApproveReviewButton";
 import ErrorCheckControl from "./ErrorCheckControl";
 import { getItemCheck } from "@/lib/ai/errorcheck";
+import DigitizeControl from "./DigitizeControl";
+import { getDigitizeJob } from "@/lib/ai/digitize";
 
 const ACTIVE_STAGES = new Set(["upload", "extract_submit", "extract_wait", "solve_submit", "solve_wait"]);
 
@@ -53,11 +55,13 @@ export default async function ExamDetailPage({
   let notes: { id: string; note: string }[] = [];
   let corrections: { id: string; item_label: string; issue: string; fix: string }[] = [];
   const checksByLabel: Record<string, Awaited<ReturnType<typeof getItemCheck>>> = {};
+  let digitizeJob: Awaited<ReturnType<typeof getDigitizeJob>> = null;
   if (canEdit) {
     pdfMeta = await getExamPdfMeta(supabase, exam.id);
   }
   if (isAdmin) {
     job = await getJob(supabase, exam.id);
+    if (pdfMeta) digitizeJob = await getDigitizeJob(supabase, exam.id);
     if ((explanations ?? []).length > 0) {
       const { data: checks } = await supabase.from("item_checks").select("*").eq("exam_id", exam.id);
       for (const c of (checks as any[]) ?? []) checksByLabel[c.item_label] = { examId: c.exam_id, label: c.item_label, stage: c.stage, message: c.message, state: c.state, updatedAt: c.updated_at };
@@ -79,6 +83,18 @@ export default async function ExamDetailPage({
         progress:
           Array.isArray(job.state?.qs) && job.state.qs.length > 0
             ? { done: job.state?.done ?? 0, total: job.state.qs.length }
+            : null,
+      }
+    : null;
+
+  const digitizePoll = digitizeJob
+    ? {
+        stage: digitizeJob.stage,
+        message: digitizeJob.message,
+        updatedAt: digitizeJob.updatedAt,
+        progress:
+          typeof digitizeJob.state?.totalPages === "number" && digitizeJob.state.totalPages > 0
+            ? { done: digitizeJob.state?.done ?? 0, total: digitizeJob.state.totalPages }
             : null,
       }
     : null;
@@ -205,6 +221,8 @@ export default async function ExamDetailPage({
           </button>
         </form>
       )}
+
+      {isAdmin && pdfMeta && <DigitizeControl code={exam.code} initial={digitizePoll} isScanned={pdfMeta.is_scanned ?? null} />}
 
       <div className="card">
         <div className="flex items-center justify-between mb-3">
