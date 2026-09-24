@@ -2,14 +2,28 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
+import { getJob } from "@/lib/ai/job";
+import { getExamPdfMeta } from "@/lib/ai/pdf";
 import AddAnswerKeyForm from "./AddAnswerKeyForm";
 import AnswerKeyRow from "./AnswerKeyRow";
 import ToggleStatusButton from "./ToggleStatusButton";
 import DeleteExamButton from "./DeleteExamButton";
+import AiJobPanel from "./AiJobPanel";
+import UploadPdfForm from "./UploadPdfForm";
+import ApproveReviewButton from "./ApproveReviewButton";
 
-export default async function ExamDetailPage({ params }: { params: { code: string } }) {
+const ACTIVE_STAGES = new Set(["upload", "extract_submit", "extract_wait", "solve_submit", "solve_wait"]);
+
+export default async function ExamDetailPage({
+  params,
+  searchParams,
+}: {
+  params: { code: string };
+  searchParams?: { aiErr?: string };
+}) {
   const session = await requireRole("viewer");
   const canEdit = session.role === "admin" || session.role === "editor";
+  const isAdmin = session.role === "admin";
   const code = decodeURIComponent(params.code);
 
   const supabase = await createClient();
@@ -25,6 +39,39 @@ export default async function ExamDetailPage({ params }: { params: { code: strin
 
   const totalPoints = (keys ?? []).reduce((s: number, k: any) => s + Number(k.points), 0);
   const studentPath = `/s/${encodeURIComponent(exam.code)}`;
+
+  const { data: explanations } = await supabase
+    .from("item_explanations")
+    .select("*")
+    .eq("exam_id", exam.id)
+    .order("item_label");
+
+  let job = null as Awaited<ReturnType<typeof getJob>>;
+  let pdfMeta: Awaited<ReturnType<typeof getExamPdfMeta>> = null;
+  let notes: { id: string; note: string }[] = [];
+  let corrections: { id: string; item_label: string; issue: string; fix: string }[] = [];
+  if (isAdmin) {
+    [job, pdfMeta] = await Promise.all([getJob(supabase, exam.id), getExamPdfMeta(supabase, exam.id)]);
+    if (exam.status === "검수대기") {
+      const [{ data: n }, { data: c }] = await Promise.all([
+        supabase.from("exam_notes").select("id, note").eq("exam_id", exam.id).order("sort_order"),
+        supabase.from("exam_corrections").select("id, item_label, issue, fix").eq("exam_id", exam.id).order("item_label"),
+      ]);
+      notes = (n as any) ?? [];
+      corrections = (c as any) ?? [];
+    }
+  }
+  const jobPoll = job
+    ? {
+        stage: job.stage,
+        message: job.message,
+        updatedAt: job.updatedAt,
+        progress:
+          Array.isArray(job.state?.qs) && job.state.qs.length > 0
+            ? { done: job.state?.done ?? 0, total: job.state.qs.length }
+            : null,
+      }
+    : null;
 
   return (
     <div className="space-y-6">
@@ -42,20 +89,81 @@ export default async function ExamDetailPage({ params }: { params: { code: strin
         </div>
         <div className="flex items-center gap-2">
           <span
-            className={"badge " + (exam.status === "열림" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600")}
+            className={
+              "badge " +
+              (exam.status === "열림"
+                ? "bg-emerald-100 text-emerald-700"
+                : exam.status === "검수대기"
+                ? "bg-amber-100 text-amber-700"
+                : "bg-slate-100 text-slate-600")
+            }
           >
             {exam.status}
           </span>
-          {session.role === "admin" && (
+          {session.role === "admin" && exam.status !== "검수대기" && (
             <ToggleStatusButton code={exam.code} open={exam.status === "열림"} hasKey={(keys ?? []).length > 0} />
           )}
           {session.role === "admin" && <DeleteExamButton examId={exam.id} />}
         </div>
       </div>
 
-      {session.role !== "admin" && exam.status !== "열림" && (
+      {session.role !== "admin" && exam.status === "검수대기" && (
+        <div className="card border-amber-300 bg-amber-50 text-amber-800 text-sm">
+          AI가 이 시험을 자동 처리했습니다. 관리자가 정답을 확인하고 열어야 학생이 제출할 수 있습니다.
+        </div>
+      )}
+      {session.role !== "admin" && exam.status === "닫힘" && (
         <div className="card border-amber-300 bg-amber-50 text-amber-800 text-sm">
           시험 열기/닫기는 관리자만 할 수 있습니다. 정답을 다 등록했으면 관리자에게 열어 달라고 요청해 주세요.
+        </div>
+      )}
+
+      {isAdmin && searchParams?.aiErr && (
+        <div className="card border-red-300 bg-red-50 text-red-700 text-sm">
+          AI 자동 처리를 시작하지 못했습니다: {searchParams.aiErr} — 아래에서 PDF를 다시 올려 시도해 주세요.
+        </div>
+      )}
+
+      {isAdmin && jobPoll && jobPoll.stage !== "done" && <AiJobPanel code={exam.code} initial={jobPoll} />}
+
+      {isAdmin && exam.status === "검수대기" && (
+        <div className="card border-amber-300 bg-amber-50 space-y-3">
+          <h2 className="font-medium text-amber-900">AI 검수 대기</h2>
+          <p className="text-sm text-amber-800">
+            AI가 만든 정답·해설입니다. 아래 정답표를 확인·수정한 뒤 확정하면 시험이 열립니다.
+          </p>
+          {notes.length > 0 && (
+            <ul className="text-sm text-amber-800 list-disc list-inside space-y-0.5">
+              {notes.map((n) => (
+                <li key={n.id}>{n.note}</li>
+              ))}
+            </ul>
+          )}
+          {corrections.length > 0 && (
+            <div className="text-sm">
+              <p className="font-medium text-amber-900 mb-1">시험지 오류 정정(정오표)</p>
+              <ul className="list-disc list-inside space-y-0.5 text-amber-800">
+                {corrections.map((c) => (
+                  <li key={c.id}>
+                    {c.item_label}번 — {c.issue} → {c.fix}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <ApproveReviewButton code={exam.code} />
+        </div>
+      )}
+
+      {isAdmin && (!jobPoll || !ACTIVE_STAGES.has(jobPoll.stage)) && exam.status !== "검수대기" && (
+        <div className="card">
+          <h2 className="font-medium mb-2">AI 자동 처리</h2>
+          <p className="text-sm text-slate-500 mb-2">
+            {pdfMeta
+              ? "이미 저장된 시험지 PDF가 있습니다. 새 PDF를 올리면 그 파일로 다시 처리합니다."
+              : "시험지 PDF를 올리면 AI가 정답·해설을 자동으로 만듭니다."}
+          </p>
+          <UploadPdfForm code={exam.code} />
         </div>
       )}
 
@@ -87,6 +195,44 @@ export default async function ExamDetailPage({ params }: { params: { code: strin
 
         {canEdit && <AddAnswerKeyForm code={exam.code} nextSortOrder={(keys ?? []).length} />}
       </div>
+
+      {(explanations ?? []).length > 0 && (
+        <div className="card">
+          <h2 className="font-medium mb-3">문항 해설 ({(explanations ?? []).length}문항, AI 자동 생성)</h2>
+          <div className="space-y-2">
+            {(explanations ?? []).map((e: any) => (
+              <details key={e.id} className="border border-slate-200 rounded px-3 py-2">
+                <summary className="cursor-pointer text-sm font-medium flex items-center gap-2">
+                  <span>{e.item_label}번</span>
+                  <span className="text-slate-400 font-normal">
+                    {e.area && `${e.area} · `}
+                    {e.difficulty}
+                    {e.points_assigned && " · 배점임의"}
+                  </span>
+                  {e.exam_error_suspected && <span className="badge bg-red-100 text-red-700">출제오류 의심</span>}
+                </summary>
+                <div className="mt-2 text-sm space-y-2 text-slate-700">
+                  {e.unit && <p className="text-slate-500">단원: {e.unit}</p>}
+                  {e.difficulty_reason && <p className="text-slate-500">난이도 판단: {e.difficulty_reason}</p>}
+                  {e.problem_statement && <p className="whitespace-pre-wrap">{e.problem_statement}</p>}
+                  {e.answer_display && (
+                    <p>
+                      <span className="font-medium">정답: </span>
+                      {e.answer_display}
+                    </p>
+                  )}
+                  {e.solution && (
+                    <div>
+                      <p className="font-medium">풀이</p>
+                      <p className="whitespace-pre-wrap">{e.solution}</p>
+                    </div>
+                  )}
+                </div>
+              </details>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
