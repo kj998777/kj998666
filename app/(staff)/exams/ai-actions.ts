@@ -93,6 +93,33 @@ export async function createAiExam(formData: FormData) {
   redirect(url);
 }
 
+/**
+ * 이미 정답·해설이 있는 시험(마이그레이션된 시험, 또는 손으로 직접 입력한 시험)에
+ * "원본 PDF 파일"만 연결한다 — AI 자동 처리(문항 추출·풀이)는 절대 시작하지 않는다.
+ * QR·정오표가 포함된 시험지 PDF 다운로드 기능은 원본 PDF가 저장돼 있어야 동작하는데,
+ * 마이그레이션으로 옮긴 시험은 정답·해설 등 구조화된 데이터만 옮기고 원본 PDF 파일은
+ * 옮기지 않아서 다운로드가 안 되는 문제(2026-09 버그 리포트)가 있었다 — 이 액션이 그 해결책.
+ * editor 이상이면 쓸 수 있게 열어 둔다(AI 처리와 달리 비용이 들지 않는 단순 저장이라).
+ */
+export async function attachExamPdfOnly(code: string, formData: FormData) {
+  const { userId } = await requireRole("editor");
+  const exam = await getExamByCode(code);
+  if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
+
+  const pdf = await readPdf(formData);
+  if (!Buffer.isBuffer(pdf)) return { ok: false, msg: pdf.err };
+
+  const supabase = await createClient();
+  try {
+    const pages = await countPdfPages(pdf);
+    await saveExamPdf(supabase, exam.id, pdf, { pages, isScanned: null, uploadedBy: userId });
+  } catch (e: any) {
+    return { ok: false, msg: "PDF 저장에 실패했습니다: " + String(e?.message ?? e) };
+  }
+  revalidatePath(`/exams/${code}`);
+  return { ok: true, msg: "원본 PDF를 저장했습니다. 이제 QR·정오표 PDF를 다운로드할 수 있습니다." };
+}
+
 /** 이미 있는 시험에 시험지 PDF를 (다시) 올리고 AI 자동 처리를 시작한다. */
 export async function uploadPdfAndStartAi(code: string, formData: FormData) {
   const { userId } = await requireRole("admin");
