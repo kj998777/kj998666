@@ -24,15 +24,21 @@ const ACADEMY_TEL = "064-702-3455";
 
 type Client = any;
 
-// 한글 폰트: 저장소에 assets/fonts/Pretendard-Regular.otf(고정폭/정적 폰트, OFL 라이선스, 약 1.5MB)로
-// 직접 커밋해 두고 로컬 파일로 읽어 쓴다.
+// 한글 폰트: 저장소에 assets/fonts/Pretendard-Regular.ttf(고정폭/정적 TrueType 폰트, OFL 라이선스,
+// 약 2.8MB)로 직접 커밋해 두고 로컬 파일로 읽어 쓴다.
 //
-// 예전에는 Noto Sans KR의 "가변 폰트(variable font)" 버전을 Google Fonts 미러에서 매번 내려받아 썼는데,
-// pdf-lib(+fontkit)이 가변 폰트의 글자모양 보간(gvar) 정보를 제대로 처리하지 못해 다운로드한 PDF의
-// 한글이 깨지는 문제가 있었다(2026-09 버그 리포트로 확인). Pretendard-Regular.otf는 굵기가 고정된
-// 정적(static) 폰트라 이 문제가 없고, 용량도 작아 배포에 부담이 없다. 외부 네트워크 요청이 없어져
-// 다운로드 지연·실패 가능성도 사라진다.
-const FONT_PATH = path.join(process.cwd(), "assets", "fonts", "Pretendard-Regular.otf");
+// 이 폰트가 겪어 온 두 가지 문제(둘 다 2026-09 버그 리포트로 확인):
+// 1) 처음에는 Noto Sans KR의 "가변 폰트(variable font)" 버전을 Google Fonts 미러에서 매번
+//    내려받아 썼는데, pdf-lib(+fontkit)이 가변 폰트의 글자모양 보간(gvar) 정보를 제대로 처리하지
+//    못해 다운로드한 PDF의 한글이 깨졌다.
+// 2) 그래서 정적(static) 폰트인 Pretendard-Regular.otf(OpenType/CFF)로 바꿨더니, 이번엔 CFF가
+//    한글처럼 글자 수가 많은 폰트에서 흔히 쓰는 "CID-keyed CFF" 구조라서, pdf-lib가 쓰는
+//    @pdf-lib/fontkit(오래된 fontkit 포크)이 이 구조의 서브셋을 만들지 못해
+//    "Not a CFF Font" 오류로 PDF 생성 자체가 실패했다.
+// 그래서 지금은 그 OTF를 fontTools(cu2qu)로 직접 변환해, CFF 외곽선을 TrueType(glyf) 외곽선으로
+// 바꾼 .ttf를 커밋해서 쓴다 — 글자 모양·커버리지(한글·영문·숫자·그리스 문자·수학 기호)는 그대로
+// 유지하면서, fontkit이 안정적으로 지원하는 TrueType 서브셋 경로를 타게 만든 것.
+const FONT_PATH = path.join(process.cwd(), "assets", "fonts", "Pretendard-Regular.ttf");
 
 let fontBytesCache: Buffer | null = null;
 async function loadKoreanFontBytes(): Promise<Buffer> {
