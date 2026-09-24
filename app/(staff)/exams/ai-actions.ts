@@ -8,6 +8,7 @@ import { saveExamPdf } from "@/lib/ai/pdf";
 import { countPdfPages } from "@/lib/ai/pdfMeta";
 import { startExamAiJob, cancelExamAiJob, tickExamJob } from "@/lib/ai/pipeline";
 import { getJob, isActiveStage, setJob } from "@/lib/ai/job";
+import type { SchoolLevel } from "@/lib/supabase/types";
 
 // AI 자동 처리(시험지 업로드 → 문항 추출 → 풀이 → 검수) 관련 서버 액션들.
 // 비용이 드는 작업이라 전부 admin 전용으로 막는다(화면에서도 admin에게만 버튼을 보여줌 — 이중 방어).
@@ -30,6 +31,11 @@ async function readPdf(formData: FormData): Promise<Buffer | { err: string }> {
   if (file.size > 4 * 1024 * 1024) return { err: "PDF 용량이 너무 큽니다(4MB 이하로 줄여서 올려 주세요 — 서버 업로드 용량 제한)." };
   const buf = Buffer.from(await file.arrayBuffer());
   return buf;
+}
+
+function schoolLevelField(formData: FormData): SchoolLevel | null {
+  const v = String(formData.get("school_level") ?? "").trim();
+  return v === "초" || v === "중" || v === "고" ? v : null;
 }
 
 function folderFields(formData: FormData) {
@@ -60,7 +66,7 @@ export async function createAiExam(formData: FormData) {
   const supabase = await createClient();
   const { data: exam, error } = (await supabase
     .from("exams")
-    .insert({ code, name, status: "닫힘", created_by: userId, ...folderFields(formData) } as any)
+    .insert({ code, name, status: "닫힘", created_by: userId, school_level: schoolLevelField(formData), ...folderFields(formData) } as any)
     .select("id, code")
     .single()) as any;
   if (error) {

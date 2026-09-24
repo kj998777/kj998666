@@ -4,6 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
+import type { SchoolLevel } from "@/lib/supabase/types";
+
+function schoolLevelField(formData: FormData): SchoolLevel | null {
+  const v = String(formData.get("school_level") ?? "").trim();
+  return v === "초" || v === "중" || v === "고" ? v : null;
+}
 
 /** 새 시험 생성. 처음에는 항상 "닫힘" 상태로 시작 — 정답을 등록한 뒤 관리자가 직접 열어야 한다. */
 export async function createExam(formData: FormData) {
@@ -15,7 +21,9 @@ export async function createExam(formData: FormData) {
   if (!name) return { ok: false, msg: "시험 이름을 입력해 주세요." };
 
   const supabase = await createClient();
-  const { error } = await supabase.from("exams").insert({ code, name, status: "닫힘", created_by: userId } as any);
+  const { error } = await supabase
+    .from("exams")
+    .insert({ code, name, status: "닫힘", created_by: userId, school_level: schoolLevelField(formData) } as any);
   if (error) {
     const msg = error.message.includes("duplicate") || error.code === "23505"
       ? "이미 사용 중인 시험 코드입니다."
@@ -25,6 +33,17 @@ export async function createExam(formData: FormData) {
 
   revalidatePath("/exams");
   redirect(`/exams/${encodeURIComponent(code)}`);
+}
+
+/** 시험의 학교급(중/고 등) 분류를 바꾼다 — 만든 뒤에도 목록에서 다시 지정할 수 있게. */
+export async function updateSchoolLevel(code: string, level: SchoolLevel | null) {
+  await requireRole("editor");
+  const supabase = await createClient();
+  const { error } = await (supabase.from("exams") as any).update({ school_level: level }).eq("code", code);
+  if (error) return { ok: false, msg: "바꾸지 못했습니다: " + error.message };
+  revalidatePath(`/exams/${code}`);
+  revalidatePath("/exams");
+  return { ok: true };
 }
 
 /** 시험 자체 삭제(정답·제출·채점 결과까지 전부 함께 삭제됨) — 관리자 전용. */

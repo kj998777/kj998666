@@ -27,6 +27,15 @@ export default function CreateAiExamForm() {
         <label className="label">시험 이름</label>
         <input name="name" className="input" placeholder="대기고 1-2 공통수학2 중간고사" required />
       </div>
+      <div>
+        <label className="label">학교급</label>
+        <select name="school_level" className="input" defaultValue="">
+          <option value="">선택 안 함</option>
+          <option value="초">초등학교</option>
+          <option value="중">중학교</option>
+          <option value="고">고등학교</option>
+        </select>
+      </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="label">연도</label>
