@@ -29,7 +29,7 @@ export async function addAnswerKeyRow(code: string, formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase
     .from("answer_key")
-    .insert({ exam_id: exam.id, item_label, correct_answers, points, type, sort_order });
+    .insert({ exam_id: exam.id, item_label, correct_answers, points, type, sort_order } as any);
 
   if (error) {
     const msg = error.code === "23505" ? "이미 있는 문항 번호입니다." : "추가하지 못했습니다: " + error.message;
