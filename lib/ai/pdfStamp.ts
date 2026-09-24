@@ -1,4 +1,6 @@
 import "server-only";
+import { readFile } from "fs/promises";
+import path from "path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import QRCode from "qrcode";
@@ -22,18 +24,20 @@ const ACADEMY_TEL = "064-702-3455";
 
 type Client = any;
 
-// 한글 폰트(Noto Sans KR, OFL 라이선스)를 저장소에 10MB짜리 바이너리로 커밋하는 대신
-// Google Fonts 공식 GitHub 미러에서 요청 시 내려받아 함수 인스턴스가 살아 있는 동안 캐싱한다.
-// 이 기능(관리자가 가끔 누르는 PDF 다운로드)은 빈도가 낮아 최초 1회의 다운로드 지연은 감수할 만하고,
-// 대신 저장소 용량과 배포 크기를 10MB 아끼고 깃허브 웹 화면으로도 그대로 커밋할 수 있다.
-const FONT_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf";
+// 한글 폰트: 저장소에 assets/fonts/Pretendard-Regular.otf(고정폭/정적 폰트, OFL 라이선스, 약 1.5MB)로
+// 직접 커밋해 두고 로컬 파일로 읽어 쓴다.
+//
+// 예전에는 Noto Sans KR의 "가변 폰트(variable font)" 버전을 Google Fonts 미러에서 매번 내려받아 썼는데,
+// pdf-lib(+fontkit)이 가변 폰트의 글자모양 보간(gvar) 정보를 제대로 처리하지 못해 다운로드한 PDF의
+// 한글이 깨지는 문제가 있었다(2026-09 버그 리포트로 확인). Pretendard-Regular.otf는 굵기가 고정된
+// 정적(static) 폰트라 이 문제가 없고, 용량도 작아 배포에 부담이 없다. 외부 네트워크 요청이 없어져
+// 다운로드 지연·실패 가능성도 사라진다.
+const FONT_PATH = path.join(process.cwd(), "assets", "fonts", "Pretendard-Regular.otf");
 
 let fontBytesCache: Buffer | null = null;
 async function loadKoreanFontBytes(): Promise<Buffer> {
   if (fontBytesCache) return fontBytesCache;
-  const res = await fetch(FONT_URL);
-  if (!res.ok) throw new Error("한글 폰트를 내려받지 못했습니다 (" + res.status + "). 잠시 후 다시 시도해 주세요.");
-  fontBytesCache = Buffer.from(await res.arrayBuffer());
+  fontBytesCache = await readFile(FONT_PATH);
   return fontBytesCache;
 }
 
