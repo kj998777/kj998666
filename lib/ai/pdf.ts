@@ -1,13 +1,13 @@
 import "server-only";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/lib/supabase/types";
 
 // 시험지 원본 PDF 저장/조회. Apps Script의 '시험지PDF' 시트(40000자 base64 청크 방식)를
 // Supabase Storage 버킷(exam-pdfs)의 진짜 파일로 대체 — 훨씬 단순하고 용량 제한도 없다.
 
 const BUCKET = "exam-pdfs";
 
-type Client = SupabaseClient<Database>;
+// Client 타입을 any로 두는 이유는 lib/ai/settings.ts 상단 주석 참고(createServerClient와
+// supabase-js의 SupabaseClient 타입이 대입되지 않는 실제 빌드 실패를 겪었음).
+type Client = any;
 
 function pathOf(examId: string): string {
   return `${examId}.pdf`;
