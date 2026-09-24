@@ -15,6 +15,7 @@ import ErrorCheckControl from "./ErrorCheckControl";
 import { getItemCheck } from "@/lib/ai/errorcheck";
 import DigitizeControl from "./DigitizeControl";
 import { getDigitizeJob } from "@/lib/ai/digitize";
+import SchoolLevelSelect from "./SchoolLevelSelect";
 
 const ACTIVE_STAGES = new Set(["upload", "extract_submit", "extract_wait", "solve_submit", "solve_wait"]);
 
@@ -132,6 +133,8 @@ export default async function ExamDetailPage({
           {session.role === "admin" && <DeleteExamButton examId={exam.id} />}
         </div>
       </div>
+
+      {canEdit && <SchoolLevelSelect code={exam.code} level={exam.school_level ?? null} />}
 
       {session.role !== "admin" && exam.status === "검수대기" && (
         <div className="card border-amber-300 bg-amber-50 text-amber-800 text-sm">
