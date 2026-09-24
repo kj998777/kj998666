@@ -1,6 +1,5 @@
 import "server-only";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database, ExamJobStage } from "@/lib/supabase/types";
+import type { ExamJobStage } from "@/lib/supabase/types";
 
 // exam_jobs 테이블 읽기/쓰기 도우미. Apps Script의 '자동처리' 시트(jobGet_/jobSet_/jobAll_)에 대응.
 // 시트는 한 시험당 여러 줄이 쌓일 수 있었지만(재시작 시 새 줄), 여기서는 exam_id를 기본키로 두고
@@ -10,11 +9,16 @@ import type { Database, ExamJobStage } from "@/lib/supabase/types";
 // supabase-js 조합에서 .update()/.insert()/.upsert() 인자가 이유 없이 never 로 추론되는 문제가
 // 실제 Vercel 빌드를 여러 번 실패시켰다. 그 교훈에 따라 쓰기 계열 호출은 전부 (client.from(x) as any)
 // 로 빌더 자체를 캐스팅하고, single()/maybeSingle() 결과도 await 표현식을 as any 로 받는다.
+//
+// 그리고 이후(2026-09) Client 타입 자체도 any로 바꿨다: lib/supabase/server.ts의 createClient()가
+// 돌려주는 @supabase/ssr의 createServerClient<Database>() 결과가, 여기서 쓰던
+// @supabase/supabase-js의 SupabaseClient<Database> 타입과 대입이 안 되는 실제 빌드 실패를 겪었기
+// 때문 — 두 패키지가 내부적으로 서로 다른 타입 인스턴스를 만들어내는 것으로 보인다.
 
 export type JobState = Record<string, any>;
 export type Job = { examId: string; stage: ExamJobStage; message: string; state: JobState; updatedAt: string };
 
-type Client = SupabaseClient<Database>;
+type Client = any;
 
 export async function getJob(client: Client, examId: string): Promise<Job | null> {
   const { data, error } = (await client.from("exam_jobs").select("*").eq("exam_id", examId).maybeSingle()) as any;
