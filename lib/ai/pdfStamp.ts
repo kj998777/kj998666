@@ -1,6 +1,5 @@
 import "server-only";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-// @ts-expect-error - @pdf-lib/fontkit has no bundled types in this project's TS setup
 import fontkit from "@pdf-lib/fontkit";
 import QRCode from "qrcode";
 import { getExamPdfBuffer } from "./pdf";
@@ -248,4 +247,3 @@ function drawBackPage(page: any, kfont: any, helv: any, PW: number, PH: number, 
   void helv;
   void examCode;
 }
-
