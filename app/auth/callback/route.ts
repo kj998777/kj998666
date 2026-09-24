@@ -12,6 +12,8 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
+  // 비밀번호 재설정 링크는 ?next=/reset-password 를 붙여서 보낸다(resetPasswordForEmail 참고).
+  const next = searchParams.get("next") || "/dashboard";
 
   if (!code) {
     return NextResponse.redirect(`${origin}/login?error=no_code`);
@@ -24,5 +26,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login?error=exchange_failed`);
   }
 
-  return NextResponse.redirect(`${origin}/dashboard`);
+  return NextResponse.redirect(`${origin}${next}`);
 }
