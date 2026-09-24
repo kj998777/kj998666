@@ -195,6 +195,53 @@ export const DG_TOOL = {
   },
 } as const;
 
+// ---- 출제오류 의심 판단 (v37) ----
+
+export const ERROR_CHECK_TOOL = {
+  name: "submit_error_check",
+  description: "한 문항을 직접 풀어 보고 출제오류(문제 자체의 결함)가 의심되는지 판단해 제출한다.",
+  input_schema: {
+    type: "object",
+    properties: {
+      verdict: { type: "string", enum: ["suspect", "ok"] },
+      kind: {
+        type: "string",
+        enum: ["조건모순", "조건부족", "정답없음", "정답여러개", "선택지오류", "그림불일치", "문장불일치", "오탈자", "기타"],
+        description: "verdict가 suspect일 때만. 아니면 빈 문자열.",
+      },
+      reason: { type: "string", description: "선생님용 판단 근거(직접 풀어 본 과정·왜 성립하지 않는지). 학생에게는 보이지 않음." },
+      student_note: {
+        type: "string",
+        description: "학생에게 보여도 되는 한 줄(있다면). 정답·풀이·정답 번호·계산 결과를 절대 언급하지 않는다. 없으면 빈 문자열.",
+      },
+      answer: { type: "string", description: "직접 풀어서 나온 답(참고용, 채점에는 쓰지 않음)" },
+      confidence: { type: "string", enum: ["high", "medium", "low"] },
+    },
+    required: ["verdict", "reason", "confidence"],
+  },
+} as const;
+
+export function errorCheckPrompt(label: string, statement: string, existingSolution: string, hint: string): string {
+  const lines = [
+    '첨부한 PDF는 한국 고등학교 수학 시험지입니다. 그중 "' +
+      qName(label) +
+      '" 문항을 처음부터 끝까지 직접 다시 풀어 보고, 이 문제 자체에 출제오류(조건 모순·조건 부족·정답이 없음·정답이 여러 개·선택지 오류·그림과 문장 불일치·문제가 성립하지 않는 오탈자 등)가 있는지 판단해 submit_error_check 도구로 제출하세요. 글로 답하지 말고 도구만 호출하세요.',
+    "",
+    "참고(기존에 등록된 정보, 참고만 하고 반드시 직접 다시 확인할 것)",
+    "- 문제 요약: " + (statement || "(없음)"),
+    "- 기존 풀이(이미 잘못됐을 수 있음, 그대로 믿지 말 것): " + (existingSolution ? existingSolution.slice(0, 1500) : "(없음)"),
+    "",
+    "규칙",
+    "- 계산 실수·문제를 잘못 읽은 것과 진짜 출제오류를 구분하세요. 몇 번을 다시 확인해도 문제 자체가 성립하지 않을 때만 verdict=suspect 로 판단하세요.",
+    "- 시험지에 인쇄된 정답표와 직접 푼 답이 다르다는 이유만으로는 오류가 아닙니다(정답표 쪽이 틀렸을 수도 있습니다). 문제 자체의 결함(조건·선택지·그림·문장)이 있을 때만 suspect 로 표시하세요.",
+    hint ? '- 선생님이 남긴 의심 단서(참고만 하고 직접 확인할 것): "' + hint.slice(0, 300) + '"' : null,
+    "- student_note 는 학생용 정오표가 아니라 해설 화면에만 보이는 참고 문구입니다. 정답·풀이·계산 결과·정답 선택지 번호·답을 짐작하게 하는 표현은 절대 쓰지 마세요. 애매하면 빈 문자열로 두세요.",
+    "- reason 은 선생님만 보는 내용이니 직접 풀어 본 과정과 왜 성립하지 않는다고 판단했는지를 구체적으로 쓰세요.",
+    "- confidence: 판단에 확신이 있으면 high, 애매하면 medium/low.",
+  ];
+  return lines.filter((t): t is string => t !== null).join("\n");
+}
+
 export function dgPrompt(n: number, total: number): string {
   return [
     '첨부한 PDF는 스캔(그림)으로 된 한국 고등학교 수학 시험지입니다. 그중 "' +
