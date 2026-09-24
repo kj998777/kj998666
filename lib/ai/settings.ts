@@ -1,6 +1,4 @@
 import "server-only";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/lib/supabase/types";
 import { AI_DEFAULT_MODEL, AI_MODELS, anthropicCall, costOf } from "./anthropic";
 
 // AI 설정(모델·API 키)과 크레딧 장부. Apps Script의 teacherAutoSettings/teacherAutoSaveSettings/
@@ -9,8 +7,14 @@ import { AI_DEFAULT_MODEL, AI_MODELS, anthropicCall, costOf } from "./anthropic"
 //
 // (as any 캐스팅 이유는 lib/ai/job.ts 상단 주석 참고 — 이 프로젝트의 손으로 쓴 타입 + supabase-js
 // 조합에서 겪은 실제 빌드 실패 때문에 쓰기 계열 호출은 전부 빌더를 캐스팅한다.)
-
-type Client = SupabaseClient<Database>;
+//
+// Client 타입은 일부러 any로 둔다: lib/supabase/server.ts의 createClient()는 @supabase/ssr의
+// createServerClient<Database>()를 쓰는데, 이게 돌려주는 타입이 @supabase/supabase-js의
+// SupabaseClient<Database>와 구조적으로는 거의 같아도 두 패키지가 내부적으로 서로 다른 타입
+// 인스턴스를 만들어내서(중복 설치된 supabase-js 사본 문제로 추정) 대입이 안 되는 실제 빌드 실패를
+// 겪었다. 이 프로젝트는 어차피 쓰기 호출마다 as any를 쓰고 있어서, 클라이언트 타입 자체를 느슨하게
+// 두는 쪽이 더 간단하고 안전하다.
+type Client = any;
 
 const BILLING_URL = "https://platform.claude.com/settings/billing";
 
