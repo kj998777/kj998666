@@ -16,6 +16,8 @@ export type ExamJobStage =
   | "done"
   | "error";
 export type DigitizeJobStage = "dg_upload" | "dg_submit" | "dg_wait" | "dg_done" | "dg_error";
+export type ItemCheckStage = "rx_submit" | "rx_wait" | "rx_done" | "rx_error";
+export type SchoolLevel = "초" | "중" | "고";
 export type Database = {
   public: {
     Tables: {
@@ -49,6 +51,7 @@ export type Database = {
           folder_grade: number | null;
           folder_term: number | null;
           folder_kind: "중간" | "기말" | "기타" | null;
+          school_level: SchoolLevel | null;
         };
         Insert: {
           code: string;
@@ -59,6 +62,7 @@ export type Database = {
           folder_grade?: number | null;
           folder_term?: number | null;
           folder_kind?: "중간" | "기말" | "기타" | null;
+          school_level?: SchoolLevel | null;
         };
         Update: {
           name?: string;
@@ -67,6 +71,7 @@ export type Database = {
           folder_grade?: number | null;
           folder_term?: number | null;
           folder_kind?: "중간" | "기말" | "기타" | null;
+          school_level?: SchoolLevel | null;
         };
         Relationships: [];
       };
@@ -147,6 +152,9 @@ export type Database = {
           solution: string;
           points_assigned: boolean;
           exam_error_suspected: boolean;
+          exam_error_kind: string;
+          exam_error_reason: string;
+          exam_error_student_note: string;
           updated_at: string;
         };
         Insert: {
@@ -161,6 +169,9 @@ export type Database = {
           solution?: string;
           points_assigned?: boolean;
           exam_error_suspected?: boolean;
+          exam_error_kind?: string;
+          exam_error_reason?: string;
+          exam_error_student_note?: string;
         };
         Update: {
           area?: string;
@@ -172,8 +183,30 @@ export type Database = {
           solution?: string;
           points_assigned?: boolean;
           exam_error_suspected?: boolean;
+          exam_error_kind?: string;
+          exam_error_reason?: string;
+          exam_error_student_note?: string;
           updated_at?: string;
         };
+        Relationships: [];
+      };
+      item_checks: {
+        Row: {
+          exam_id: string;
+          item_label: string;
+          stage: ItemCheckStage;
+          message: string;
+          state: Record<string, unknown>;
+          updated_at: string;
+        };
+        Insert: {
+          exam_id: string;
+          item_label: string;
+          stage: ItemCheckStage;
+          message?: string;
+          state?: Record<string, unknown>;
+        };
+        Update: { stage?: ItemCheckStage; message?: string; state?: Record<string, unknown> };
         Relationships: [];
       };
       exam_notes: {
