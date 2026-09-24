@@ -2,10 +2,12 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import CreateExamForm from "./CreateExamForm";
+import CreateAiExamForm from "./CreateAiExamForm";
 
 export default async function ExamsPage() {
   const session = await requireRole("viewer");
   const canEdit = session.role === "admin" || session.role === "editor";
+  const isAdmin = session.role === "admin";
 
   const supabase = await createClient();
   const { data: exams, error } = await supabase
@@ -20,10 +22,20 @@ export default async function ExamsPage() {
         <p className="text-sm text-slate-500">시험을 만들고 정답을 등록하면, 관리자가 열어야 학생이 제출할 수 있습니다.</p>
       </div>
 
-      {canEdit && (
-        <div className="card max-w-md">
-          <h2 className="font-medium mb-3">새 시험 만들기</h2>
-          <CreateExamForm />
+      {(canEdit || isAdmin) && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {canEdit && (
+            <div className="card">
+              <h2 className="font-medium mb-3">새 시험 만들기 (직접 입력)</h2>
+              <CreateExamForm />
+            </div>
+          )}
+          {isAdmin && (
+            <div className="card border-sky-200">
+              <h2 className="font-medium mb-3">새 시험 올리기 (AI 자동 처리)</h2>
+              <CreateAiExamForm />
+            </div>
+          )}
         </div>
       )}
 
@@ -40,7 +52,12 @@ export default async function ExamsPage() {
               </Link>
               <span
                 className={
-                  "badge " + (x.status === "열림" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600")
+                  "badge " +
+                  (x.status === "열림"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : x.status === "검수대기"
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-slate-100 text-slate-600")
                 }
               >
                 {x.status}
