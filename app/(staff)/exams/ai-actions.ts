@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { saveExamPdf } from "@/lib/ai/pdf";
+import { countPdfPages } from "@/lib/ai/pdfMeta";
 import { startExamAiJob, cancelExamAiJob, tickExamJob } from "@/lib/ai/pipeline";
 import { getJob, isActiveStage, setJob } from "@/lib/ai/job";
 
@@ -72,7 +73,8 @@ export async function createAiExam(formData: FormData) {
   // 담아 두고, redirect()는 try/catch를 완전히 빠져나온 뒤 한 곳에서만 부른다.
   let aiErr = "";
   try {
-    await saveExamPdf(supabase, exam.id, pdf, { pages: null, isScanned: null, uploadedBy: userId });
+    const pages = await countPdfPages(pdf);
+    await saveExamPdf(supabase, exam.id, pdf, { pages, isScanned: null, uploadedBy: userId });
     const r = await startExamAiJob(supabase, exam.id);
     if (!r.ok) aiErr = r.msg;
   } catch (e: any) {
@@ -96,7 +98,8 @@ export async function uploadPdfAndStartAi(code: string, formData: FormData) {
 
   const supabase = await createClient();
   try {
-    await saveExamPdf(supabase, exam.id, pdf, { pages: null, isScanned: null, uploadedBy: userId });
+    const pages = await countPdfPages(pdf);
+    await saveExamPdf(supabase, exam.id, pdf, { pages, isScanned: null, uploadedBy: userId });
   } catch (e: any) {
     return { ok: false, msg: "PDF 저장에 실패했습니다: " + String(e?.message ?? e) };
   }
