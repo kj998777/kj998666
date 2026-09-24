@@ -47,7 +47,7 @@ export async function updateAnswerKeyRow(
 ) {
   await requireRole("editor");
   const supabase = await createClient();
-  const { error } = await supabase.from("answer_key").update(fields as any).eq("id", id);
+  const { error } = await (supabase.from("answer_key") as any).update(fields).eq("id", id);
   if (error) return { ok: false, msg: "저장하지 못했습니다: " + error.message };
   revalidatePath(`/exams/${code}`);
   return { ok: true };
@@ -75,9 +75,9 @@ export async function toggleExamStatus(code: string, open: boolean) {
     if (!count) return { ok: false, msg: "정답이 아직 없는 시험은 열 수 없습니다." };
   }
 
-  const { error } = await supabase
-    .from("exams")
-    .update({ status: open ? "열림" : "닫힘" } as any)
+  const { error } = await (supabase
+    .from("exams") as any)
+    .update({ status: open ? "열림" : "닫힘" })
     .eq("code", code);
 
   if (error) return { ok: false, msg: "바꾸지 못했습니다: " + error.message };
