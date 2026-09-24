@@ -1,6 +1,5 @@
 import "server-only";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database, ExamJobStage } from "@/lib/supabase/types";
+import type { ExamJobStage } from "@/lib/supabase/types";
 import {
   AiCallResult,
   BatchRequest,
@@ -24,7 +23,9 @@ import { Job, JobState, getJob, isActiveStage, setJob } from "./job";
 import { getExamPdfBuffer } from "./pdf";
 import { clearLowBalanceAlert, getAiCreds, recordLowBalanceAlert, recordUsage } from "./settings";
 
-type Client = SupabaseClient<Database>;
+// Client 타입을 any로 두는 이유는 lib/ai/settings.ts 상단 주석 참고(createServerClient와
+// supabase-js의 SupabaseClient 타입이 대입되지 않는 실제 빌드 실패를 겪었음).
+type Client = any;
 
 export class PipelineError extends Error {
   fatal: boolean;
