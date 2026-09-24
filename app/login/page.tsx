@@ -1,7 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+
+const ERROR_MESSAGES: Record<string, string> = {
+  no_code: "로그인 링크가 올바르지 않습니다. 이메일에서 링크를 다시 눌러 주세요.",
+  exchange_failed:
+    "로그인 링크 처리에 실패했습니다. 가장 흔한 원인은 이메일을 입력해 링크를 요청한 것과 " +
+    "다른 브라우저(또는 다른 기기, 시크릿 창)에서 링크를 열었기 때문입니다. " +
+    "이메일 주소를 입력했던 것과 같은 브라우저/탭에서 이메일의 링크를 열어 주세요. " +
+    "그래도 안 되면 로그인을 다시 요청해서 새 링크로 시도해 주세요(오래된 링크는 사용할 수 없습니다).",
+};
+
+function LoginError() {
+  const params = useSearchParams();
+  const code = params.get("error");
+  if (!code) return null;
+  const msg = ERROR_MESSAGES[code] ?? "로그인 중 문제가 발생했습니다. 다시 시도해 주세요.";
+  return <p className="text-sm text-red-600 mb-3 whitespace-pre-line">{msg}</p>;
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -34,12 +52,19 @@ export default function LoginPage() {
           미리 초대받은 이메일 주소로만 로그인할 수 있습니다.
         </p>
 
+        <Suspense fallback={null}>
+          <LoginError />
+        </Suspense>
+
         {sent ? (
           <div className="text-sm">
             <p className="mb-2">
               <strong>{email}</strong> 주소로 로그인 링크를 보냈습니다.
             </p>
-            <p className="text-slate-500">메일함(스팸함 포함)을 확인해서 링크를 눌러 주세요.</p>
+            <p className="text-slate-500">
+              메일함(스팸함 포함)을 확인해서 링크를 눌러 주세요. 지금 이 화면을 보고 있는 것과
+              같은 브라우저에서 링크를 열어야 합니다(다른 기기나 앱으로 열면 실패할 수 있습니다).
+            </p>
           </div>
         ) : (
           <form onSubmit={sendLink} className="space-y-3">
