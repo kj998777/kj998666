@@ -78,7 +78,9 @@ export async function anthropicCall(
 export async function uploadPdfFile(apiKey: string, pdf: Buffer, filename = "exam.pdf"): Promise<AiCallResult> {
   async function attempt(withBeta: boolean) {
     const form = new FormData();
-    form.append("file", new Blob([pdf], { type: "application/pdf" }), filename);
+    // pdf as any: Buffer의 ArrayBufferLike가 SharedArrayBuffer를 포함하도록 넓어진 @types/node
+    // 버전과 BlobPart 타입이 안 맞아 실제 빌드 실패가 있었음(ArrayBuffer/SharedArrayBuffer 불일치).
+    form.append("file", new Blob([pdf as any], { type: "application/pdf" }), filename);
     const headers: Record<string, string> = {
       "x-api-key": apiKey,
       "anthropic-version": AI_VERSION,
