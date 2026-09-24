@@ -456,6 +456,8 @@ async function finishExam(
     const { error } = await client.from("item_explanations").insert(explanationRows as any);
     if (error) throw error;
   }
+  // 해설을 다시 만들면 이전 출제오류 의심 판단은 더 이상 유효하지 않으므로 함께 정리한다.
+  await client.from("item_checks").delete().eq("exam_id", examId);
   await client.from("exam_notes").delete().eq("exam_id", examId);
   if (notes.length) {
     const { error } = await client
