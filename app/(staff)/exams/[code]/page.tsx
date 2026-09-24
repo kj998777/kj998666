@@ -10,6 +10,7 @@ import ToggleStatusButton from "./ToggleStatusButton";
 import DeleteExamButton from "./DeleteExamButton";
 import AiJobPanel from "./AiJobPanel";
 import UploadPdfForm from "./UploadPdfForm";
+import AttachPdfForm from "./AttachPdfForm";
 import ApproveReviewButton from "./ApproveReviewButton";
 import ErrorCheckControl from "./ErrorCheckControl";
 import { getItemCheck } from "@/lib/ai/errorcheck";
@@ -181,6 +182,18 @@ export default async function ExamDetailPage({
             </div>
           )}
           <ApproveReviewButton code={exam.code} />
+        </div>
+      )}
+
+      {canEdit && !pdfMeta && (
+        <div className="card border-sky-200 space-y-2">
+          <h2 className="font-medium">원본 PDF 첨부 (AI 처리 없이 저장만)</h2>
+          <p className="text-sm text-slate-500">
+            이 시험은 아직 원본 시험지 PDF가 저장돼 있지 않아 QR·정오표 PDF를 다운로드할 수 없습니다
+            (예: 예전 시스템에서 옮겨온 시험). 이미 정답·해설이 있는 시험이면 이 폼으로 원본 PDF 파일만
+            연결하세요 — AI가 다시 처리하지 않고 그대로 저장만 합니다.
+          </p>
+          <AttachPdfForm code={exam.code} />
         </div>
       )}
 
