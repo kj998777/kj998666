@@ -19,11 +19,11 @@ export async function getSessionAndRole(): Promise<SessionAndRole | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: profile } = await supabase
+  const { data: profile } = (await supabase
     .from("profiles")
     .select("role, email")
     .eq("id", user.id)
-    .single();
+    .single()) as any;
   if (!profile) return null;
 
   return { userId: user.id, email: profile.email, role: profile.role };
