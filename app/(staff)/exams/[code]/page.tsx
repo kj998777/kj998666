@@ -11,6 +11,8 @@ import DeleteExamButton from "./DeleteExamButton";
 import AiJobPanel from "./AiJobPanel";
 import UploadPdfForm from "./UploadPdfForm";
 import ApproveReviewButton from "./ApproveReviewButton";
+import ErrorCheckControl from "./ErrorCheckControl";
+import { getItemCheck } from "@/lib/ai/errorcheck";
 
 const ACTIVE_STAGES = new Set(["upload", "extract_submit", "extract_wait", "solve_submit", "solve_wait"]);
 
@@ -50,8 +52,16 @@ export default async function ExamDetailPage({
   let pdfMeta: Awaited<ReturnType<typeof getExamPdfMeta>> = null;
   let notes: { id: string; note: string }[] = [];
   let corrections: { id: string; item_label: string; issue: string; fix: string }[] = [];
+  const checksByLabel: Record<string, Awaited<ReturnType<typeof getItemCheck>>> = {};
+  if (canEdit) {
+    pdfMeta = await getExamPdfMeta(supabase, exam.id);
+  }
   if (isAdmin) {
-    [job, pdfMeta] = await Promise.all([getJob(supabase, exam.id), getExamPdfMeta(supabase, exam.id)]);
+    job = await getJob(supabase, exam.id);
+    if ((explanations ?? []).length > 0) {
+      const { data: checks } = await supabase.from("item_checks").select("*").eq("exam_id", exam.id);
+      for (const c of (checks as any[]) ?? []) checksByLabel[c.item_label] = { examId: c.exam_id, label: c.item_label, stage: c.stage, message: c.message, state: c.state, updatedAt: c.updated_at };
+    }
     if (exam.status === "검수대기") {
       const [{ data: n }, { data: c }] = await Promise.all([
         supabase.from("exam_notes").select("id, note").eq("exam_id", exam.id).order("sort_order"),
@@ -167,6 +177,35 @@ export default async function ExamDetailPage({
         </div>
       )}
 
+      {canEdit && pdfMeta && (
+        <form
+          action={`/exams/${encodeURIComponent(exam.code)}/pdf`}
+          method="get"
+          target="_blank"
+          className="card space-y-2"
+        >
+          <h2 className="font-medium">시험지 PDF 다운로드 (QR·정오표 포함)</h2>
+          <p className="text-sm text-slate-500">
+            학생에게 나눠 줄 시험지 PDF를 만듭니다. 맨 뒤에 제출 QR 쪽이 자동으로 붙습니다.
+          </p>
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" name="cover" value="1" defaultChecked /> 표지 넣기 (표지 + 백지 1쪽)
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" name="addFix" value="1" defaultChecked /> 정정 사항을 정정 페이지로 추가
+            </label>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <label htmlFor="exclude">뺄 쪽 번호(원본 기준, 쉼표로 구분)</label>
+            <input id="exclude" name="exclude" type="text" placeholder="예: 8,9" className="input w-40" />
+          </div>
+          <button type="submit" className="btn-primary">
+            PDF 다운로드
+          </button>
+        </form>
+      )}
+
       <div className="card">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-medium">정답 ({(keys ?? []).length}문항, 총 {totalPoints}점)</h2>
@@ -209,9 +248,16 @@ export default async function ExamDetailPage({
                     {e.difficulty}
                     {e.points_assigned && " · 배점임의"}
                   </span>
-                  {e.exam_error_suspected && <span className="badge bg-red-100 text-red-700">출제오류 의심</span>}
+                  {e.exam_error_suspected && <span className="badge bg-red-100 text-red-700">⚠ 출제오류 의심</span>}
                 </summary>
                 <div className="mt-2 text-sm space-y-2 text-slate-700">
+                  {e.exam_error_suspected && (
+                    <div className="border border-red-200 bg-red-50 text-red-800 rounded px-3 py-2 text-sm space-y-1">
+                      <p className="font-medium">⚠ 출제오류 의심{e.exam_error_kind ? ` — ${e.exam_error_kind}` : ""}</p>
+                      {e.exam_error_reason && <p className="whitespace-pre-wrap">{e.exam_error_reason}</p>}
+                      {e.exam_error_student_note && <p className="text-red-700">학생 안내: {e.exam_error_student_note}</p>}
+                    </div>
+                  )}
                   {e.unit && <p className="text-slate-500">단원: {e.unit}</p>}
                   {e.difficulty_reason && <p className="text-slate-500">난이도 판단: {e.difficulty_reason}</p>}
                   {e.problem_statement && <p className="whitespace-pre-wrap">{e.problem_statement}</p>}
@@ -226,6 +272,22 @@ export default async function ExamDetailPage({
                       <p className="font-medium">풀이</p>
                       <p className="whitespace-pre-wrap">{e.solution}</p>
                     </div>
+                  )}
+                  {isAdmin && (
+                    <ErrorCheckControl
+                      code={exam.code}
+                      label={e.item_label}
+                      suspected={e.exam_error_suspected}
+                      initialCheck={
+                        checksByLabel[e.item_label]
+                          ? {
+                              stage: checksByLabel[e.item_label]!.stage,
+                              message: checksByLabel[e.item_label]!.message,
+                              updatedAt: checksByLabel[e.item_label]!.updatedAt,
+                            }
+                          : null
+                      }
+                    />
                   )}
                 </div>
               </details>
