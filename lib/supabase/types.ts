@@ -2,7 +2,7 @@
 // 나중에 Supabase CLI가 설치 가능해지면 `supabase gen types typescript` 로 자동 생성본으로
 // 교체해도 되지만, 그 전까지는 이 파일이 스키마와 어긋나지 않도록 마이그레이션을 고칠 때 같이 고칠 것.
 
-export type Role = "admin" | "editor" | "viewer";
+export type Role = "admin" | "editor" | "viewer" | "tutor";
 export type ExamStatus = "열림" | "닫힘" | "검수대기";
 export type AnswerType = "객관식" | "주관식";
 export type Difficulty = "하" | "중하" | "중" | "중상" | "상";
@@ -52,6 +52,7 @@ export type Database = {
           folder_term: number | null;
           folder_kind: "중간" | "기말" | "기타" | null;
           school_level: SchoolLevel | null;
+          tutor_download_cost: number | null;
         };
         Insert: {
           code: string;
@@ -63,6 +64,7 @@ export type Database = {
           folder_term?: number | null;
           folder_kind?: "중간" | "기말" | "기타" | null;
           school_level?: SchoolLevel | null;
+          tutor_download_cost?: number | null;
         };
         Update: {
           name?: string;
@@ -72,6 +74,7 @@ export type Database = {
           folder_term?: number | null;
           folder_kind?: "중간" | "기말" | "기타" | null;
           school_level?: SchoolLevel | null;
+          tutor_download_cost?: number | null;
         };
         Relationships: [];
       };
@@ -156,6 +159,9 @@ export type Database = {
           exam_error_reason: string;
           exam_error_student_note: string;
           updated_at: string;
+          tutor_reviewed: boolean;
+          claimed_by: string | null;
+          claim_expires_at: string | null;
         };
         Insert: {
           exam_id: string;
@@ -188,6 +194,67 @@ export type Database = {
           exam_error_student_note?: string;
           updated_at?: string;
         };
+        Relationships: [];
+      };
+      tutor_stats: {
+        Row: {
+          tutor_id: string;
+          points_balance: number;
+          reviews_submitted: number;
+          reviews_flagged: number;
+          created_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      tutor_points_ledger: {
+        Row: {
+          id: string;
+          tutor_id: string;
+          delta: number;
+          reason: "review_primary" | "review_verify" | "download_purchase" | "admin_adjustment";
+          ref_exam_id: string | null;
+          ref_item_label: string | null;
+          created_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      tutor_item_reviews: {
+        Row: {
+          id: string;
+          item_explanation_id: string;
+          exam_id: string;
+          item_label: string;
+          tutor_id: string;
+          kind: "primary" | "verify";
+          answer_display: string;
+          solution: string;
+          needs_verification: boolean;
+          verified: boolean;
+          verify_claimed_by: string | null;
+          verify_claim_expires_at: string | null;
+          matches_primary_review_id: string | null;
+          is_match: boolean | null;
+          resolved: boolean;
+          created_at: string;
+        };
+        Insert: never;
+        Update: { resolved?: boolean };
+        Relationships: [];
+      };
+      tutor_exam_purchases: {
+        Row: {
+          id: string;
+          tutor_id: string;
+          exam_id: string;
+          points_spent: number;
+          purchased_at: string;
+        };
+        Insert: never;
+        Update: never;
         Relationships: [];
       };
       item_checks: {
@@ -344,6 +411,21 @@ export type Database = {
         Returns: string;
       };
       current_profile_role: { Args: Record<string, never>; Returns: string | null };
+      claim_next_review_item: { Args: Record<string, never>; Returns: { itemExplanationId: string; kind: "primary" | "verify" } | null };
+      release_review_claim: { Args: { p_item_explanation_id: string }; Returns: void };
+      submit_tutor_review: {
+        Args: { p_item_explanation_id: string; p_answer_display: string; p_solution: string };
+        Returns: { ok: true; pointsEarned: number; reviewId: string };
+      };
+      submit_tutor_verification: {
+        Args: { p_item_explanation_id: string; p_answer_display: string; p_solution: string };
+        Returns: { ok: true; pointsEarned: number; verifyReviewId: string; primaryReviewId: string };
+      };
+      resolve_tutor_verification: { Args: { p_verify_review_id: string; p_is_match: boolean }; Returns: void };
+      purchase_exam_download: {
+        Args: { p_exam_id: string };
+        Returns: { ok: true; alreadyOwned: boolean; pointsSpent?: number };
+      };
     };
   };
 }
