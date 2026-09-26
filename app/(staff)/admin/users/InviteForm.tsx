@@ -19,14 +19,18 @@ export default function InviteForm({ defaultRole = "viewer" }: { defaultRole?: "
       }}
     >
       <div>
-        <label className="label" htmlFor="email">이메일</label>
+        <label className="label" htmlFor="email">
+          이메일
+        </label>
         <input id="email" name="email" type="email" required className="input" placeholder="junior@example.com" />
       </div>
       <div>
-        <label className="label" htmlFor="role">권한</label>
+        <label className="label" htmlFor="role">
+          권한
+        </label>
         <select id="role" name="role" className="input" defaultValue={defaultRole}>
           <option value="viewer">뷰어 (조회만)</option>
-          <option value="editor">편집자 (시험·정답 관리)</option>
+          <option value="editor">편집자 (시험·정답·반 관리)</option>
           <option value="admin">관리자 (전체 권한)</option>
           <option value="tutor">과외선생님 (검토·기출다운로드)</option>
         </select>
