@@ -1,6 +1,7 @@
 import { requireApiRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { buildStampedExamPdf, type Correction } from "@/lib/ai/pdfStamp";
+import { contentDispositionAttachment } from "@/lib/http/contentDisposition";
 
 // QR·정오표 포함 시험지 PDF 다운로드. AI 비용이 들지 않는 기능이라 editor 이상이면 누구나 사용 가능.
 // GET 쿼리스트링으로 옵션을 받는 이유: <form method="get">으로 만든 체크박스만으로
@@ -50,14 +51,14 @@ export async function GET(request: Request, { params }: { params: { code: string
     return Response.json({ ok: false, msg: e?.message || "PDF를 만들지 못했습니다." }, { status: 400 });
   }
 
-  const filenameAscii = `exam_${exam.code}.pdf`;
-  const filenameUtf8 = encodeURIComponent(`${exam.name}_${exam.code}.pdf`);
   return new Response(bytes as any, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${filenameAscii}"; filename*=UTF-8''${filenameUtf8}`,
+      // exam.code/exam.name에 한글·공백이 그대로 들어 있을 수 있어(배치 업로드 시 파일명을 그대로 씀)
+      // ASCII가 보장된 filename=은 별도로 안전하게 만들고, 진짜 이름은 filename*=에만 담는다
+      // (raw로 헤더에 넣으면 Node가 "Invalid character in header content" 예외를 던져 500이 났었음).
+      "Content-Disposition": contentDispositionAttachment(`${exam.name}_${exam.code}.pdf`, `exam_${exam.id}.pdf`),
       "Cache-Control": "no-store",
     },
   });
 }
-
