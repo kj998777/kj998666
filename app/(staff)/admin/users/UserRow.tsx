@@ -5,8 +5,17 @@ import { changeRole, revokeUser } from "./actions";
 import type { Role } from "@/lib/supabase/types";
 
 type Profile = { id: string; email: string; role: Role; created_at: string };
+type TutorStats = { points_balance: number; reviews_submitted: number; reviews_flagged: number };
 
-export default function UserRow({ profile, isMe }: { profile: Profile; isMe: boolean }) {
+export default function UserRow({
+  profile,
+  isMe,
+  tutorStats,
+}: {
+  profile: Profile;
+  isMe: boolean;
+  tutorStats?: TutorStats;
+}) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
 
@@ -14,6 +23,14 @@ export default function UserRow({ profile, isMe }: { profile: Profile; isMe: boo
     <tr className="border-b border-slate-100">
       <td className="py-2 pr-2">
         {profile.email} {isMe && <span className="text-slate-400">(나)</span>}
+        {tutorStats && (
+          <div className="text-xs text-slate-400 mt-0.5">
+            포인트 {tutorStats.points_balance} · 제출 {tutorStats.reviews_submitted}건
+            {tutorStats.reviews_flagged > 0 && (
+              <span className="text-red-500"> · 불일치 {tutorStats.reviews_flagged}건</span>
+            )}
+          </div>
+        )}
       </td>
       <td className="py-2 pr-2">
         <select
@@ -32,6 +49,7 @@ export default function UserRow({ profile, isMe }: { profile: Profile; isMe: boo
           <option value="viewer">뷰어</option>
           <option value="editor">편집자</option>
           <option value="admin">관리자</option>
+          <option value="tutor">과외선생님</option>
         </select>
         {err && <div className="text-xs text-red-600 mt-1">{err}</div>}
       </td>
