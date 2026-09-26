@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 export async function purchaseExam(examId: string) {
   await requireTutor();
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("purchase_exam_download", { p_exam_id: examId });
+  const { data, error } = await (supabase.rpc as any)("purchase_exam_download", { p_exam_id: examId });
   if (error) return { ok: false, msg: error.message };
 
   revalidatePath("/tutor/store");
