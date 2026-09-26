@@ -238,7 +238,9 @@ export default async function ExamDetailPage({
         </form>
       )}
 
-      {isAdmin && pdfMeta && <DigitizeControl code={exam.code} initial={digitizePoll} isScanned={pdfMeta.is_scanned ?? null} />}
+      {isAdmin && pdfMeta && (
+        <DigitizeControl code={exam.code} examName={exam.name} initial={digitizePoll} isScanned={pdfMeta.is_scanned ?? null} />
+      )}
 
       <div className="card">
         <div className="flex items-center justify-between mb-3">

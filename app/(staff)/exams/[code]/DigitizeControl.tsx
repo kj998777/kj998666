@@ -15,17 +15,40 @@ const STAGE_LABEL: Record<string, string> = {
 
 export default function DigitizeControl({
   code,
+  examName,
   initial,
   isScanned,
 }: {
   code: string;
+  examName: string;
   initial: DigitizePoll;
   isScanned: boolean | null;
 }) {
   const [job, setJob] = useState<DigitizePoll>(initial);
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState("");
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfMsg, setPdfMsg] = useState("");
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  async function onDownloadPdf() {
+    setPdfBusy(true);
+    setPdfMsg("시작하는 중…");
+    try {
+      const { buildDigitizedPdf, downloadPdfBytes } = await import("./buildDigitizedPdf");
+      const built = await buildDigitizedPdf(code, examName, (m) => setPdfMsg(m));
+      downloadPdfBytes(built.bytes, `${examName}_디지털시험지.pdf`);
+      setPdfMsg(
+        `저장했습니다 (${built.pages}쪽 · 문항 ${built.items}개 · 그림 ${built.figs}개${
+          built.figErrors ? ` · 그림 오류 ${built.figErrors}곳` : ""
+        }). 옮겨 적은 글·수식·그림은 AI가 읽은 것이니 원본과 대조한 뒤 나눠 주세요.`
+      );
+    } catch (e: any) {
+      setPdfMsg("실패: " + (e && e.message ? e.message : String(e)));
+    } finally {
+      setPdfBusy(false);
+    }
+  }
 
   useEffect(() => {
     function stop() {
@@ -52,8 +75,9 @@ export default function DigitizeControl({
     <div className="card space-y-2">
       <h2 className="font-medium">스캔 시험지 디지털화</h2>
       <p className="text-sm text-slate-500">
-        스캔본(그림) 시험지의 글자·수식·그림 위치를 AI가 쪽별로 옮겨 적습니다. 새 PDF를 자동으로
-        조판해 주지는 않고, 결과를 JSON으로 내려받아 검토·재사용할 수 있습니다.
+        스캔본(그림) 시험지의 글자·수식·그림 위치를 AI가 쪽별로 옮겨 적고, 학원 양식(2단 편집)으로
+        다시 조판한 PDF로 내려받습니다(문제 쪽만 — 표지·정답·해설·마킹 쪽은 넣지 않습니다). 옮겨 적은
+        내용은 AI가 읽은 것이라 원본과 다를 수 있으니, 내려받은 뒤 원본과 대조하고 나눠 주세요.
         {isScanned === false && " (업로드된 PDF는 이미 글자 정보가 있어 보여 꼭 필요하지는 않을 수 있습니다.)"}
       </p>
 
@@ -126,11 +150,17 @@ export default function DigitizeControl({
               </button>
             )}
             {job.stage === "dg_done" && (
+              <button className="btn-secondary text-sm px-2 py-1" disabled={pdfBusy} onClick={onDownloadPdf}>
+                디지털 시험지 PDF 다운로드
+              </button>
+            )}
+            {job.stage === "dg_done" && (
               <a className="text-slate-500 hover:underline" href={`/exams/${encodeURIComponent(code)}/digitized`} target="_blank">
-                결과 JSON 내려받기
+                원자료 JSON 내려받기
               </a>
             )}
           </div>
+          {pdfMsg && <p className={pdfMsg.indexOf("실패") === 0 ? "text-red-600" : "text-slate-500"}>{pdfMsg}</p>}
         </div>
       )}
 
