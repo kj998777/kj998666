@@ -308,12 +308,13 @@ async function stepSolveWait(client: Client, examId: string, state: JobState): P
   if (!apiKey) throwErr("AI API 키가 없습니다.", true);
   const qs: QuestionMeta[] = state.qs;
   const total = qs.length;
-  const batches: any[] = [];
+  // 배치가 여러 개로 쌓였을 때(원래 풀이 + 실패 재시도 + 확신 낮은 문항 다시 풀기) 하나씩
+  // 차례로 상태를 물어보면, 배치 수가 늘어날수록 이 한 번의 tick이 배치 수 × 요청 시간만큼
+  // 길어진다. 동시에 물어봐서 이 시간을 "가장 느린 배치 하나" 수준으로 줄인다.
+  const batches: any[] = await Promise.all((state.slBatches as string[]).map((id) => getBatch(apiKey, id)));
   let allEnded = true;
   let okN = 0;
-  for (const id of state.slBatches as string[]) {
-    const b = await getBatch(apiKey, id);
-    batches.push(b);
+  for (const b of batches) {
     if (b.processing_status !== "ended") allEnded = false;
     okN += b.request_counts?.succeeded || 0;
   }
@@ -329,11 +330,19 @@ async function stepSolveWait(client: Client, examId: string, state: JobState): P
     return;
   }
 
+  // 배치 결과(NDJSON) 내려받기도 같은 이유로 동시에 처리한다 — 문항을 다 푼 뒤 "확신 낮은
+  // 문항 다시 풀기" 배치까지 쌓인 시점이 배치 수가 가장 많아서(원래 풀이 + 실패 재시도 + 다시
+  // 풀기), 하나씩 차례로 받아 오면 이 한 번의 tick이 특히 오래 걸려 서버리스 함수 실행 시간
+  // 제한에 걸리곤 했다(정확히 "문제를 푼 뒤 다시 푸는 과정"에서 계속 오류가 나 다시 시도해야
+  // 했던 원인). sol/why 는 tick마다 새로 계산해야 하므로(state 에 통째로 저장하면 커질 수 있어
+  // 저장하지 않음) 매번 다시 받아 오되, usage 기록(state.counted)만 배치당 한 번으로 막는다.
   const sol: Record<string, any> = {};
   const why: Record<string, string> = {};
   state.counted = state.counted || {};
-  for (const b of batches) {
-    const res = await getBatchResults(apiKey, b);
+  const batchResults = await Promise.all(batches.map((b) => getBatchResults(apiKey, b)));
+  for (let bi = 0; bi < batches.length; bi++) {
+    const b = batches[bi];
+    const res = batchResults[bi];
     for (const cid of Object.keys(res)) {
       const line = res[cid];
       const inp = toolInputOf(line, "submit_solution");
