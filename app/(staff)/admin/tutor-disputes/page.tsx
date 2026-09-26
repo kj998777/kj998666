@@ -56,7 +56,7 @@ export default async function TutorDisputesPage() {
         <h1 className="text-lg font-semibold">과외선생님 검토 불일치</h1>
         <p className="text-sm text-slate-500">
           사후 샘플 검증에서 최초 제출과 다른 답이 나온 문항입니다. 시험 상세에서 해설을 최종
-          확정한 뒤 "확인함"을 눌러 주세요.
+          확정한 뒤 &quot;확인함&quot;을 눌러 주세요.
         </p>
       </div>
 
