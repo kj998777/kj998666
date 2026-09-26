@@ -682,7 +682,7 @@ async function renderElementToPdfBytes(el: HTMLElement): Promise<Uint8Array> {
   const worker = html2pdfFn()
     .set({
       margin: [12, 10, 14, 10],
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff, scrollX: 0, scrollY: 0" },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", scrollX: 0, scrollY: 0 },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       pagebreak: { mode: ["css", "legacy"] },
     })
