@@ -1,6 +1,13 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import StudentSubmitForm from "./StudentSubmitForm";
 
+// 학생이 QR/링크로 접속할 때마다 시험 상태(존재/열림·닫힘)를 항상 최신으로 봐야 하므로
+// 이 페이지는 절대 캐시하지 않는다 — createAdminClient()는 cookies()를 쓰지 않으므로
+// (서비스롤 키 사용, 로그인 불필요) Next.js가 이 페이지를 캐시할 신호가 없다고 보고 정적으로
+// 캐시해 버려, 시험을 새로 만들거나 열어도 예전에 캐시된 "존재하지 않는 시험" 응답이 계속
+// 나오는 버그가 있었다. force-dynamic으로 매 요청마다 새로 렌더링하도록 강제한다.
+export const dynamic = "force-dynamic";
+
 // 공개(로그인 불필요) 학생 제출 화면.
 // 서비스롤 키로 직접 조회하는 이유: RLS는 "열림" 상태만 익명에게 보여주므로, 그 외의 경우에도
 // (존재하지 않음/닫힘) 학생에게 정확한 안내 문구를 보여주려면 상태를 먼저 알아야 하기 때문.
