@@ -16,7 +16,7 @@ import {
   uploadPdfFile,
 } from "./anthropic";
 import { EXTRACT_PROMPT, EXTRACT_TOOL, QuestionMeta, SOLVE_TOOL, solvePrompt } from "./prompts";
-import { autoBaseCount, autoNormQs, autoStrList, autoTotalOf, needRecheck } from "./normalize";
+import { autoBaseCount, autoNormQs, autoStrList, autoTotalOf } from "./normalize";
 import { AiSolution, CombinedFlag, autoCombine } from "./combine";
 import { assignPoints } from "./points";
 import { Job, JobState, getJob, isActiveStage, setJob } from "./job";
@@ -80,7 +80,6 @@ function inlineDoc(base64: string) {
     cache_control: { type: "ephemeral" },
   };
 }
-
 /** 배치를 만든다. 파일 참조가 거절되면(inline 폴백) PDF를 요청마다 직접 실어 여러 배치로 나눠 보낸다. */
 async function createBatchesChunked(
   client: Client,
@@ -308,9 +307,9 @@ async function stepSolveWait(client: Client, examId: string, state: JobState): P
   if (!apiKey) throwErr("AI API 키가 없습니다.", true);
   const qs: QuestionMeta[] = state.qs;
   const total = qs.length;
-  // 배치가 여러 개로 쌓였을 때(원래 풀이 + 실패 재시도 + 확신 낮은 문항 다시 풀기) 하나씩
-  // 차례로 상태를 물어보면, 배치 수가 늘어날수록 이 한 번의 tick이 배치 수 × 요청 시간만큼
-  // 길어진다. 동시에 물어봐서 이 시간을 "가장 느린 배치 하나" 수준으로 줄인다.
+  // 배치가 여러 개로 쌓였을 때(원래 풀이 + 실패 재시도) 하나씩 차례로 상태를 물어보면, 배치
+  // 수가 늘어날수록 이 한 번의 tick이 배치 수 × 요청 시간만큼 길어진다. 동시에 물어봐서 이
+  // 시간을 "가장 느린 배치 하나" 수준으로 줄인다.
   const batches: any[] = await Promise.all((state.slBatches as string[]).map((id) => getBatch(apiKey, id)));
   let allEnded = true;
   let okN = 0;
@@ -320,22 +319,14 @@ async function stepSolveWait(client: Client, examId: string, state: JobState): P
   }
   state.done = Math.min(total, okN);
   if (!allEnded) {
-    await setJob(
-      client,
-      examId,
-      "solve_wait",
-      state.rc ? `정답이 불확실한 ${(state.rcList || []).length}문항을 다시 푸는 중… (AI 처리 대기)` : `문항을 푸는 중… ${state.done}/${total} 완료 (AI 처리 대기)`,
-      state
-    );
+    await setJob(client, examId, "solve_wait", `문항을 푸는 중… ${state.done}/${total} 완료 (AI 처리 대기)`, state);
     return;
   }
 
-  // 배치 결과(NDJSON) 내려받기도 같은 이유로 동시에 처리한다 — 문항을 다 푼 뒤 "확신 낮은
-  // 문항 다시 풀기" 배치까지 쌓인 시점이 배치 수가 가장 많아서(원래 풀이 + 실패 재시도 + 다시
-  // 풀기), 하나씩 차례로 받아 오면 이 한 번의 tick이 특히 오래 걸려 서버리스 함수 실행 시간
-  // 제한에 걸리곤 했다(정확히 "문제를 푼 뒤 다시 푸는 과정"에서 계속 오류가 나 다시 시도해야
-  // 했던 원인). sol/why 는 tick마다 새로 계산해야 하므로(state 에 통째로 저장하면 커질 수 있어
-  // 저장하지 않음) 매번 다시 받아 오되, usage 기록(state.counted)만 배치당 한 번으로 막는다.
+  // 배치 결과(NDJSON) 내려받기도 같은 이유로 동시에 처리한다(원래 풀이 + 실패 재시도 배치가
+  // 쌓였을 때 하나씩 차례로 받아 오면 이 한 번의 tick이 오래 걸려 서버리스 함수 실행 시간
+  // 제한에 걸리곤 했다). sol/why 는 tick마다 새로 계산해야 하므로(state 에 통째로 저장하면
+  // 커질 수 있어 저장하지 않음) 매번 다시 받아 오되, usage 기록(state.counted)만 배치당 한 번으로 막는다.
   const sol: Record<string, any> = {};
   const why: Record<string, string> = {};
   state.counted = state.counted || {};
@@ -368,28 +359,10 @@ async function stepSolveWait(client: Client, examId: string, state: JobState): P
     return;
   }
 
-  if (!state.rc) {
-    // 확신이 낮거나 시험지 정답과 다르게 나온 문항은 처음 답을 믿지 않고 한 번 더 독립적으로 풀게 함
-    const rl: number[] = [];
-    for (let k = 0; k < total; k++) {
-      const sk = sol["q" + (k + 1)];
-      if (sk && needRecheck(qs[k], sk)) rl.push(k);
-    }
-    if (rl.length) {
-      const from = state.slBatches.length;
-      const ids2 = await createBatchesChunked(client, examId, state, rl.length, (m, doc) => {
-        const i3 = rl[m];
-        return { custom_id: "r" + (i3 + 1), params: buildParams(state, doc, SOLVE_TOOL, solvePrompt(qs[i3], true), "high", 32000, state.tc !== "auto") };
-      });
-      state.slBatches = [...state.slBatches, ...ids2];
-      state.rc = 1;
-      state.rcList = rl;
-      state.rcFrom = from;
-      await setJob(client, examId, "solve_wait", `확신이 낮거나 시험지 정답과 다른 ${rl.length}문항을 다시 풀도록 요청했습니다… (AI 처리 대기)`, state);
-      return;
-    }
-  }
-
+  // 예전에는 확신이 낮거나 시험지 정답과 다르게 나온 문항을 AI가 한 번 더 독립적으로 다시
+  // 풀게 했다(needRecheck). 이제는 그런 문항을 과외선생님이 검토대기 큐에서 직접 풀어 고치므로
+  // (submit_tutor_review) 이 재풀이 단계는 제거했다 — AI 처리 시간·비용이 줄고, 서버리스 함수
+  // 실행시간 제한에 걸리던 문제(배치가 여러 개로 쌓일 때)도 근본적으로 사라진다.
   await finishExam(client, examId, state, sol, why);
 }
 
@@ -401,7 +374,7 @@ async function finishExam(
   _why: Record<string, string>
 ): Promise<void> {
   const qs: QuestionMeta[] = state.qs;
-  const rows = qs.map((q, i) => autoCombine(q, sol["q" + (i + 1)] || null, state.areas || [], sol["r" + (i + 1)] || null));
+  const rows = qs.map((q, i) => autoCombine(q, sol["q" + (i + 1)] || null, state.areas || [], null));
   assignPoints(rows);
 
   const notes: string[] = [...(state.notes || [])];
@@ -487,13 +460,11 @@ async function finishExam(
   state.err = 0;
   if (state.fileId) await deleteFile((await getAiCreds(client)).apiKey || "", state.fileId);
 
-  const nre = rows.filter((r) => r.flag.rs).length;
   const msg =
     `자동 처리가 끝났습니다. 문항 ${rows.length}개` +
     (fail ? ` 중 ${fail}개 실패` : "") +
     (low ? `, 확인 필요 ${low}개` : "") +
-    (nre ? `(다시 푼 문항 ${nre}개 포함)` : "") +
-    " — 정답을 확인하고 확정해 주세요.";
+    " — 확인 필요 문항은 과외선생님 검토 큐에 올라갑니다. 정답을 확인하고 확정해 주세요.";
   await setJob(client, examId, "review", msg, state);
 }
 
