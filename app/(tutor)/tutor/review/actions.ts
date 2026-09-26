@@ -19,7 +19,7 @@ export async function claimNextReviewItem(): Promise<{ itemExplanationId: string
 export async function releaseReviewClaim(itemExplanationId: string) {
   await requireTutor();
   const supabase = await createClient();
-  await supabase.rpc("release_review_claim", { p_item_explanation_id: itemExplanationId });
+  await (supabase.rpc as any)("release_review_claim", { p_item_explanation_id: itemExplanationId });
   revalidatePath("/tutor/review");
 }
 
@@ -68,7 +68,7 @@ export async function submitVerification(itemExplanationId: string, answerDispla
       .eq("id", primaryReviewId)
       .maybeSingle();
     isMatch = isCorrect(answerDisplay.trim(), primary?.answer_display ?? "");
-    await supabase.rpc("resolve_tutor_verification", {
+    await (supabase.rpc as any)("resolve_tutor_verification", {
       p_verify_review_id: verifyReviewId,
       p_is_match: isMatch,
     });
