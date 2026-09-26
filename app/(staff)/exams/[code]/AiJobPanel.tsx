@@ -2,19 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { cancelAiProcessing, pollAiJob, startAiProcessing, type JobPoll } from "../ai-actions";
-
-const ACTIVE = new Set(["upload", "extract_submit", "extract_wait", "solve_submit", "solve_wait"]);
-
-const STAGE_LABEL: Record<string, string> = {
-  upload: "시험지 업로드",
-  extract_submit: "문항 추출 요청",
-  extract_wait: "문항 추출 대기",
-  solve_submit: "풀이 요청",
-  solve_wait: "풀이 대기",
-  review: "검수 대기",
-  done: "완료",
-  error: "오류",
-};
+import { ACTIVE, STAGE_LABEL } from "../aiJobStage";
 
 export default function AiJobPanel({ code, initial }: { code: string; initial: JobPoll }) {
   const [job, setJob] = useState<JobPoll>(initial);
