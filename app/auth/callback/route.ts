@@ -13,17 +13,29 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   // 비밀번호 재설정 링크는 ?next=/reset-password 를 붙여서 보낸다(resetPasswordForEmail 참고).
-  const next = searchParams.get("next") || "/dashboard";
+  const explicitNext = searchParams.get("next");
+  let next = explicitNext || "/dashboard";
 
   if (!code) {
     return NextResponse.redirect(`${origin}/login?error=no_code`);
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
     return NextResponse.redirect(`${origin}/login?error=exchange_failed`);
+  }
+
+  // next가 명시적으로 지정되지 않은 기본 경로(/dashboard)일 때만 role을 보고 tutor면
+  // /tutor/dashboard로 바꿔 보낸다 — 비밀번호 재설정처럼 next가 명시된 흐름은 그대로 둔다.
+  if (!explicitNext && data.user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", data.user.id)
+      .maybeSingle();
+    if ((profile as any)?.role === "tutor") next = "/tutor/dashboard";
   }
 
   return NextResponse.redirect(`${origin}${next}`);
