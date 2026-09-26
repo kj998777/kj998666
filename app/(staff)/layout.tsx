@@ -20,6 +20,7 @@ export default async function StaffLayout({ children }: { children: React.ReactN
             <Link href="/classes">반 관리</Link>
             {session.role === "admin" && <Link href="/admin/users">계정 관리</Link>}
             {session.role === "admin" && <Link href="/admin/ai">AI 설정</Link>}
+            {session.role === "admin" && <Link href="/admin/tutor-disputes">과외 검토 분쟁</Link>}
           </nav>
           <div className="flex items-center gap-3 text-sm text-slate-500">
             <span className="badge bg-slate-100 text-slate-700">
