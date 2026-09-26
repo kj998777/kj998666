@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import CreateExamForm from "./CreateExamForm";
 import CreateAiExamForm from "./CreateAiExamForm";
+import ExamFolderTree from "./ExamFolderTree";
 
 const LEVEL_LABEL: Record<string, string> = { 초: "초등학교", 중: "중학교", 고: "고등학교" };
 
@@ -15,7 +16,7 @@ export default async function ExamsPage({ searchParams }: { searchParams?: { lev
   const supabase = await createClient();
   let query = supabase
     .from("exams")
-    .select("id, code, name, status, school_level, created_at")
+    .select("id, code, name, status, school_level, created_at, folder_year, folder_grade, folder_term, folder_kind")
     .order("created_at", { ascending: false });
   if (levelFilter) query = query.eq("school_level", levelFilter);
   const { data: exams, error } = await query;
@@ -63,34 +64,7 @@ export default async function ExamsPage({ searchParams }: { searchParams?: { lev
           </div>
         </div>
         {error && <p className="text-sm text-red-600">목록을 불러오지 못했습니다: {error.message}</p>}
-        {(exams ?? []).length === 0 && <p className="text-sm text-slate-500">해당하는 시험이 없습니다.</p>}
-        <ul className="divide-y divide-slate-100">
-          {(exams ?? []).map((x: any) => (
-            <li key={x.id} className="py-3 flex items-center justify-between gap-2">
-              <Link href={`/exams/${encodeURIComponent(x.code)}`} className="hover:underline">
-                <span className="font-medium">{x.name}</span>{" "}
-                <span className="text-slate-400 text-sm">({x.code})</span>
-              </Link>
-              <div className="flex items-center gap-2 shrink-0">
-                {x.school_level && (
-                  <span className="badge bg-sky-100 text-sky-700">{LEVEL_LABEL[x.school_level] ?? x.school_level}</span>
-                )}
-                <span
-                  className={
-                    "badge " +
-                    (x.status === "열림"
-                      ? "bg-emerald-100 text-emerald-700"
-                      : x.status === "검수대기"
-                      ? "bg-amber-100 text-amber-700"
-                      : "bg-slate-100 text-slate-600")
-                  }
-                >
-                  {x.status}
-                </span>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <ExamFolderTree exams={(exams ?? []) as any} />
       </div>
     </div>
   );
