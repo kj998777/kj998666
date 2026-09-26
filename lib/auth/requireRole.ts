@@ -9,7 +9,19 @@ import type { Role } from "@/lib/supabase/types";
 
 export type SessionAndRole = { userId: string; email: string; role: Role };
 
-const RANK: Record<Role, number> = { viewer: 0, editor: 1, admin: 2 };
+// 'tutor'는 이 계층에 없다 — 일부러다(아래 passesRole 참고). 과외선생님 전용 화면은
+// lib/auth/requireTutor.ts 를 쓰고, 이 파일의 함수들과는 절대 엮지 않는다.
+const RANK: Partial<Record<Role, number>> = { viewer: 0, editor: 1, admin: 2 };
+
+// RANK에 없는 role(=tutor, 또는 앞으로 생길 비-계층 role)이면 무조건 실패시킨다.
+// 주의: `RANK[session.role] < RANK[minRole]` 를 그냥 쓰면 role이 RANK에 없을 때
+// `undefined < n` 이 자바스크립트에서 false가 되어 "차단"이 "통과"로 둔갑하는 함정이 있었다.
+function passesRole(role: Role, minRole: Role): boolean {
+  const r = RANK[role];
+  const min = RANK[minRole];
+  if (r === undefined || min === undefined) return false;
+  return r >= min;
+}
 
 /** 로그인 상태 + 역할을 조회. 로그인 안 했거나 profiles 행이 없으면 null. */
 export async function getSessionAndRole(): Promise<SessionAndRole | null> {
@@ -36,7 +48,7 @@ export async function getSessionAndRole(): Promise<SessionAndRole | null> {
 export async function requireRole(minRole: Role): Promise<SessionAndRole> {
   const session = await getSessionAndRole();
   if (!session) redirect("/login");
-  if (RANK[session.role] < RANK[minRole]) redirect("/dashboard?denied=1");
+  if (!passesRole(session.role, minRole)) redirect("/dashboard?denied=1");
   return session;
 }
 
@@ -51,7 +63,7 @@ export async function requireApiRole(
   if (!session) {
     return { error: Response.json({ ok: false, msg: "로그인이 필요합니다." }, { status: 401 }) };
   }
-  if (RANK[session.role] < RANK[minRole]) {
+  if (!passesRole(session.role, minRole)) {
     return { error: Response.json({ ok: false, msg: "이 작업을 할 권한이 없습니다." }, { status: 403 }) };
   }
   return { session };
