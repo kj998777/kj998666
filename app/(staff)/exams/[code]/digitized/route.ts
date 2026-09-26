@@ -1,5 +1,6 @@
 import { requireApiRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
+import { contentDispositionAttachment } from "@/lib/http/contentDisposition";
 
 // 디지털화된 쪽 데이터를 JSON으로 내려받는다(관리자 전용). 각 쪽을 새 PDF로 다시 조판하는 기능은
 // 아직 없어서(lib/ai/digitize.ts 상단 주석 참고) 결과를 검토·재사용할 수 있게 원자료를 제공한다.
@@ -23,7 +24,7 @@ export async function GET(_request: Request, { params }: { params: { code: strin
   return new Response(body, {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Content-Disposition": `attachment; filename="digitized_${exam.code}.json"`,
+      "Content-Disposition": contentDispositionAttachment(`digitized_${exam.name}_${exam.code}.json`, `digitized_${exam.id}.json`),
       "Cache-Control": "no-store",
     },
   });
