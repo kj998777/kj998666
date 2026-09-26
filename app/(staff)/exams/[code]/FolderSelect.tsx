@@ -46,7 +46,8 @@ export default function FolderSelect({
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-sm text-slate-500">폴더</span>
       <input
-        className="input py-1 text-sm w-20"
+        className="input py-1 text-sm"
+        style={{ width: "5rem" }}
         placeholder="연도"
         value={value.year}
         disabled={pending}
@@ -55,7 +56,8 @@ export default function FolderSelect({
         onBlur={(e) => commit({ ...value, year: e.target.value.replace(/[^0-9]/g, "") })}
       />
       <select
-        className="input py-1 text-sm w-auto"
+        className="input py-1 text-sm"
+        style={{ width: "auto" }}
         value={value.grade}
         disabled={pending}
         onChange={(e) => commit({ ...value, grade: e.target.value })}
@@ -66,7 +68,8 @@ export default function FolderSelect({
         <option value="3">3학년</option>
       </select>
       <select
-        className="input py-1 text-sm w-auto"
+        className="input py-1 text-sm"
+        style={{ width: "auto" }}
         value={value.term}
         disabled={pending}
         onChange={(e) => commit({ ...value, term: e.target.value })}
@@ -76,7 +79,8 @@ export default function FolderSelect({
         <option value="2">2학기</option>
       </select>
       <select
-        className="input py-1 text-sm w-auto"
+        className="input py-1 text-sm"
+        style={{ width: "auto" }}
         value={value.kind}
         disabled={pending}
         onChange={(e) => commit({ ...value, kind: e.target.value })}
