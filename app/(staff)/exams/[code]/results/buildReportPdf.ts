@@ -123,19 +123,25 @@ function sanitizeAllowed(s: string): string {
 }
 
 function mathHtml(katex: any, text: string | null | undefined): string {
+  // $ 가 홀수 개면(마지막 수식이 닫히지 않음) 마지막 조각만 글자 그대로 두고(먹힌 $ 복원),
+  // 그 앞의 정상 수식은 그대로 렌더링한다 — 문자열 전체를 통째로 포기하면 문항 하나에 $ 가
+  // 하나만 빠져도 그 문항의 모든 수식이 명령어 글자 그대로 남는 문제가 생긴다
+  // (buildDigitizedPdf.ts의 dgTex()에서 실제로 신고된 버그와 같은 원인이라 여기서도 함께 고쳤다).
   const s = String(text == null ? "" : text);
-  let parts = s.split("$");
-  if (parts.length % 2 === 0) parts = [s]; // $ 가 홀수 개면 수식으로 보지 않음
+  const parts = s.split("$");
+  const unpaired = parts.length % 2 === 0;
   const out: string[] = [];
   for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 1) {
+    const isTrailingUnpaired = unpaired && i === parts.length - 1;
+    if (i % 2 === 1 && !isTrailingUnpaired) {
       try {
         out.push(katex.renderToString(parts[i], { throwOnError: false }));
       } catch {
         out.push(esc(parts[i]));
       }
     } else {
-      out.push(sanitizeAllowed(parts[i]).replace(/\n/g, "<br>"));
+      const t = isTrailingUnpaired ? "$" + parts[i] : parts[i];
+      out.push(sanitizeAllowed(t).replace(/\n/g, "<br>"));
     }
   }
   return out.join("");
