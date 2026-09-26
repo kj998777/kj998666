@@ -10,6 +10,10 @@
 -- tutor도 role 값을 가지므로 이 함수를 그대로 두면 tutor가 학생 개인정보·채점결과 등 직원 전용
 -- 테이블 전체에 접근할 수 있게 된다. 그래서 is_staff()를 admin/editor/viewer로만 명시적으로
 -- 좁히고, tutor 전용 접근은 아래에서 새로 추가하는 좁은 정책으로만 허용한다.
+--
+-- 실행 순서 참고: 원본 설계 문서의 섹션 번호는 그대로 유지하되, 테이블 생성이 그 테이블을
+-- 참조하는 RLS 정책보다 먼저 오도록 순서만 재배열했다(정책이 존재하지 않는 테이블을 참조하면
+-- "relation does not exist" 오류가 나기 때문). 내용은 원본과 동일하다.
 -- =========================================================================
 
 -- -------------------------------------------------------------------------
@@ -115,6 +119,7 @@ grant select on public.tutor_points_ledger to authenticated;
 
 -- -------------------------------------------------------------------------
 -- 5. item_explanations — 검토 큐 상태 열 추가(별도 큐 테이블 없이 이 테이블을 큐로 사용)
+--    (참조 정책은 tutor_item_reviews 테이블 생성 뒤로 옮김 — 아래 5b 참고)
 -- -------------------------------------------------------------------------
 alter table public.item_explanations add column tutor_reviewed boolean not null default false;
 alter table public.item_explanations add column claimed_by uuid references public.profiles (id) on delete set null;
@@ -122,22 +127,6 @@ alter table public.item_explanations add column claim_expires_at timestamptz;
 
 comment on column public.item_explanations.tutor_reviewed is
   '과외선생님이 이 문항을 한 번이라도 풀어서 제출했는지. 큐 조건: exam.status=검수대기 and not tutor_reviewed.';
-
--- 과외선생님은 본인이 지금 선점(claimed_by) 중이거나, 사후 검증으로 배정받은 문항만 볼 수 있다
--- (기존 item_explanations_select_staff 정책과 별개로 OR 조건으로 추가됨 — 직원 열람 범위는 그대로).
-create policy "item_explanations_select_tutor_claimed"
-  on public.item_explanations for select to authenticated
-  using (
-    public.is_tutor() and (
-      claimed_by = auth.uid()
-      or exists (
-        select 1 from public.tutor_item_reviews r
-        where r.item_explanation_id = item_explanations.id
-          and r.kind = 'primary'
-          and r.verify_claimed_by = auth.uid()
-      )
-    )
-  );
 
 -- -------------------------------------------------------------------------
 -- 6. tutor_item_reviews — 과외선생님 제출 기록(최초 제출 kind=primary, 사후검증 제출 kind=verify)
@@ -180,14 +169,53 @@ create policy "tutor_item_reviews_update_admin"
 
 grant select, update on public.tutor_item_reviews to authenticated;
 
+-- 5b. item_explanations 정책 — 위 tutor_item_reviews 테이블이 이제 존재하므로 여기서 추가한다.
+-- 과외선생님은 본인이 지금 선점(claimed_by) 중이거나, 사후 검증으로 배정받은 문항만 볼 수 있다
+-- (기존 item_explanations_select_staff 정책과 별개로 OR 조건으로 추가됨 — 직원 열람 범위는 그대로).
+create policy "item_explanations_select_tutor_claimed"
+  on public.item_explanations for select to authenticated
+  using (
+    public.is_tutor() and (
+      claimed_by = auth.uid()
+      or exists (
+        select 1 from public.tutor_item_reviews r
+        where r.item_explanation_id = item_explanations.id
+          and r.kind = 'primary'
+          and r.verify_claimed_by = auth.uid()
+      )
+    )
+  );
+
 -- -------------------------------------------------------------------------
 -- 7. exams.tutor_download_cost — null이면 과외선생님 판매 대상 아님
+--    (참조 정책은 tutor_exam_purchases 테이블 생성 뒤로 옮김 — 아래 7b 참고)
 -- -------------------------------------------------------------------------
 alter table public.exams add column tutor_download_cost int check (tutor_download_cost is null or tutor_download_cost > 0);
 
 comment on column public.exams.tutor_download_cost is
   '과외선생님이 이 시험 PDF를 받으려면 필요한 포인트. null=미판매. editor 이상이 시험 상세에서 지정.';
 
+-- -------------------------------------------------------------------------
+-- 8. tutor_exam_purchases — 한 번 구매하면 재다운로드 무제한 무료
+-- -------------------------------------------------------------------------
+create table public.tutor_exam_purchases (
+  id uuid primary key default gen_random_uuid(),
+  tutor_id uuid not null references public.profiles (id) on delete cascade,
+  exam_id uuid not null references public.exams (id) on delete cascade,
+  points_spent int not null default 0,
+  purchased_at timestamptz not null default now(),
+  unique (tutor_id, exam_id)
+);
+
+alter table public.tutor_exam_purchases enable row level security;
+
+create policy "tutor_exam_purchases_select_own_or_admin"
+  on public.tutor_exam_purchases for select to authenticated
+  using (tutor_id = auth.uid() or public.is_admin());
+
+grant select on public.tutor_exam_purchases to authenticated;
+
+-- 7b. exams 정책 — 위 tutor_exam_purchases 테이블이 이제 존재하므로 여기서 추가한다.
 -- 과외선생님은 "지금 판매 중"이거나 "이미 구매한 적 있는" 시험만 볼 수 있다(익명/직원 정책과 별개).
 create policy "exams_select_tutor_store"
   on public.exams for select to authenticated
@@ -216,26 +244,6 @@ create policy "exams_select_tutor_active_review"
       )
     )
   );
-
--- -------------------------------------------------------------------------
--- 8. tutor_exam_purchases — 한 번 구매하면 재다운로드 무제한 무료
--- -------------------------------------------------------------------------
-create table public.tutor_exam_purchases (
-  id uuid primary key default gen_random_uuid(),
-  tutor_id uuid not null references public.profiles (id) on delete cascade,
-  exam_id uuid not null references public.exams (id) on delete cascade,
-  points_spent int not null default 0,
-  purchased_at timestamptz not null default now(),
-  unique (tutor_id, exam_id)
-);
-
-alter table public.tutor_exam_purchases enable row level security;
-
-create policy "tutor_exam_purchases_select_own_or_admin"
-  on public.tutor_exam_purchases for select to authenticated
-  using (tutor_id = auth.uid() or public.is_admin());
-
-grant select on public.tutor_exam_purchases to authenticated;
 
 -- =========================================================================
 -- 9. RPC — 동시성·포인트가 걸린 쓰기는 전부 SECURITY DEFINER 함수로(submit_and_grade와 같은 패턴).
@@ -566,8 +574,8 @@ grant execute on function public.resolve_tutor_verification(uuid, boolean) to au
 grant execute on function public.purchase_exam_download(uuid) to authenticated;
 
 -- =========================================================================
--- 이 마이그레이션을 Supabase SQL 편집기에 붙여넣고 실행하세요.
--- 실행 후 확인할 것:
+-- 이 마이그레이션은 이미 Supabase 프로덕션 DB에 적용되었습니다(2026-09-27).
+-- 확인할 것:
 --   select is_staff(), is_tutor(); -- (본인 계정 role에 맞게 하나만 true)
 --   select * from tutor_stats limit 1; -- tutor로 가입한 계정이 있으면 자동 생성됐는지
 -- =========================================================================
