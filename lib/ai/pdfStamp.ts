@@ -84,6 +84,12 @@ export async function buildStampedExamPdf(client: Client, examId: string, opts: 
 
   // 4) 로고 + QR 쪽(맨 뒤): 가운데 = 학원 로고(폭의 70%), 오른쪽 아래 = 이 시험의 답안 제출 QR
   //    박스(폭의 30%, 여백 12mm) — 원본 stampPdf의 배치 그대로.
+  //    총 쪽수는 항상 짝수로 맞추는데(양면 인쇄 대비, 원본 방식과 동일), QR 쪽은 항상 맨 마지막
+  //    쪽이어야 한다(뒷면 없이 그대로 보여야 하므로). 그래서 짝을 맞추는 백지는 QR 쪽 "뒤"가
+  //    아니라 "앞"에 끼워 넣는다 — 여기서 QR 쪽만 추가하면 홀수가 될 경우, 먼저 백지 한 장을
+  //    끼워서 QR 쪽이 끝까지 짝수 번째(마지막) 쪽이 되게 한다.
+  if (out.getPageCount() % 2 === 0) out.addPage([PW, PH]);
+
   const [logoBytes, stampPng] = await Promise.all([
     readFile(LOGO_PATH),
     renderStampPng(opts.examCode, opts.submitUrl),
@@ -99,9 +105,6 @@ export async function buildStampedExamPdf(client: Client, examId: string, opts: 
     H = (W * stampImg.height) / stampImg.width,
     mg = 12 * pt;
   back.drawImage(stampImg, { x: PW - W - mg, y: mg, width: W, height: H });
-
-  // 총 쪽수는 항상 짝수로 맞춘다(양면 인쇄 대비, 원본 방식과 동일)
-  if (out.getPageCount() % 2 !== 0) out.addPage([PW, PH]);
 
   return out.save();
 }
