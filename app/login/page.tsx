@@ -44,12 +44,12 @@ export default function LoginPage() {
     }
 
     if (mode === "login") {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
-      setBusy(false);
       if (error) {
+        setBusy(false);
         setErr(
           error.message.includes("Invalid login credentials")
             ? "이메일 또는 비밀번호가 올바르지 않습니다. (비밀번호를 설정한 적이 없다면 아래 " +
@@ -58,9 +58,21 @@ export default function LoginPage() {
         );
         return;
       }
+      // 과외선생님(tutor)은 직원 대시보드가 아니라 /tutor/dashboard로 보낸다. 본인 profiles 행은
+      // RLS(profiles_select_own_or_admin)가 항상 허용하므로 여기서 바로 조회할 수 있다.
+      let dest = "/dashboard";
+      if (signInData.user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", signInData.user.id)
+          .maybeSingle();
+        if ((profile as any)?.role === "tutor") dest = "/tutor/dashboard";
+      }
+      setBusy(false);
       // 서버 컴포넌트/미들웨어가 새 세션 쿠키를 확실히 읽도록 클라이언트 라우팅 대신
       // 전체 페이지 이동을 사용한다.
-      window.location.href = "/dashboard";
+      window.location.href = dest;
       return;
     }
 
