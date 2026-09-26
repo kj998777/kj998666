@@ -62,6 +62,39 @@ export async function deleteAnswerKeyRow(code: string, id: string) {
   return { ok: true };
 }
 
+/**
+ * 문항 해설(정답표시·풀이 등) 직접 수정. AnswerKeyRow/updateAnswerKeyRow와 완전히 같은 모양.
+ * 직원(editor 이상)은 포인트·큐 개념 없이 바로 고친다 — 과외선생님용 검토 제출(submit_tutor_review
+ * RPC)과는 별개의 단순 경로다. RLS(item_explanations_update_editor_or_admin)가 이미 허용한다.
+ */
+export async function updateItemExplanation(
+  code: string,
+  id: string,
+  fields: { answer_display: string; solution: string; problem_statement?: string }
+) {
+  await requireRole("editor");
+  const supabase = await createClient();
+  const { error } = await (supabase.from("item_explanations") as any).update(fields).eq("id", id);
+  if (error) return { ok: false, msg: "저장하지 못했습니다: " + error.message };
+  revalidatePath(`/exams/${code}`);
+  return { ok: true };
+}
+
+/** 과외선생님 스토어에서 이 시험을 몇 포인트에 팔지 지정. null이면 판매 대상에서 뺀다. */
+export async function updateTutorDownloadCost(code: string, cost: number | null) {
+  await requireRole("editor");
+  if (cost !== null && (!Number.isFinite(cost) || cost <= 0)) {
+    return { ok: false, msg: "포인트는 0보다 큰 숫자여야 합니다." };
+  }
+  const supabase = await createClient();
+  const { error } = await (supabase.from("exams") as any)
+    .update({ tutor_download_cost: cost })
+    .eq("code", code);
+  if (error) return { ok: false, msg: "저장하지 못했습니다: " + error.message };
+  revalidatePath(`/exams/${code}`);
+  return { ok: true };
+}
+
 /** 시험 열기/닫기 — 관리자 전용(사용자 명시적 결정). DB 트리거도 같은 규칙을 한 번 더 강제한다. */
 export async function toggleExamStatus(code: string, open: boolean) {
   await requireRole("admin");
