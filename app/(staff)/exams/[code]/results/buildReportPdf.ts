@@ -167,7 +167,7 @@ function injectReportStyles(): void {
   stylesInjected = true;
   const css = `
 .rpt { width: 760px; background:#fff; color:#1f2937; font-family:'Noto Sans CJK KR','Noto Sans KR','Malgun Gothic','Apple SD Gothic Neo',sans-serif; font-size:13px; line-height:1.55; padding: 4px; }
-.rpt * { box-sizing: border-box; }
+.rpt * { box-sizing: border-box; overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
 .rpt h1 { font-size: 23px; margin: 0 0 3px; color:#0f2a4a; letter-spacing:-0.3px; }
 .rpt h2 { font-size: 16px; margin: 16px 0 6px; color:#0f2a4a; border-left: 4px solid #2563eb; padding-left: 8px; break-after: avoid; page-break-after: avoid; }
 .rpt h3 { font-size: 13px; margin: 8px 0 3px; color:#1e3a5f; break-after: avoid; page-break-after: avoid; }
@@ -176,7 +176,7 @@ function injectReportStyles(): void {
 .rpt .rpt-box { border: 1px solid #cbd5e1; background:#f8fafc; border-radius: 6px; padding: 6px 8px; margin: 6px 0; font-size: 11.5px; }
 .rpt .rpt-box.warn { border-color:#f59e0b; background:#fffbeb; }
 .rpt .rpt-box b { color:#0f2a4a; }
-.rpt table { border-collapse: collapse; width: 100%; margin: 4px 0 6px; font-size: 11px; }
+.rpt table { border-collapse: collapse; width: 100%; table-layout: fixed; margin: 4px 0 6px; font-size: 11px; }
 .rpt th, .rpt td { border: 1px solid #cbd5e1; padding: 3px 4px; vertical-align: middle; }
 .rpt th { background:#eaf0f8; color:#0f2a4a; font-weight:700; text-align:center; }
 .rpt td.c { text-align:center; }
