@@ -12,12 +12,13 @@ import AiJobPanel from "./AiJobPanel";
 import UploadPdfForm from "./UploadPdfForm";
 import AttachPdfForm from "./AttachPdfForm";
 import ApproveReviewButton from "./ApproveReviewButton";
-import ErrorCheckControl from "./ErrorCheckControl";
 import { getItemCheck } from "@/lib/ai/errorcheck";
 import DigitizeControl from "./DigitizeControl";
 import { getDigitizeJob } from "@/lib/ai/digitize";
 import SchoolLevelSelect from "./SchoolLevelSelect";
 import FolderSelect from "./FolderSelect";
+import ItemExplanationRow from "./ItemExplanationRow";
+import TutorDownloadCostInput from "./TutorDownloadCostInput";
 
 const ACTIVE_STAGES = new Set(["upload", "extract_submit", "extract_wait", "solve_submit", "solve_wait"]);
 
@@ -282,62 +283,33 @@ export default async function ExamDetailPage({
         {canEdit && <AddAnswerKeyForm code={exam.code} nextSortOrder={(keys ?? []).length} />}
       </div>
 
+      {canEdit && exam.status === "닫힘" && (
+        <TutorDownloadCostInput code={exam.code} cost={exam.tutor_download_cost ?? null} />
+      )}
+
       {(explanations ?? []).length > 0 && (
         <div className="card">
-          <h2 className="font-medium mb-3">문항 해설 ({(explanations ?? []).length}문항, AI 자동 생성)</h2>
+          <h2 className="font-medium mb-3">
+            문항 해설 ({(explanations ?? []).length}문항, AI 자동 생성{canEdit ? " · 직접 수정 가능" : ""})
+          </h2>
           <div className="space-y-2">
             {(explanations ?? []).map((e: any) => (
-              <details key={e.id} className="border border-slate-200 rounded px-3 py-2">
-                <summary className="cursor-pointer text-sm font-medium flex items-center gap-2">
-                  <span>{e.item_label}번</span>
-                  <span className="text-slate-400 font-normal">
-                    {e.area && `${e.area} · `}
-                    {e.difficulty}
-                    {e.points_assigned && " · 배점임의"}
-                  </span>
-                  {e.exam_error_suspected && <span className="badge bg-red-100 text-red-700">⚠ 출제오류 의심</span>}
-                </summary>
-                <div className="mt-2 text-sm space-y-2 text-slate-700">
-                  {e.exam_error_suspected && (
-                    <div className="border border-red-200 bg-red-50 text-red-800 rounded px-3 py-2 text-sm space-y-1">
-                      <p className="font-medium">⚠ 출제오류 의심{e.exam_error_kind ? ` — ${e.exam_error_kind}` : ""}</p>
-                      {e.exam_error_reason && <p className="whitespace-pre-wrap">{e.exam_error_reason}</p>}
-                      {e.exam_error_student_note && <p className="text-red-700">학생 안내: {e.exam_error_student_note}</p>}
-                    </div>
-                  )}
-                  {e.unit && <p className="text-slate-500">단원: {e.unit}</p>}
-                  {e.difficulty_reason && <p className="text-slate-500">난이도 판단: {e.difficulty_reason}</p>}
-                  {e.problem_statement && <p className="whitespace-pre-wrap">{e.problem_statement}</p>}
-                  {e.answer_display && (
-                    <p>
-                      <span className="font-medium">정답: </span>
-                      {e.answer_display}
-                    </p>
-                  )}
-                  {e.solution && (
-                    <div>
-                      <p className="font-medium">풀이</p>
-                      <p className="whitespace-pre-wrap">{e.solution}</p>
-                    </div>
-                  )}
-                  {isAdmin && (
-                    <ErrorCheckControl
-                      code={exam.code}
-                      label={e.item_label}
-                      suspected={e.exam_error_suspected}
-                      initialCheck={
-                        checksByLabel[e.item_label]
-                          ? {
-                              stage: checksByLabel[e.item_label]!.stage,
-                              message: checksByLabel[e.item_label]!.message,
-                              updatedAt: checksByLabel[e.item_label]!.updatedAt,
-                            }
-                          : null
+              <ItemExplanationRow
+                key={e.id}
+                code={exam.code}
+                row={e}
+                canEdit={canEdit}
+                isAdmin={isAdmin}
+                initialCheck={
+                  checksByLabel[e.item_label]
+                    ? {
+                        stage: checksByLabel[e.item_label]!.stage,
+                        message: checksByLabel[e.item_label]!.message,
+                        updatedAt: checksByLabel[e.item_label]!.updatedAt,
                       }
-                    />
-                  )}
-                </div>
-              </details>
+                    : null
+                }
+              />
             ))}
           </div>
         </div>
