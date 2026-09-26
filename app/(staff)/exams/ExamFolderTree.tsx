@@ -35,7 +35,7 @@ function schoolOf(name: string): string {
   const outside = parenMatch ? name.replace(parenMatch[0], "") : name;
   const inside = parenMatch ? parenMatch[1] : "";
   for (const text of [outside, inside]) {
-    const m = text.match(/[가-힣]{2,10}(고등학교|고)(?![가-힣])/);
+    const m = text.match(/[가-힣]{2,20}(고등학교|고)(?![가-힣])/);
     if (m) return normalizeSchool(m[0]);
   }
   return "학교 미상";
