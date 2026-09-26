@@ -6,7 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { Role } from "@/lib/supabase/types";
 
 function isRole(v: unknown): v is Role {
-  return v === "admin" || v === "editor" || v === "viewer";
+  return v === "admin" || v === "editor" || v === "viewer" || v === "tutor";
 }
 
 /** 새 계정 초대: 이메일로 로그인 링크가 담긴 초대 메일을 보내고, 원하는 역할을 함께 지정한다. */
@@ -41,6 +41,12 @@ export async function changeRole(userId: string, role: Role) {
   const admin = createAdminClient();
   const { error } = await admin.from("profiles").update({ role }).eq("id", userId);
   if (error) return { ok: false, msg: "권한을 바꾸지 못했습니다: " + error.message };
+
+  // 원래 다른 역할이었다가 나중에 tutor로 바뀐 계정은 가입 트리거(handle_new_user)가 실행된 적이
+  // 없어 tutor_stats 행이 없을 수 있다 — 없으면 여기서 만들어 둔다(있으면 그대로 둠).
+  if (role === "tutor") {
+    await (admin.from("tutor_stats") as any).upsert({ tutor_id: userId }, { onConflict: "tutor_id", ignoreDuplicates: true });
+  }
 
   revalidatePath("/admin/users");
   return { ok: true };
