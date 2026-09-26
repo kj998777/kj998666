@@ -218,20 +218,27 @@ function dgPlainLen(s: string): number {
 }
 
 function dgTex(katex: any, t: string | null | undefined): string {
-  // 글 → HTML: $…$ 는 KaTeX 수식, 줄바꿈은 <br>, 나머지는 이스케이프
+  // 글 → HTML: $…$ 는 KaTeX 수식, 줄바꿈은 <br>, 나머지는 이스케이프.
+  // $ 가 홀수 개면(마지막 수식이 닫히지 않은 경우) 마지막 조각만 글자 그대로 두고
+  // (split이 먹은 $ 를 되살려 붙인다), 그 앞에서 정상적으로 짝지어진 수식은 그대로 렌더링한다.
+  // (예전에는 이런 경우 문자열 전체를 통째로 "수식 아님"으로 보고 포기해서, 문항 하나에서
+  // AI가 실수로 $ 를 하나 빠뜨리면 그 문항의 모든 수식이 \frac{...} 같은 명령어 글자 그대로
+  // 남는 문제가 있었다 — 실제로 신고된 "수식이 명령어 상태 그대로 남는" 버그의 원인.)
   const s = String(t == null ? "" : t);
-  let parts = s.split("$");
-  if (parts.length % 2 === 0) parts = [s]; // $ 가 홀수 개면 수식으로 보지 않고 글자 그대로
+  const parts = s.split("$");
+  const unpaired = parts.length % 2 === 0; // $ 가 홀수 개
   const out: string[] = [];
   for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 1) {
+    const isTrailingUnpaired = unpaired && i === parts.length - 1;
+    if (i % 2 === 1 && !isTrailingUnpaired) {
       try {
         out.push(katex.renderToString(parts[i], { throwOnError: false }));
       } catch {
         out.push(esc(parts[i]));
       }
     } else {
-      out.push(esc(parts[i]).replace(/\n/g, "<br>"));
+      const text = isTrailingUnpaired ? "$" + parts[i] : parts[i];
+      out.push(esc(text).replace(/\n/g, "<br>"));
     }
   }
   return out.join("");
