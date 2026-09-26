@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import CreateExamForm from "./CreateExamForm";
 import CreateAiExamForm from "./CreateAiExamForm";
+import CreateAiExamBatchForm from "./CreateAiExamBatchForm";
 import ExamFolderTree from "./ExamFolderTree";
 
 const LEVEL_LABEL: Record<string, string> = { 초: "초등학교", 중: "중학교", 고: "고등학교" };
@@ -43,6 +44,13 @@ export default async function ExamsPage({ searchParams }: { searchParams?: { lev
             </div>
           )}
         </div>
+      )}
+
+      {isAdmin && (
+      <div className="card border-sky-200">
+      
+      <h2 className="font-medium mb-3">여러 시험 한꺼번에 올리기 (AI 자동 처리)</h2>
+      <CreateAiExamBatchForm /></div>
       )}
 
       <div className="card">
