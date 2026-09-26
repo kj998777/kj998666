@@ -17,6 +17,7 @@ import { getItemCheck } from "@/lib/ai/errorcheck";
 import DigitizeControl from "./DigitizeControl";
 import { getDigitizeJob } from "@/lib/ai/digitize";
 import SchoolLevelSelect from "./SchoolLevelSelect";
+import FolderSelect from "./FolderSelect";
 
 const ACTIVE_STAGES = new Set(["upload", "extract_submit", "extract_wait", "solve_submit", "solve_wait"]);
 
@@ -136,6 +137,16 @@ export default async function ExamDetailPage({
       </div>
 
       {canEdit && <SchoolLevelSelect code={exam.code} level={exam.school_level ?? null} />}
+
+      {canEdit && (
+        <FolderSelect
+          code={exam.code}
+          year={exam.folder_year ?? null}
+          grade={exam.folder_grade ?? null}
+          term={exam.folder_term ?? null}
+          kind={exam.folder_kind ?? null}
+        />
+      )}
 
       {session.role !== "admin" && exam.status === "검수대기" && (
         <div className="card border-amber-300 bg-amber-50 text-amber-800 text-sm">
