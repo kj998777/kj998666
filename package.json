@@ -11,7 +11,7 @@
     "migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
-    "@pdf-lib/fontkit": "^1.1.1",
+    "@napi-rs/canvas": "^1.0.9",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
     "next": "^14.2.5",
