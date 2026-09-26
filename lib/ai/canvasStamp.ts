@@ -1,7 +1,7 @@
 import "server-only";
 import { readFile } from "fs/promises";
 import path from "path";
-import { createCanvas, loadImage, GlobalFonts, type SKRSContext2D, type Image as CanvasImage } from "@napi-rs/canvas";
+import { createCanvas, loadImage, GlobalFonts, type SKRSContext2D, type Image as CanvasImage, type Canvas } from "@napi-rs/canvas";
 import QRCode from "qrcode";
 
 // 표지·정오표·QR 안내 쪽을 "그림(PNG)"으로 그려서 PDF에 통째로 박아 넣는다.
@@ -306,7 +306,9 @@ export async function renderFixSheetPngs(
     H = Math.max(700, Math.round((W * ph) / pw)),
     mx = 90,
     lw = 170;
-  const sheets: ReturnType<typeof createCanvas>[] = [];
+  // createCanvas는 오버로드(두 번째 인자로 "svg" 포맷도 받음) 함수라 ReturnType<typeof createCanvas>가
+  // SvgCanvas로 잡혀 버그가 났었다. 실제로 여기서 만드는 건 항상 일반 PNG 캔버스이므로 Canvas로 명시.
+  const sheets: Canvas[] = [];
   let g!: SKRSContext2D;
   let y = 0;
 
