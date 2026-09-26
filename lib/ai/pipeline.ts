@@ -80,6 +80,7 @@ function inlineDoc(base64: string) {
     cache_control: { type: "ephemeral" },
   };
 }
+
 /** 배치를 만든다. 파일 참조가 거절되면(inline 폴백) PDF를 요청마다 직접 실어 여러 배치로 나눠 보낸다. */
 async function createBatchesChunked(
   client: Client,
