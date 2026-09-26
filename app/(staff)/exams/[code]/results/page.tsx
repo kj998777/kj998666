@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import ResultRow from "./ResultRow";
+import ReportPanel from "./ReportPanel";
 
 type PerItem = { item_label: string; given: string; correct: boolean; points: number }[];
 
@@ -44,6 +45,8 @@ export default async function ResultsPage({ params }: { params: { code: string }
           제출 {submissions.length}명 · 평균 {avg}점
         </p>
       </div>
+
+      <ReportPanel code={code} examName={exam.name} />
 
       <div className="card">
         {error && <p className="text-sm text-red-600">불러오지 못했습니다: {error.message}</p>}
