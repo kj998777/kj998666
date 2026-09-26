@@ -1,51 +1,31 @@
 import "server-only";
 import { readFile } from "fs/promises";
 import path from "path";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
-import QRCode from "qrcode";
+import { PDFDocument } from "pdf-lib";
 import { getExamPdfBuffer } from "./pdf";
+import { renderCoverPng, renderFixSheetPngs, renderStampPng } from "./canvasStamp";
 
 // 시험지 PDF에 표지·정오표(정정 페이지)·QR 안내 쪽을 붙여 학생에게 나눠 줄 최종 PDF를 만든다.
-// Apps Script(teacher-report-app.md v23~v25)의 stampPdf/coverCanvas/fixSheetCanvases 를
-// pdf-lib(순수 JS, Vercel 서버리스에서 문제없이 동작)로 다시 구현한 것 — 원본은 브라우저에 서버가
-// 없어 캔버스로 그림을 그려 이미지로 박아 넣는 방식이었지만, 여기서는 서버에 진짜 PDF 생성기가
-// 있으므로 캔버스 없이 pdf-lib의 drawText/drawRectangle로 직접 그린다(더 가볍고 폰트도 선명함).
 //
-// 알아 둘 점(v1, 원본 대비 단순화한 부분):
-// - 원본 해설·마킹(OMR) 쪽을 AI로 자동 판별해 빼는 기능(cleanPlan)은 아직 포팅하지 않았다.
-//   대신 관리자가 뺄 쪽 번호를 직접 입력한다(excludePages).
-// - 원본 페이지 안에 인쇄되어 있던 QR·안내 문구를 흰 칸으로 가리는 기능도 아직 없다.
-// - 학원 로고 이미지 파일이 저장소에 없어 이번에는 글자(학원 이름)로 대신한다.
-//   assets/branding/logo.png 를 넣어 두면 다음 버전에서 이미지로 바꿀 수 있다.
+// 2026-09-26: 기존 Apps Script(teacher-report-app.md v23~v25)의 stampPdf를 "그림(PNG)을 그려서
+// 박아 넣는" 원래 방식 그대로 다시 포팅했다. (직전 버전(v1)은 pdf-lib의 drawText로 직접 글자를
+// 그리는 방식으로 재구현했었는데, 그러려면 한글 폰트를 PDF 안에 임베드·서브셋해야 했고, 그게
+// 2026-09에 있었던 두 차례 폰트 버그(① 가변 폰트의 gvar 보간 정보를 pdf-lib/fontkit이 처리하지
+// 못해 글자가 깨짐 ② 그 다음 정적 폰트로 바꾸니 CID-keyed CFF 구조를 서브셋하지 못해 "Not a CFF
+// Font" 오류)의 근본 원인이었다. 이번에 원본과 똑같이 "캔버스로 그려서 이미지로 박아 넣는" 방식
+// 으로 되돌리면서, 서버에는 브라우저 캔버스가 없으므로 @napi-rs/canvas(Skia 기반 Node용 캔버스,
+// lib/ai/canvasStamp.ts)로 대신 그린다. 표지·정오표·QR 안내 쪽의 글자가 전부 그림이 되므로 PDF에
+// 폰트를 임베드할 필요가 아예 없어져, 이 버그가 구조적으로 다시 생길 수 없다.
+// 학원 로고도 이제 실제 이미지(assets/branding/logo.png — teacher-report-app.md의 LOGO_B64를
+// 그대로 추출)를 쓴다. v1에서는 로고 파일이 없어 글자(학원명)로 대신했었다.
+//
+// 여전히 남은, 원본 대비 단순화한 부분: 원본 해설·마킹(OMR) 쪽 자동 판별(cleanPlan)은 아직
+// 포팅하지 않아 관리자가 뺄 쪽 번호를 직접 입력한다(excludePages). 원본 페이지 안의 QR·안내
+// 문구를 흰 칸으로 가리는 기능도 없음.
 
-const ACADEMY_NAME = "메딕수학";
-const ACADEMY_TEL = "064-702-3455";
+const LOGO_PATH = path.join(process.cwd(), "assets", "branding", "logo.png");
 
 type Client = any;
-
-// 한글 폰트: 저장소에 assets/fonts/Pretendard-Regular.ttf(고정폭/정적 TrueType 폰트, OFL 라이선스,
-// 약 2.8MB)로 직접 커밋해 두고 로컬 파일로 읽어 쓴다.
-//
-// 이 폰트가 겪어 온 두 가지 문제(둘 다 2026-09 버그 리포트로 확인):
-// 1) 처음에는 Noto Sans KR의 "가변 폰트(variable font)" 버전을 Google Fonts 미러에서 매번
-//    내려받아 썼는데, pdf-lib(+fontkit)이 가변 폰트의 글자모양 보간(gvar) 정보를 제대로 처리하지
-//    못해 다운로드한 PDF의 한글이 깨졌다.
-// 2) 그래서 정적(static) 폰트인 Pretendard-Regular.otf(OpenType/CFF)로 바꿨더니, 이번엔 CFF가
-//    한글처럼 글자 수가 많은 폰트에서 흔히 쓰는 "CID-keyed CFF" 구조라서, pdf-lib가 쓰는
-//    @pdf-lib/fontkit(오래된 fontkit 포크)이 이 구조의 서브셋을 만들지 못해
-//    "Not a CFF Font" 오류로 PDF 생성 자체가 실패했다.
-// 그래서 지금은 그 OTF를 fontTools(cu2qu)로 직접 변환해, CFF 외곽선을 TrueType(glyf) 외곽선으로
-// 바꾼 .ttf를 커밋해서 쓴다 — 글자 모양·커버리지(한글·영문·숫자·그리스 문자·수학 기호)는 그대로
-// 유지하면서, fontkit이 안정적으로 지원하는 TrueType 서브셋 경로를 타게 만든 것.
-const FONT_PATH = path.join(process.cwd(), "assets", "fonts", "Pretendard-Regular.ttf");
-
-let fontBytesCache: Buffer | null = null;
-async function loadKoreanFontBytes(): Promise<Buffer> {
-  if (fontBytesCache) return fontBytesCache;
-  fontBytesCache = await readFile(FONT_PATH);
-  return fontBytesCache;
-}
 
 export type Correction = { label: string; issue: string; fix: string };
 
@@ -58,26 +38,6 @@ export type StampOptions = {
   submitUrl: string;
   fixes: Correction[];
 };
-
-function wrapText(font: any, text: string, size: number, maxWidth: number): string[] {
-  const paragraphs = text.split("\n");
-  const lines: string[] = [];
-  for (const para of paragraphs) {
-    const words = para.split(/(\s+)/).filter((w) => w !== "");
-    let line = "";
-    for (const w of words) {
-      const trial = line + w;
-      if (font.widthOfTextAtSize(trial, size) > maxWidth && line.trim()) {
-        lines.push(line.trimEnd());
-        line = w.trimStart();
-      } else {
-        line = trial;
-      }
-    }
-    lines.push(line.trimEnd());
-  }
-  return lines.length ? lines : [""];
-}
 
 /** 원본 PDF(examId 로 저장된)에 표지·정정 페이지·QR 쪽을 붙인 최종 PDF 바이트를 만든다. */
 export async function buildStampedExamPdf(client: Client, examId: string, opts: StampOptions): Promise<Uint8Array> {
@@ -92,10 +52,6 @@ export async function buildStampedExamPdf(client: Client, examId: string, opts: 
   if (!keptIdx.length) throw new Error("모든 쪽을 뺄 수는 없습니다.");
 
   const out = await PDFDocument.create();
-  const koreanFontBytes = await loadKoreanFontBytes();
-  out.registerFontkit(fontkit as any);
-  const kfont = await out.embedFont(koreanFontBytes, { subset: true });
-  const helv = await out.embedFont(StandardFonts.Helvetica);
 
   // 기준 페이지 크기 = 원본 첫 쪽 크기(표지·정오표·QR 쪽 모두 이 크기로 맞춘다)
   const firstSrc = src.getPage(keptIdx[0]);
@@ -103,157 +59,49 @@ export async function buildStampedExamPdf(client: Client, examId: string, opts: 
 
   // 1) 본문(원본에서 뺄 쪽 제외)
   const copied = await out.copyPages(src, keptIdx);
-  // 2) 표지 + 백지 (이 시점에는 out이 비어 있으므로 순서대로 addPage 하면 그대로 맨 앞이 된다)
+
+  // 2) 표지 + 백지 — 그림(PNG) 한 장을 쪽 전체에 꽉 채워 그린다(이 시점에는 out이 비어 있으므로
+  //    순서대로 addPage 하면 그대로 맨 앞이 된다)
   if (opts.cover) {
-    const cover = out.addPage([PW, PH]);
-    drawCover(cover, kfont, helv, PW, PH, opts.examName);
-    out.addPage([PW, PH]); // 백지
+    const coverPng = await renderCoverPng(opts.examName, PW, PH);
+    const coverImg = await out.embedPng(coverPng);
+    const coverPage = out.addPage([PW, PH]);
+    coverPage.drawImage(coverImg, { x: 0, y: 0, width: PW, height: PH });
+    out.addPage([PW, PH]); // 백지(앞뒤 인쇄 때 표지 뒷면이 비도록)
   }
   for (const p of copied) out.addPage(p);
 
-  // 3) 정정 페이지(정오표) — 로고·QR 쪽 바로 앞
+  // 3) 정정 페이지(정오표) — 로고·QR 쪽 바로 앞. 원본 시험지 쪽은 건드리지 않는다
   const fixes = opts.fixes.filter((f) => f.issue || f.fix);
   if (opts.addFixPage && fixes.length) {
-    drawFixPages(out, kfont, PW, PH, fixes);
+    const sheetPngs = await renderFixSheetPngs(fixes, PW, PH);
+    for (const png of sheetPngs) {
+      const img = await out.embedPng(png);
+      const page = out.addPage([PW, PH]);
+      page.drawImage(img, { x: 0, y: 0, width: PW, height: PH });
+    }
   }
 
-  // 4) 로고 + QR 쪽 (맨 뒤)
-  const qrPng = await QRCode.toBuffer(opts.submitUrl, { type: "png", width: 600, margin: 1 });
-  const qrImage = await out.embedPng(qrPng);
+  // 4) 로고 + QR 쪽(맨 뒤): 가운데 = 학원 로고(폭의 70%), 오른쪽 아래 = 이 시험의 답안 제출 QR
+  //    박스(폭의 30%, 여백 12mm) — 원본 stampPdf의 배치 그대로.
+  const [logoBytes, stampPng] = await Promise.all([
+    readFile(LOGO_PATH),
+    renderStampPng(opts.examCode, opts.submitUrl),
+  ]);
+  const logoImg = await out.embedPng(logoBytes);
+  const stampImg = await out.embedPng(stampPng);
   const back = out.addPage([PW, PH]);
-  drawBackPage(back, kfont, helv, PW, PH, qrImage, opts.examCode);
+  const lw = PW * 0.7,
+    lh = (lw * logoImg.height) / logoImg.width;
+  back.drawImage(logoImg, { x: (PW - lw) / 2, y: (PH - lh) / 2, width: lw, height: lh });
+  const pt = 72 / 25.4; // mm -> pt
+  const W = PW * 0.3,
+    H = (W * stampImg.height) / stampImg.width,
+    mg = 12 * pt;
+  back.drawImage(stampImg, { x: PW - W - mg, y: mg, width: W, height: H });
 
   // 총 쪽수는 항상 짝수로 맞춘다(양면 인쇄 대비, 원본 방식과 동일)
   if (out.getPageCount() % 2 !== 0) out.addPage([PW, PH]);
 
   return out.save();
-}
-
-function drawCover(page: any, kfont: any, helv: any, PW: number, PH: number, examName: string): void {
-  const cx = PW / 2;
-  let y = PH - 90;
-  const title = examName || "시험지";
-  const titleSize = title.length > 20 ? 20 : 26;
-  const tw = kfont.widthOfTextAtSize(title, titleSize);
-  page.drawText(title, { x: cx - tw / 2, y, size: titleSize, font: kfont, color: rgb(0.15, 0.15, 0.2) });
-  y -= 50;
-
-  const big = "내신 기출 문제지";
-  const bw = kfont.widthOfTextAtSize(big, 34);
-  page.drawText(big, { x: cx - bw / 2, y, size: 34, font: kfont, color: rgb(0.05, 0.05, 0.1) });
-  y -= 34;
-  const badge = "내신 대비";
-  const bdw = kfont.widthOfTextAtSize(badge, 14);
-  page.drawRectangle({ x: cx - bdw / 2 - 10, y: y - 22, width: bdw + 20, height: 28, color: rgb(0.9, 0.95, 1) });
-  page.drawText(badge, { x: cx - bdw / 2, y: y - 16, size: 14, font: kfont, color: rgb(0.1, 0.3, 0.6) });
-  y -= 70;
-
-  // 이름/반 기입 칸
-  page.drawText("반: __________    이름: __________", { x: cx - 140, y, size: 15, font: kfont, color: rgb(0.2, 0.2, 0.2) });
-  y -= 40;
-
-  // 안내 상자
-  const boxW = PW - 140;
-  const boxX = 70;
-  const boxLines = [
-    "· 위 칸에 반과 이름을 적어 주세요.",
-    "· 마지막 쪽의 QR 코드를 스캔하면 답을 제출할 수 있습니다.",
-    "· 제출하면 자동으로 채점되고, 문항별 분석 보고서를 받아볼 수 있습니다.",
-    "· 궁금한 점이 있으면 아래 연락처로 상담해 주세요.",
-  ];
-  const boxH = 26 + boxLines.length * 22 + 40;
-  page.drawRectangle({ x: boxX, y: y - boxH, width: boxW, height: boxH, borderColor: rgb(0.7, 0.7, 0.75), borderWidth: 1 });
-  let by = y - 30;
-  for (const line of boxLines) {
-    page.drawText(line, { x: boxX + 20, y: by, size: 13, font: kfont, color: rgb(0.25, 0.25, 0.3) });
-    by -= 22;
-  }
-  by -= 10;
-  const telText = `문의·상담 : ${ACADEMY_TEL}`;
-  const telW = kfont.widthOfTextAtSize(telText, 13);
-  page.drawRectangle({ x: cx - telW / 2 - 12, y: by - 8, width: telW + 24, height: 26, color: rgb(0.93, 0.93, 0.93) });
-  page.drawText(telText, { x: cx - telW / 2, y: by, size: 13, font: kfont, color: rgb(0.2, 0.2, 0.2) });
-  y -= boxH + 40;
-
-  // 목록 상자
-  const listItems = ["내신 기출 분석", "문항별 해설", "성적 분석 보고서"];
-  const listW = 260;
-  const listH = 26 + listItems.length * 22;
-  page.drawRectangle({ x: cx - listW / 2, y: y - listH, width: listW, height: listH, borderColor: rgb(0.75, 0.75, 0.8), borderWidth: 1 });
-  let ly = y - 26;
-  for (const item of listItems) {
-    page.drawText("· " + item, { x: cx - listW / 2 + 20, y: ly, size: 12, font: kfont, color: rgb(0.3, 0.3, 0.35) });
-    ly -= 22;
-  }
-
-  // 맨 아래 학원 이름
-  const nameText = ACADEMY_NAME;
-  const nameSize = 26;
-  const nameW = kfont.widthOfTextAtSize(nameText, nameSize);
-  page.drawText(nameText, { x: cx - nameW / 2, y: 70, size: nameSize, font: kfont, color: rgb(0.1, 0.1, 0.15) });
-  void helv;
-}
-
-function drawFixPages(out: PDFDocument, kfont: any, PW: number, PH: number, fixes: Correction[]): void {
-  const mx = 60;
-  const contentW = PW - mx * 2;
-  let page: any;
-  let first = true;
-  let y = 0;
-
-  function fresh() {
-    page = out.addPage([PW, PH]);
-    y = PH - 90;
-    page.drawText(first ? "정오표 (시험지 정정 안내)" : "정오표 (이어서)", { x: mx, y, size: 22, font: kfont, color: rgb(0.05, 0.05, 0.1) });
-    y -= 22;
-    if (first) {
-      page.drawText("아래 문항은 시험지 인쇄에 오류가 있어 이렇게 고쳐서 풀어 주세요.", {
-        x: mx,
-        y,
-        size: 12,
-        font: kfont,
-        color: rgb(0.3, 0.3, 0.35),
-      });
-      y -= 18;
-    }
-    page.drawLine({ start: { x: mx, y }, end: { x: PW - mx, y }, thickness: 1.2, color: rgb(0.1, 0.1, 0.1) });
-    y -= 26;
-    first = false;
-  }
-
-  fresh();
-
-  for (const f of fixes) {
-    const label = /^\d/.test(f.label) ? f.label + "번" : f.label;
-    const text = (f.issue ? `[오류] ${f.issue}\n` : "") + (f.fix ? `[정정] ${f.fix}` : "");
-    const lines = wrapText(kfont, text, 12, contentW - 110);
-    const need = lines.length * 18 + 24;
-    if (y - need < 70) fresh();
-    page.drawText(label, { x: mx, y: y - 4, size: 13, font: kfont, color: rgb(0.05, 0.05, 0.1) });
-    let ty = y - 4;
-    for (const line of lines) {
-      page.drawText(line, { x: mx + 100, y: ty, size: 12, font: kfont, color: rgb(0.15, 0.15, 0.2) });
-      ty -= 18;
-    }
-    y = ty - 12;
-    page.drawLine({ start: { x: mx, y: y + 6 }, end: { x: PW - mx, y: y + 6 }, thickness: 0.5, color: rgb(0.8, 0.8, 0.8) });
-  }
-}
-
-function drawBackPage(page: any, kfont: any, helv: any, PW: number, PH: number, qrImage: any, examCode: string): void {
-  const cx = PW / 2;
-  const nameText = ACADEMY_NAME;
-  const nameSize = 30;
-  const nameW = kfont.widthOfTextAtSize(nameText, nameSize);
-  page.drawText(nameText, { x: cx - nameW / 2, y: PH / 2 + 20, size: nameSize, font: kfont, color: rgb(0.15, 0.15, 0.2) });
-
-  const qrSize = Math.min(220, PW * 0.32);
-  const qrX = PW - 70 - qrSize;
-  const qrY = 60;
-  page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
-  const caption = "QR을 스캔해 답 제출";
-  const capW = kfont.widthOfTextAtSize(caption, 12);
-  page.drawText(caption, { x: qrX + qrSize / 2 - capW / 2, y: qrY - 18, size: 12, font: kfont, color: rgb(0.3, 0.3, 0.35) });
-  void helv;
-  void examCode;
 }
