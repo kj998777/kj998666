@@ -76,7 +76,7 @@ export default function SubmissionForm({
               }
               setResult({
                 pointsEarned: r.pointsEarned,
-                isMatch: "isMatch" in r ? r.isMatch : undefined,
+                isMatch: "isMatch" in r ? (r as { isMatch: boolean }).isMatch : undefined,
               });
             })
           }
