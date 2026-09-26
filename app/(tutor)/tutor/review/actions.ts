@@ -29,7 +29,7 @@ export async function submitPrimaryReview(itemExplanationId: string, answerDispl
   if (!answerDisplay.trim()) return { ok: false, msg: "정답을 입력해 주세요." };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("submit_tutor_review", {
+  const { data, error } = await (supabase.rpc as any)("submit_tutor_review", {
     p_item_explanation_id: itemExplanationId,
     p_answer_display: answerDisplay.trim(),
     p_solution: solution.trim(),
@@ -50,7 +50,7 @@ export async function submitVerification(itemExplanationId: string, answerDispla
   if (!answerDisplay.trim()) return { ok: false, msg: "정답을 입력해 주세요." };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("submit_tutor_verification", {
+  const { data, error } = await (supabase.rpc as any)("submit_tutor_verification", {
     p_item_explanation_id: itemExplanationId,
     p_answer_display: answerDisplay.trim(),
     p_solution: solution.trim(),
