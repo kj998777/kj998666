@@ -29,7 +29,7 @@ export default async function TutorStorePage() {
             않습니다.
           </p>
         </div>
-        <Link href="/tutor/store/purchases" className="text-sm text-blue-600 whitespace-nowrap">
+        <Link href="/tutor/store/purchases" className="text-sm link-accent whitespace-nowrap">
           구매 내역 →
         </Link>
       </div>
