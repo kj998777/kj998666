@@ -21,7 +21,7 @@ export default async function ReviewItemPage({
   const supabase = await createClient();
   const { data: item } = (await supabase
     .from("item_explanations")
-    .select("id, exam_id, item_label, area, unit, difficulty, source_page")
+    .select("id, exam_id, item_label, area, unit, difficulty, source_page, bbox_x0, bbox_y0, bbox_x1, bbox_y1")
     .eq("id", params.itemId)
     .maybeSingle()) as any;
 
@@ -66,7 +66,15 @@ export default async function ReviewItemPage({
           난이도 {item.difficulty}
         </p>
         <div className="border-t border-slate-100 pt-2">
-          <ProblemPageImage pdfUrl={`/tutor/review/${item.id}/pdf`} page={item.source_page ?? null} />
+          <ProblemPageImage
+            pdfUrl={`/tutor/review/${item.id}/pdf`}
+            page={item.source_page ?? null}
+            bbox={
+              item.bbox_x0 != null && item.bbox_y0 != null && item.bbox_x1 != null && item.bbox_y1 != null
+                ? { x0: item.bbox_x0, y0: item.bbox_y0, x1: item.bbox_x1, y1: item.bbox_y1 }
+                : null
+            }
+          />
         </div>
         <p className="text-xs text-slate-400">
           문제가 여러 쪽에 걸쳐 있거나 이미지가 잘 안 보이면 위 &quot;원본 문제지 PDF 보기&quot;에서
