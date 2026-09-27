@@ -118,7 +118,7 @@ export default function LoginPage() {
       setErr(
         error.message.toLowerCase().includes("already registered")
           ? "이미 가입된 이메일입니다. 로그인해 주세요. (예전에 이메일 링크로만 가입해서 " +
-              "\"비밀번호를 잊으셨나요?\"로 설정해 주세요.)"
+              "비밀번호가 없다면 \"비밀번호를 잊으셨나요?\"로 설정해 주세요.)"
           : "회원가입하지 못했습니다: " + error.message
       );
       return;
