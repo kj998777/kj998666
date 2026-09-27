@@ -104,7 +104,7 @@ export default function ProblemPageImage({
         const target = Math.min(Math.max(1, currentPage), doc.numPages);
         if (target !== currentPage) {
           setCurrentPage(target);
-          return; // currentPage가 바뀌면 이 effect가 다시 돌면서 그 쪽을 그린다.
+          return; // currentPage가 바뿀면 이 effect가 다시 돌면서 그 쪽을 그린다.
         }
         const pg = await doc.getPage(target);
         const v1 = pg.getViewport({ scale: 1 });
@@ -177,7 +177,7 @@ export default function ProblemPageImage({
     <div className="space-y-2">
       {!knownPage && status !== "error" && (
         <p className="text-xs text-amber-600">
-          이 문항은 인쇄된 쪽 번호를 몰라 1쪽부터 보여드립니다. 아래에서 쪽을 넘겨 문제를 찾아 주세요.
+          이 문항은 인쇄된 쪽 번호를 모라 1쪽부터 보여드립니다. 아래에서 쪽을 넘겨 문제를 찾아 주세요.
         </p>
       )}
       <div className="border border-slate-200 rounded overflow-auto bg-slate-50">
@@ -185,9 +185,7 @@ export default function ProblemPageImage({
           <p className="text-sm text-slate-400 p-6 text-center">문제 이미지를 불러오는 중...</p>
         )}
         {status === "error" && (
-          <p className="text-sm text-slate-500 p-4 text-center">
-            {err} 위 &quot;원본 문제지 PDF 보기&quot;에서 직접 확인해 주세요.
-          </p>
+          <p className="text-sm text-slate-500 p-4 text-center">{err} 새로고침해서 다시 시도해 주세요.</p>
         )}
         <canvas
           ref={canvasRef}
