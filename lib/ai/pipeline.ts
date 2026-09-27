@@ -411,6 +411,10 @@ async function finishExam(
     solution: r.sol,
     points_assigned: !!r.assigned,
     source_page: r.page || null,
+    bbox_x0: r.bbox ? r.bbox.x0 : null,
+    bbox_y0: r.bbox ? r.bbox.y0 : null,
+    bbox_x1: r.bbox ? r.bbox.x1 : null,
+    bbox_y1: r.bbox ? r.bbox.y1 : null,
   }));
   const correctionRows = rows
     .filter((r) => r.fix)
