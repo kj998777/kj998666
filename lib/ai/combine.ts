@@ -156,7 +156,7 @@ export function autoCombine(
     }
   } else {
     row.answer = pa || ai;
-    row.notes = notesArr(s.notes).slice(0, 5).map((t) => q.label + "번: —" + t);
+            row.notes = notesArr(s.notes).slice(0, 5).map((t) => q.label + "번: " + t);
     row.flag = { c: confOf(s) };
     if (pa && ai && !isCorrect(ai, pa)) {
       row.flag.c = "low";
@@ -197,7 +197,7 @@ export function autoCombine(
       row.notes.push(q.label + "번: 정정 문구에 답·풀이와 관련된 표현이 있어 정오표에서는 그 부분을 자동으로 뺐습니다.");
     }
     const tn = plainFix(ef.teacher_note, 300);
-    if (tn) row.notes.push(q.label + "번:  줕보습 처과( 욐샜이게 안 보임): " + tn);
+    if (tn) row.notes.push(q.label + "번 정정 참고(학생에게 안 보임): " + tn);
   }
 
   return row;
