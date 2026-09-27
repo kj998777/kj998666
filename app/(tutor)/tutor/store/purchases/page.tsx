@@ -26,7 +26,7 @@ export default async function TutorPurchasesPage() {
           <h1 className="text-lg font-semibold">구매한 기출문제</h1>
           <p className="text-sm text-slate-500">한 번 구매하면 몇 번이든 다시 받을 수 있습니다.</p>
         </div>
-        <Link href="/tutor/store" className="text-sm text-blue-600 whitespace-nowrap">
+        <Link href="/tutor/store" className="text-sm link-accent whitespace-nowrap">
           ← 스토어로
         </Link>
       </div>
