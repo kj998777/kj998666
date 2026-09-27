@@ -97,7 +97,7 @@ function JobList({
         {rows.map((r) => (
           <tr key={r.code} className="border-b border-slate-100 last:border-0 align-top">
             <td className="py-1.5 pr-2 whitespace-nowrap">
-              <Link href={`/exams/${encodeURIComponent(r.code)}`} className="text-blue-600 hover:underline">
+              <Link href={`/exams/${encodeURIComponent(r.code)}`} className="link-accent">
                 {r.name}
               </Link>
               <span className="text-slate-400"> ({r.code})</span>
