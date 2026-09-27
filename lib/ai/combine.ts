@@ -151,19 +151,19 @@ export function autoCombine(
           (use === "re"
             ? "다시 푼 답 " + row.answer + " 을(를) 정답으로 설정했습니다"
             : "정답은 시험지 인쇄 정답 " + row.answer + " 을(를) 그대로 뒀습니다") +
-         " — 풀이가 맞는지 확인하세요."
+          " — 풀이가 맞는지 확인하세요."
       );
     }
   } else {
     row.answer = pa || ai;
-            row.notes = notesArr(s.notes).slice(0, 5).map((t) => q.label + "번: " + t);
+    row.notes = notesArr(s.notes).slice(0, 5).map((t) => q.label + "번: " + t);
     row.flag = { c: confOf(s) };
     if (pa && ai && !isCorrect(ai, pa)) {
       row.flag.c = "low";
       row.flag.pa = pa;
       row.flag.ai = ai;
       row.notes.push(
-        q.label + "번:  시험지에 인쇄된 정답(" + pa + ")과 AI가 푼 값(" + ai + ")이 다릅니다. 정답은 시험지 표기를 따랐으니 풀이가 맞는지 확인하세요."
+        q.label + "번: 시험지에 인쇄된 정답(" + pa + ")과 AI가 푼 값(" + ai + ")이 다릅니다. 정답은 시험지 표기를 따랐으니 풀이가 맞는지 확인하세요."
       );
     }
     if (!ai) {
