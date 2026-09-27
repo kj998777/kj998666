@@ -60,6 +60,17 @@ function confOf(t: AiSolution | undefined): "high" | "medium" | "low" {
   const c = t?.confidence;
   return c === "high" || c === "medium" || c === "low" ? c : "medium";
 }
+// AI 도구 호출은 notes 를 문자열 배열로 돌려주기로 스키마에 정해 두었지만, 실제로는(특히 노트가
+// 하나뿐일 때) 배열 대신 문자열 하나만 돌려주는 경우가 실제로 관찰됐다(예: notes: "…") — 이때
+// `(s.notes || []).filter(...)` 는 문자열이 truthy라 그대로 문자열에 .filter를 호출해
+// "t.notes.filter is not a function" 오류로 죽고, 재시도해도 같은 문항에서 매번 같은 값을
+// 돌려받으니 재시도 6회를 다 채우고 시험 전체가 영구 오류로 멈췄다. 배열이 아니면 문자열로,
+// 그것도 아니면 빈 배열로 안전하게 정리한다.
+function notesArr(v: unknown): string[] {
+  if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string" && !!x);
+  if (typeof v === "string" && v.trim()) return [v];
+  return [];
+}
 
 export function autoCombine(
   q: QuestionMeta,
@@ -125,7 +136,7 @@ export function autoCombine(
     const c2 = confOf(s2);
     row.flag = { c: agree && c2 !== "low" ? c2 : "low", rs: 1, a1: ai, ai: ai2, use };
     if (pa) row.flag.pa = pa;
-    row.notes = (sx.notes || []).filter(Boolean).slice(0, 5).map((t) => q.label + "번: " + t);
+    row.notes = notesArr(sx.notes).slice(0, 5).map((t) => q.label + "번: " + t);
     if (!agree || c2 === "low") {
       row.notes.push(
         q.label +
@@ -143,7 +154,7 @@ export function autoCombine(
     }
   } else {
     row.answer = pa || ai;
-    row.notes = (s.notes || []).filter(Boolean).slice(0, 5).map((t) => q.label + "번: " + t);
+    row.notes = notesArr(s.notes).slice(0, 5).map((t) => q.label + "번: " + t);
     row.flag = { c: confOf(s) };
     if (pa && ai && !isCorrect(ai, pa)) {
       row.flag.c = "low";
