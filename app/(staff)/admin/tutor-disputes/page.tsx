@@ -13,7 +13,7 @@ export default async function TutorDisputesPage() {
 
   const { data: primariesRaw } = (await supabase
     .from("tutor_item_reviews")
-    .select("id, item_explanation_id, exam_id, item_label, tutor_id, answer_display, solution, created_at")
+    .select("id, item_explanation_id, exam_id, item_label, tutor_id, answer_display, solution, image_path, created_at")
     .eq("kind", "primary")
     .eq("verified", true)
     .eq("resolved", false)
@@ -36,7 +36,7 @@ export default async function TutorDisputesPage() {
   const [{ data: verifiesRaw }, { data: examsRaw }] = await Promise.all([
     supabase
       .from("tutor_item_reviews")
-      .select("id, matches_primary_review_id, tutor_id, answer_display, solution, is_match, created_at")
+      .select("id, matches_primary_review_id, tutor_id, answer_display, solution, image_path, is_match, created_at")
       .eq("kind", "verify")
       .in("matches_primary_review_id", primaryIds),
     supabase.from("exams").select("id, code, name").in("id", examIds),
@@ -82,6 +82,16 @@ export default async function TutorDisputesPage() {
                   <span className="font-medium">정답:</span> {p.answer_display}
                 </p>
                 {p.solution && <p className="whitespace-pre-wrap mt-1">{p.solution}</p>}
+                {p.image_path && (
+                  <a
+                    href={`/admin/tutor-disputes/photo/${p.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm link-accent inline-block mt-1"
+                  >
+                    첨부 사진 보기 →
+                  </a>
+                )}
               </div>
               <div className="border border-slate-200 rounded px-3 py-2">
                 <p className="text-slate-500 mb-1">
@@ -91,6 +101,16 @@ export default async function TutorDisputesPage() {
                   <span className="font-medium">정답:</span> {v?.answer_display ?? "-"}
                 </p>
                 {v?.solution && <p className="whitespace-pre-wrap mt-1">{v.solution}</p>}
+                {v?.image_path && (
+                  <a
+                    href={`/admin/tutor-disputes/photo/${v.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm link-accent inline-block mt-1"
+                  >
+                    첨부 사진 보기 →
+                  </a>
+                )}
               </div>
             </div>
             <ResolveButton primaryReviewId={p.id} />
