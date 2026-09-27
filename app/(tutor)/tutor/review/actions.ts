@@ -1,10 +1,40 @@
 "use server";
 
+import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { requireTutor } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isCorrect } from "@/lib/grading";
+
+const PHOTO_BUCKET = "tutor-review-photos";
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 10MB
+
+/**
+ * 제출 폼에서 올린 사진(선택)을 tutor-review-photos 버킷에 저장하고 경로를 돌려준다.
+ * AI 디지털화는 하지 않는다 — 사진은 원본 그대로 저장해서 나중에 관리자가 눈으로 확인할 때만 쓴다.
+ * 사진이 없으면(image가 없거나 빈 파일) null을 돌려준다.
+ */
+async function uploadReviewPhoto(itemExplanationId: string, image: File | null | undefined): Promise<string | null> {
+  if (!image || image.size === 0) return null;
+  if (!image.type.startsWith("image/")) {
+    throw new Error("이미지 파일만 올릴 수 있습니다.");
+  }
+  if (image.size > MAX_PHOTO_BYTES) {
+    throw new Error("사진 용량이 너무 큽니다(10MB 이하로 올려 주세요).");
+  }
+  const ext = (image.type.split("/")[1] || "jpg").replace(/[^a-z0-9]/gi, "") || "jpg";
+  const path = `${itemExplanationId}/${randomUUID()}.${ext}`;
+  const bytes = Buffer.from(await image.arrayBuffer());
+
+  const admin = createAdminClient();
+  const { error } = await admin.storage.from(PHOTO_BUCKET).upload(path, bytes, {
+    contentType: image.type,
+    upsert: false,
+  });
+  if (error) throw new Error("사진 업로드에 실패했습니다: " + error.message);
+  return path;
+}
 
 /** 다음 검토 문항(새 문항 또는 사후 검증 대상)을 하나 배정받는다. 큐가 비어 있으면 null. */
 export async function claimNextReviewItem(): Promise<{ itemExplanationId: string; kind: "primary" | "verify" } | null> {
@@ -23,16 +53,29 @@ export async function releaseReviewClaim(itemExplanationId: string) {
   revalidatePath("/tutor/review");
 }
 
-/** 최초 제출(primary) — 즉시 반영 + 즉시 적립. */
-export async function submitPrimaryReview(itemExplanationId: string, answerDisplay: string, solution: string) {
+/** 최초 제출(primary) — 즉시 반영 + 즉시 적립. image는 풀이를 찍은 사진(선택, 디지털화하지 않음). */
+export async function submitPrimaryReview(
+  itemExplanationId: string,
+  answerDisplay: string,
+  solution: string,
+  image?: File | null
+) {
   await requireTutor();
   if (!answerDisplay.trim()) return { ok: false, msg: "정답을 입력해 주세요." };
+
+  let imagePath: string | null = null;
+  try {
+    imagePath = await uploadReviewPhoto(itemExplanationId, image);
+  } catch (e: any) {
+    return { ok: false, msg: e?.message || "사진 업로드에 실패했습니다." };
+  }
 
   const supabase = await createClient();
   const { data, error } = await (supabase.rpc as any)("submit_tutor_review", {
     p_item_explanation_id: itemExplanationId,
     p_answer_display: answerDisplay.trim(),
     p_solution: solution.trim(),
+    p_image_path: imagePath,
   });
   if (error) return { ok: false, msg: error.message };
 
@@ -45,15 +88,28 @@ export async function submitPrimaryReview(itemExplanationId: string, answerDispl
  * 세션 클라이언트는 RLS상 원 제출자의 답을 직접 읽을 수 없으므로(의도적 — 블라인드 검증), 비교에
  * 필요한 순간에만 서비스롤 클라이언트로 원 제출을 조회하고, 결과(참/거짓)만 클라이언트로 돌려준다.
  */
-export async function submitVerification(itemExplanationId: string, answerDisplay: string, solution: string) {
+export async function submitVerification(
+  itemExplanationId: string,
+  answerDisplay: string,
+  solution: string,
+  image?: File | null
+) {
   await requireTutor();
   if (!answerDisplay.trim()) return { ok: false, msg: "정답을 입력해 주세요." };
+
+  let imagePath: string | null = null;
+  try {
+    imagePath = await uploadReviewPhoto(itemExplanationId, image);
+  } catch (e: any) {
+    return { ok: false, msg: e?.message || "사진 업로드에 실패했습니다." };
+  }
 
   const supabase = await createClient();
   const { data, error } = await (supabase.rpc as any)("submit_tutor_verification", {
     p_item_explanation_id: itemExplanationId,
     p_answer_display: answerDisplay.trim(),
     p_solution: solution.trim(),
+    p_image_path: imagePath,
   });
   if (error) return { ok: false, msg: error.message };
 
