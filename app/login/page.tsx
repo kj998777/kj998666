@@ -115,10 +115,21 @@ export default function LoginPage() {
         : "가입할 때 쓴 이메일 주소를 입력하면 재설정 링크를 보내드립니다.";
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
+    <div className="min-h-screen flex flex-col items-center justify-center px-4">
+      {/* 메딕차트(시스템) + 메딕수학(학원) 배너 — 메딕차트를 크게 먼저, 학원 로고는 작게 뒤에 */}
+      <div className="flex items-stretch gap-4 mb-6">
+        <div className="flex flex-col justify-center">
+          <div className="brand-mark text-3xl leading-none">메딕차트</div>
+          <p className="text-[11px] tracking-[0.3em] text-slate-400 uppercase mt-1 pl-[calc(1.1em+0.375rem)]">
+            Medic Chart
+          </p>
+        </div>
+        <div className="w-px bg-slate-300" />
+        <div className="flex items-center">
+          <img src="/academy-logo.png" alt="메딕수학 로고" className="h-[34px] w-auto" />
+        </div>
+      </div>
       <div className="card w-full max-w-sm">
-        <div className="brand-mark text-lg mb-1">메딕차트</div>
-        <p className="text-[11px] tracking-[0.2em] text-slate-400 mb-3 uppercase">Medic Chart</p>
         <h1 className="text-base font-semibold mb-1">{title}</h1>
         <p className="text-sm text-slate-500 mb-4 whitespace-pre-line">{subtitle}</p>
 
