@@ -11,6 +11,10 @@ export type QuestionMeta = {
   stem: string;
   fig: boolean;
   pa: string; // printed_answer
+  // 이 문항 전체(문제 글+그림+선택지+<보기> 포함)가 인쇄된 위치. 쪽을 가로 1000×세로 1000으로 나눈
+  // 좌표(DG_TOOL.figures와 같은 규칙). 과외선생님 검토 화면에서 원본 쪽 전체 대신 이 영역만 잘라
+  // 보여주는 데 쓴다(ProblemPageImage.tsx 참고). AI가 못 짚었거나 값이 이상하면 null.
+  bbox: { x0: number; y0: number; x1: number; y1: number } | null;
 };
 
 export const EXTRACT_TOOL = {
@@ -39,6 +43,17 @@ export const EXTRACT_TOOL = {
             stem_start: { type: "string" },
             has_figure: { type: "boolean" },
             printed_answer: { type: ["string", "null"] },
+            bbox: {
+              type: "object",
+              description: "이 문항 전체가 인쇄된 영역의 위치(쪽을 가로세로 1000칸으로 나눈 좌표)",
+              properties: {
+                x0: { type: "number" },
+                y0: { type: "number" },
+                x1: { type: "number" },
+                y1: { type: "number" },
+              },
+              required: ["x0", "y0", "x1", "y1"],
+            },
           },
           required: ["label", "type", "area", "stem_start"],
         },
@@ -73,6 +88,7 @@ export const EXTRACT_PROMPT = [
   "7) notes: 시험지의 오탈자, 잘려 보이거나 해석이 애매한 문제, 배점 표기 이상 등 선생님이 알아야 할 것(없으면 빈 배열).",
   "8) exam_title: 시험지에 적힌 시험 이름(참고용).",
   '9) total_count: 시험지에 인쇄된 큰 문항의 총 개수를 직접 세어 적으세요(객관식과 서답형·서술형·단답형 전부, (1)(2) 소문항은 나누지 않고 1개). 표지에 "총 N문항"이 적혀 있으면 그것과 맞는지 확인하세요. questions 에 적은 문항을 소문항끼리 묶었을 때의 개수와 같아야 합니다.',
+  "10) bbox: 이 문항 전체(문항 번호·문제 글·그림/그래프/표·<보기>·조건 상자·선택지 ①~⑤ 모두 포함, 다음 문항이나 앞 문항과는 안 겹치게)가 인쇄된 사각형 영역. 그 쪽을 가로 1000 × 세로 1000 칸으로 나눴을 때 왼쪽 위가 (0,0), 오른쪽 아래가 (1000,1000)이라고 보고: x0,y0 = 문항 영역의 왼쪽 위, x1,y1 = 오른쪽 아래. 과외선생님 화면에서 이 영역만 잘라서 확대해 보여주는 데 쓰이므로, 문항의 모든 부분(특히 그림과 마지막 선택지)이 잘리지 않게 넉넉히 잡되 다른 문항 내용은 최대한 포함하지 마세요. 소문항(예 27-(1))처럼 한 문항을 나눠 등록하는 경우에도 각 항목마다 bbox 는 원래 큰 문항 전체 영역을 그대로 씁니다(소문항 답란 위치가 아님). 2단 편집이면 그 문항이 있는 단 안에서만 좌표를 잡으세요.",
 ].join("\n");
 
 export const SOLVE_TOOL = {
