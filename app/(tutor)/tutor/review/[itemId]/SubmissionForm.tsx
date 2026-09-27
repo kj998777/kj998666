@@ -16,9 +16,19 @@ export default function SubmissionForm({
   const router = useRouter();
   const [answerDisplay, setAnswerDisplay] = useState("");
   const [solution, setSolution] = useState("");
+  const [image, setImage] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
   const [result, setResult] = useState<{ pointsEarned: number; isMatch?: boolean } | null>(null);
+
+  function handleImageChange(file: File | null) {
+    setImage(file);
+    setImagePreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file ? URL.createObjectURL(file) : null;
+    });
+  }
 
   if (result) {
     return (
@@ -58,6 +68,29 @@ export default function SubmissionForm({
           placeholder="풀이 과정을 적어 주세요."
         />
       </div>
+      <div>
+        <label className="label">풀이 사진 (선택)</label>
+        <p className="text-xs text-slate-500 mb-1">
+          손으로 쓴 풀이를 사진으로 찍어 올려도 됩니다. 자동으로 정리·디지털화되지 않고, 찍은 사진
+          그대로 저장됩니다.
+        </p>
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="input"
+          onChange={(e) => handleImageChange(e.target.files?.[0] ?? null)}
+        />
+        {imagePreviewUrl && (
+          <div className="mt-2 flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imagePreviewUrl} alt="첨부한 풀이 사진 미리보기" className="max-h-40 rounded border border-slate-200" />
+            <button type="button" className="btn-secondary" onClick={() => handleImageChange(null)}>
+              사진 제거
+            </button>
+          </div>
+        )}
+      </div>
       {err && <p className="text-sm text-red-600">{err}</p>}
       <div className="flex items-center gap-2">
         <button
@@ -68,8 +101,8 @@ export default function SubmissionForm({
               setErr("");
               const r =
                 kind === "verify"
-                  ? await submitVerification(itemExplanationId, answerDisplay, solution)
-                  : await submitPrimaryReview(itemExplanationId, answerDisplay, solution);
+                  ? await submitVerification(itemExplanationId, answerDisplay, solution, image)
+                  : await submitPrimaryReview(itemExplanationId, answerDisplay, solution, image);
               if (!r.ok) {
                 setErr(r.msg ?? "제출하지 못했습니다.");
                 return;
