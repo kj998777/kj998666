@@ -70,7 +70,7 @@ export default async function TutorDisputesPage() {
                 {exam?.name ?? "시험"} · {p.item_label}번
               </h2>
               {exam && (
-                <Link href={`/exams/${encodeURIComponent(exam.code)}`} className="text-sm text-blue-600 whitespace-nowrap">
+                <Link href={`/exams/${encodeURIComponent(exam.code)}`} className="text-sm link-accent whitespace-nowrap">
                   시험 상세에서 고치기 →
                 </Link>
               )}
