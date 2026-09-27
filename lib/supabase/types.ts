@@ -239,6 +239,7 @@ export type Database = {
           matches_primary_review_id: string | null;
           is_match: boolean | null;
           resolved: boolean;
+          image_path: string | null;
           created_at: string;
         };
         Insert: never;
