@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import type { Role } from "@/lib/supabase/types";
 
 function isRole(v: unknown): v is Role {
@@ -50,6 +51,29 @@ export async function changeRole(userId: string, role: Role) {
 
   revalidatePath("/admin/users");
   return { ok: true };
+}
+
+/**
+ * #115: 과외선생님 계정 하나를 골라 포인트를 임의로 지급/차감한다(테스트 목적).
+ * admin_adjust_tutor_points RPC는 is_admin()을 내부에서 직접 확인하므로, auth.uid()가 이 화면을 연
+ * 관리자 본인으로 정확히 잡히도록 반드시 일반(세션 바인딩) 클라이언트로 호출해야 한다 —
+ * createAdminClient()(서비스롤)로 호출하면 auth.uid()가 null이 돼서 RPC 내부의 is_admin() 검사가
+ * 항상 실패한다.
+ */
+export async function adjustTutorPoints(tutorId: string, delta: number, note?: string) {
+  await requireRole("admin");
+
+  const supabase = await createClient();
+  const { data, error } = await (supabase.rpc as any)("admin_adjust_tutor_points", {
+    p_tutor_id: tutorId,
+    p_delta: delta,
+    p_note: note && note.trim() ? note.trim() : null,
+  });
+
+  if (error) return { ok: false, msg: "포인트를 조정하지 못했습니다: " + error.message };
+
+  revalidatePath("/admin/users");
+  return { ok: true, previousBalance: data?.previousBalance, newBalance: data?.newBalance };
 }
 
 /** 계정을 완전히 삭제해서 접근을 막는다(로그인 자체를 못 하게 됨). */
