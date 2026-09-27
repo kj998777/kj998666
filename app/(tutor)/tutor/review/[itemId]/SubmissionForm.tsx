@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { submitPrimaryReview, submitVerification, releaseReviewClaim } from "../actions";
+import { submitPrimaryReview, submitVerification, releaseReviewClaim, claimNextReviewItem } from "../actions";
 
 // 새 문항(primary)과 사후 검증(verify) 제출을 같은 폼으로 처리한다 — 화면도, 입력 방식도 완전히
 // 동일해야 검증자가 "이건 검증용이구나"를 눈치채지 못한다(블라인드 검증의 핵심).
@@ -21,6 +21,7 @@ export default function SubmissionForm({
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
   const [result, setResult] = useState<{ pointsEarned: number; isMatch?: boolean } | null>(null);
+  const [nextMsg, setNextMsg] = useState("");
 
   function handleImageChange(file: File | null) {
     setImage(file);
@@ -41,9 +42,28 @@ export default function SubmissionForm({
               : "원 제출과 일치하지 않아 관리자 확인이 필요합니다."}
           </p>
         )}
-        <button className="btn-primary" onClick={() => router.push("/tutor/review")}>
+        <button
+          className="btn-primary"
+          disabled={pending}
+          onClick={() =>
+            start(async () => {
+              setNextMsg("");
+              try {
+                const next = await claimNextReviewItem();
+                if (!next) {
+                  setNextMsg("지금은 검토할 문항이 없습니다. 나중에 다시 확인해 주세요.");
+                  return;
+                }
+                router.push(`/tutor/review/${next.itemExplanationId}?kind=${next.kind}`);
+              } catch (e: any) {
+                setNextMsg(e?.message ?? "문항을 배정받지 못했습니다.");
+              }
+            })
+          }
+        >
           다음 문항 받기
         </button>
+        {nextMsg && <p className="text-sm text-slate-500">{nextMsg}</p>}
       </div>
     );
   }
