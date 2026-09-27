@@ -410,6 +410,7 @@ async function finishExam(
     answer_display: r.disp,
     solution: r.sol,
     points_assigned: !!r.assigned,
+    source_page: r.page || null,
   }));
   const correctionRows = rows
     .filter((r) => r.fix)
