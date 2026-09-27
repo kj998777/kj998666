@@ -16,11 +16,17 @@ export default async function StaffLayout({ children }: { children: React.ReactN
             <Link href="/dashboard" className="brand-mark">
               메딕차트
             </Link>
-            <Link href="/exams">시험·정답</Link>
-            <Link href="/classes">반 관리</Link>
-            {session.role === "admin" && <Link href="/admin/users">계정 관리</Link>}
-            {session.role === "admin" && <Link href="/admin/ai">AI 설정</Link>}
-            {session.role === "admin" && <Link href="/admin/tutor-disputes">과외 검토 분쟁</Link>}
+            <Link href="/exams" className="nav-link">시험·정답</Link>
+            <Link href="/classes" className="nav-link">반 관리</Link>
+            {session.role === "admin" && (
+              <Link href="/admin/users" className="nav-link">계정 관리</Link>
+            )}
+            {session.role === "admin" && (
+              <Link href="/admin/ai" className="nav-link">AI 설정</Link>
+            )}
+            {session.role === "admin" && (
+              <Link href="/admin/tutor-disputes" className="nav-link">과외 검토 분쟁</Link>
+            )}
           </nav>
           <div className="flex items-center gap-3 text-sm text-slate-500">
             <span className="badge bg-slate-100 text-slate-700">
