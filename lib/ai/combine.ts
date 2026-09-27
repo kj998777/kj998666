@@ -33,6 +33,7 @@ export type CombinedRow = {
   label: string;
   type: "mc" | "short";
   points: number | null;
+  page: number;
   assigned: boolean;
   flag: CombinedFlag;
   area: string;
@@ -82,6 +83,7 @@ export function autoCombine(
     label: q.label,
     type: q.type,
     points: q.points,
+    page: q.page,
     assigned: false,
     flag: {},
     area: "",
@@ -149,19 +151,19 @@ export function autoCombine(
           (use === "re"
             ? "다시 푼 답 " + row.answer + " 을(를) 정답으로 설정했습니다"
             : "정답은 시험지 인쇄 정답 " + row.answer + " 을(를) 그대로 뒀습니다") +
-          " — 풀이가 맞는지 확인하세요."
+         " — 풀이가 맞는지 확인하세요."
       );
     }
   } else {
     row.answer = pa || ai;
-    row.notes = notesArr(s.notes).slice(0, 5).map((t) => q.label + "번: " + t);
+    row.notes = notesArr(s.notes).slice(0, 5).map((t) => q.label + "번: —" + t);
     row.flag = { c: confOf(s) };
     if (pa && ai && !isCorrect(ai, pa)) {
       row.flag.c = "low";
       row.flag.pa = pa;
       row.flag.ai = ai;
       row.notes.push(
-        q.label + "번: 시험지에 인쇄된 정답(" + pa + ")과 AI가 푼 값(" + ai + ")이 다릅니다. 정답은 시험지 표기를 따랐으니 풀이가 맞는지 확인하세요."
+        q.label + "번:  시험지에 인쇄된 정답(" + pa + ")과 AI가 푼 값(" + ai + ")이 다릅니다. 정답은 시험지 표기를 따랐으니 풀이가 맞는지 확인하세요."
       );
     }
     if (!ai) {
@@ -195,7 +197,7 @@ export function autoCombine(
       row.notes.push(q.label + "번: 정정 문구에 답·풀이와 관련된 표현이 있어 정오표에서는 그 부분을 자동으로 뺐습니다.");
     }
     const tn = plainFix(ef.teacher_note, 300);
-    if (tn) row.notes.push(q.label + "번 정정 참고(학생에게 안 보임): " + tn);
+    if (tn) row.notes.push(q.label + "번:  줕보습 처과( 욐샜이게 안 보임): " + tn);
   }
 
   return row;
