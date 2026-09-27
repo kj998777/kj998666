@@ -44,6 +44,20 @@ export function autoBaseCount(qs: { label: string }[]): number {
 
 export type NormInfo = { renamed: string[]; dropped: string[] };
 
+/** AI가 적은 bbox(0~1000 좌표)를 정리. 숫자가 아니거나 범위를 벗어나거나 x1<=x0/y1<=y0 이면
+ * (AI가 잘못 짚었다는 뜻이므로) null 로 버린다 — 화면에서는 null 이면 전체 쪽 보기로 대체한다. */
+export function autoBbox(v: unknown): QuestionMeta["bbox"] {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const x0 = Number(o.x0);
+  const y0 = Number(o.y0);
+  const x1 = Number(o.x1);
+  const y1 = Number(o.y1);
+  if ([x0, y0, x1, y1].some((n) => !Number.isFinite(n))) return null;
+  if (x0 < 0 || y0 < 0 || x1 > 1000 || y1 > 1000 || x1 <= x0 || y1 <= y0) return null;
+  return { x0, y0, x1, y1 };
+}
+
 /**
  * AI가 낸 문항 목록을 정리. info 를 주면 info.renamed(서답형 번호가 객관식 번호와 겹쳐 이름을
  * 바꾼 것)·info.dropped(같은 번호가 또 나와 뺀 것)를 채운다. 서답형이 1번부터 다시 매겨진
@@ -70,6 +84,7 @@ export function autoNormQs(input: any, info: NormInfo): QuestionMeta[] {
       stem: String(q.stem_start || "").slice(0, 50),
       fig: q.has_figure === true,
       pa,
+      bbox: autoBbox(q.bbox),
     });
   }
   const mcBase = new Set<string>();
