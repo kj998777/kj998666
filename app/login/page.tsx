@@ -7,10 +7,26 @@
 // 매직 링크 방식으로만 가입해서 비밀번호가 아예 없는 계정) 재설정이 필요한 경우에만 이메일
 // 링크(→ /reset-password)를 한 번 사용한다.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 type Mode = "login" | "signup" | "forgot";
+
+// /auth/callback에서 이메일 링크(비밀번호 재설정·가입 확인) 처리가 실패하면 여기로
+// ?error=... 를 붙여 돌려보낸다. 예전에는 이 파라미터를 아예 읽지 않아서 사용자가 그냥
+// 빈 로그인 화면을 보고 "링크를 눌렀는데 아무 반응이 없다"고 느꼈다(실제로는 그 링크를 요청한
+// 것과 다른 기기/브라우저에서 열어서, PKCE 로그인 방식이 요구하는 code_verifier 쿠키가 없어
+// 실패한 것 — 이 프로젝트에서 말하는 "쿠키 문제"의 유력한 원인). useEffect+location.search로
+// 읽는 이유: 이 페이지는 완전히 클라이언트 컴포넌트라 useSearchParams를 쓰면 Suspense 경계가
+// 추가로 필요해지므로, 더 단순한 방식을 쓴다.
+const CALLBACK_ERROR_MESSAGES: Record<string, string> = {
+  exchange_failed:
+    "이메일로 받은 링크를 열지 못했습니다. 링크를 \"요청했던 것과 같은 기기·브라우저\"에서 " +
+    "열어야 합니다 (예: 컴퓨터에서 요청하고 휴대폰 메일 앱에서 열면 실패합니다 — 로그인에 쓰는 " +
+    "임시 쿠키가 그 브라우저에만 저장되기 때문입니다). 아래에서 다시 요청한 뒤, 그 요청을 보낸 " +
+    "바로 이 화면/브라우저에서 메일을 열어 링크를 눌러 주세요.",
+  no_code: "로그인 링크가 올바르지 않습니다. 아래에서 다시 요청해 주세요.",
+};
 
 export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("login");
@@ -19,6 +35,17 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("error");
+    if (code) {
+      setErr(CALLBACK_ERROR_MESSAGES[code] ?? "로그인 링크 처리 중 문제가 발생했습니다: " + code);
+      setMode("forgot");
+      // 새로고침해도 같은 오류 메시지가 계속 남아있지 않도록 URL에서 파라미터를 지운다.
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -91,7 +118,7 @@ export default function LoginPage() {
       setErr(
         error.message.toLowerCase().includes("already registered")
           ? "이미 가입된 이메일입니다. 로그인해 주세요. (예전에 이메일 링크로만 가입해서 " +
-              "비밀번호가 없다면 \"비밀번호를 잊으셨나요?\"로 설정해 주세요.)"
+              "\"비밀번호를 잊으셨나요?\"로 설정해 주세요.)"
           : "회원가입하지 못했습니다: " + error.message
       );
       return;
@@ -223,3 +250,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
