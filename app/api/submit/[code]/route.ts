@@ -48,10 +48,11 @@ export async function POST(request: Request, { params }: { params: { code: strin
   }
   const class_label = classLabel(lv, grade, matched.name);
 
-  // 2) 시험 존재 + 열림 상태 확인
-  const { data: exam } = await admin.from("exams").select("id, status").eq("code", code).single();
+  // 2) 시험 존재 + (열림 상태이거나 #109: 과외선생님 스토어에 판매 중) 확인
+  //    실제 최종 검증은 submit_and_grade RPC가 잠금과 함께 다시 하므로, 여기서는 빠른 실패용.
+  const { data: exam } = await admin.from("exams").select("id, status, tutor_download_cost").eq("code", code).single();
   if (!exam) return NextResponse.json({ ok: false, msg: "존재하지 않는 시험입니다." }, { status: 404 });
-  if (exam.status !== "열림") {
+  if (exam.status !== "열림" && exam.tutor_download_cost === null) {
     return NextResponse.json({ ok: false, msg: "제출이 마감된 시험입니다." }, { status: 409 });
   }
 
