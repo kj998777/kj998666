@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 
 // pdf.js를 CDN에서 불러와 원본 시험지 PDF의 문항이 있는 쪽만 이미지로 그려서 보여준다.
 // "AI가 요약한 문장을 읽고 푸는 게 불편하다"는 피드백에 따라, 요약문 대신 실제로 인쇄된 문제를
-// 그대로(스크린샷처럼) 보여주기 위한 화면이다(2026-09).
+// 그대로(스크린샷처럼) 보여주기 위한 화면이다(2026-09). 이후 "해당하는 문제의 사진만 띄워 달라"는
+// 요청에 따라, AI가 추출 단계에서 짚어 둔 문항 영역(bbox)이 있으면 쪽 전체 대신 그 부분만 잘라
+// 확대해서 보여준다(가독성 개선).
 //
 // app/(staff)/exams/[code]/buildDigitizedPdf.ts의 loadPdfJs/pageCv 패턴과 동일하게 pdf.js를 CDN에서
 // 불러온다 — 이 프로젝트는 로컬에서 npm install이 막혀 있어 새 패키지를 추가하면 Vercel 빌드 로그로만
@@ -53,22 +55,42 @@ async function loadDoc(pdfUrl: string): Promise<any> {
   return promise;
 }
 
+export type ProblemBbox = { x0: number; y0: number; x1: number; y1: number };
+
+// AI가 짚은 영역이 문항을 딱 맞게 못 잡았을 수 있으니, 잘려 보이지 않게 쪽 크기의 2%만큼 여유를
+// 두고 자른다(1000분율 기준 20).
+const BBOX_PAD = 20;
+
 /**
- * 문항의 인쇄 쪽 번호(page)가 AI 추출 단계에서 저장돼 있으면 그 쪽을 바로 보여주고, 없으면(기존
- * 시험처럼 이 기능이 생기기 전에 처리된 문항, 또는 AI가 잘못 짚은 경우) 1쪽부터 보여주면서 과외
- * 선생님이 직접 쪽을 넘겨 문제를 찾을 수 있게 한다 — "쪽 번호를 모르니 그냥 안 보여준다"보다
- * 훨씬 쓸모 있다. 쪽 번호를 아는 경우에도 AI가 잘못 짚었을 수 있으니 이전/다음 버튼은 항상 켜둔다.
+ * 문항의 인쇄 쪽 번호(page)와 영역(bbox)이 AI 추출 단계에서 저장돼 있으면 그 부분만 잘라 확대해
+ * 바로 보여주고(가독성 개선), 없으면(기존 시험처럼 이 기능이 생기기 전에 처리된 문항, 또는 AI가
+ * 잘못 짚은 경우) 1쪽부터 보여주면서 과외 선생님이 직접 쪽을 넘겨 문제를 찾을 수 있게 한다.
+ * bbox 가 있어도 AI가 잘못 잘랐을 수 있으니 "전체 쪽 보기"로 언제든 되돌아갈 수 있다.
  */
-export default function ProblemPageImage({ pdfUrl, page }: { pdfUrl: string; page: number | null }) {
+export default function ProblemPageImage({
+  pdfUrl,
+  page,
+  bbox,
+}: {
+  pdfUrl: string;
+  page: number | null;
+  bbox: ProblemBbox | null;
+}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
   const [err, setErr] = useState("");
   const [currentPage, setCurrentPage] = useState(page && page > 0 ? page : 1);
   const [numPages, setNumPages] = useState<number | null>(null);
-  const knownPage = page && page > 0;
+  const knownPage = !!(page && page > 0);
+  const hasBbox = !!(knownPage && bbox && bbox.x1 > bbox.x0 && bbox.y1 > bbox.y0);
+  // AI가 짚어 준 문제 영역만 볼지, 쪽 전체를 볼지 — bbox가 있으면 기본은 영역만(가독성 우선).
+  const [showFullPage, setShowFullPage] = useState(false);
+  // 지금 이 쪽에서 실제로 자르고 있는지: bbox가 있고, 전체 보기를 안 눌렀고, 문항이 있는 쪽 그대로일 때만.
+  const cropping = hasBbox && !showFullPage && currentPage === (page as number);
 
   useEffect(() => {
     setCurrentPage(page && page > 0 ? page : 1);
+    setShowFullPage(false);
   }, [pdfUrl, page]);
 
   useEffect(() => {
@@ -86,17 +108,48 @@ export default function ProblemPageImage({ pdfUrl, page }: { pdfUrl: string; pag
         }
         const pg = await doc.getPage(target);
         const v1 = pg.getViewport({ scale: 1 });
-        const scale = Math.min(3, Math.max(1.5, 1400 / v1.width));
-        const vp = pg.getViewport({ scale });
-        if (cancelled) return;
         const canvas = canvasRef.current;
         if (!canvas) return;
-        canvas.width = Math.ceil(vp.width);
-        canvas.height = Math.ceil(vp.height);
         const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+
+        if (cropping && bbox) {
+          const x0 = Math.max(0, bbox.x0 - BBOX_PAD);
+          const y0 = Math.max(0, bbox.y0 - BBOX_PAD);
+          const x1 = Math.min(1000, bbox.x1 + BBOX_PAD);
+          const y1 = Math.min(1000, bbox.y1 + BBOX_PAD);
+          const fracW = (x1 - x0) / 1000;
+          const fracH = (y1 - y0) / 1000;
+          // 잘라낸 부분이 화면에서 약 1100px 너비로 보이도록 원본 렌더 배율을 역산한다(문항이
+          // 작을수록 배율을 더 높여야 확대돼 보임). 너무 잘게 자르면 배율이 과해지므로 상한을 둔다.
+          let scale = fracW > 0 ? 1100 / (fracW * v1.width) : 3;
+          scale = Math.min(6, Math.max(1.5, scale));
+          const vp = pg.getViewport({ scale });
+          const full = document.createElement("canvas");
+          full.width = Math.max(1, Math.ceil(vp.width));
+          full.height = Math.max(1, Math.ceil(vp.height));
+          const fctx = full.getContext("2d") as CanvasRenderingContext2D;
+          fctx.fillStyle = "#fff";
+          fctx.fillRect(0, 0, full.width, full.height);
+          await pg.render({ canvasContext: fctx, viewport: vp }).promise;
+          if (cancelled) return;
+          const cropX = Math.round((x0 / 1000) * full.width);
+          const cropY = Math.round((y0 / 1000) * full.height);
+          const cropW = Math.max(1, Math.round(fracW * full.width));
+          const cropH = Math.max(1, Math.round(fracH * full.height));
+          canvas.width = cropW;
+          canvas.height = cropH;
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, cropW, cropH);
+          ctx.drawImage(full, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+        } else {
+          const scale = Math.min(3, Math.max(1.5, 1400 / v1.width));
+          const vp = pg.getViewport({ scale });
+          canvas.width = Math.ceil(vp.width);
+          canvas.height = Math.ceil(vp.height);
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+        }
         if (!cancelled) setStatus("ok");
       } catch (e: any) {
         if (!cancelled) {
@@ -109,7 +162,7 @@ export default function ProblemPageImage({ pdfUrl, page }: { pdfUrl: string; pag
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdfUrl, currentPage]);
+  }, [pdfUrl, currentPage, cropping, bbox?.x0, bbox?.y0, bbox?.x1, bbox?.y1]);
 
   function goPage(delta: number) {
     setCurrentPage((p) => {
@@ -142,7 +195,14 @@ export default function ProblemPageImage({ pdfUrl, page }: { pdfUrl: string; pag
           style={{ display: status === "ok" ? "block" : "none" }}
         />
       </div>
-      {status !== "error" && (
+      {status !== "error" && hasBbox && (
+        <div className="flex items-center justify-center">
+          <button type="button" className="btn-secondary text-xs" onClick={() => setShowFullPage((v) => !v)}>
+            {showFullPage ? "문제 영역만 보기" : "전체 쪽 보기"}
+          </button>
+        </div>
+      )}
+      {status !== "error" && !cropping && (
         <div className="flex items-center justify-center gap-3">
           <button
             type="button"
