@@ -7,8 +7,8 @@ html {
 }
 
 body {
-  background: #f8fafc;
-  color: #0f172a;
+  background: #faf9f7;
+  color: #1b1815;
 }
 
 .btn {
@@ -34,4 +34,28 @@ body {
 }
 .badge {
   @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+}
+
+/* 메딕차트 브랜드 강조 — 파란 링크색 대신 로고의 붉은 십자 톤을 쓴다. */
+.link-accent {
+  @apply text-brand-700 hover:text-brand-800 hover:underline;
+}
+
+/* 헤더 로고: 검정 워드마크 앞에 붉은 십자(+) 마크를 붙인 심플한 텍스트 로고. */
+.brand-mark {
+  @apply inline-flex items-center gap-1.5 font-bold text-slate-900;
+}
+.brand-mark::before {
+  content: "+";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  border-radius: 0.25em;
+  background: theme("colors.brand.700");
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.85em;
+  line-height: 1;
 }
