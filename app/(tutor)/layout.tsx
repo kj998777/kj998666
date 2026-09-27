@@ -22,9 +22,11 @@ export default async function TutorLayout({ children }: { children: React.ReactN
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between">
           <nav className="flex items-center gap-4 text-sm font-medium text-slate-700">
-            <Link href="/tutor/dashboard" className="font-semibold text-slate-900">
-              과외선생님
+            <Link href="/tutor/dashboard" className="brand-mark">
+              메딕차트
             </Link>
+            <span className="text-slate-300">·</span>
+            <span className="text-slate-500 text-sm">과외선생님</span>
             <Link href="/tutor/review">검토하기</Link>
             <Link href="/tutor/store">기출 스토어</Link>
           </nav>
