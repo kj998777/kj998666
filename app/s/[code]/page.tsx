@@ -17,7 +17,11 @@ export default async function StudentSubmitPage({ params }: { params: { code: st
   const code = decodeURIComponent(params.code);
   const admin = createAdminClient();
 
-  const { data: exam } = await admin.from("exams").select("id, code, name, status").eq("code", code).single();
+  const { data: exam } = await admin
+    .from("exams")
+    .select("id, code, name, status, tutor_download_cost")
+    .eq("code", code)
+    .single();
 
   if (!exam) {
     return <Wrap>존재하지 않는 시험입니다. 선생님께 받은 링크를 다시 확인해 주세요.</Wrap>;
@@ -25,7 +29,11 @@ export default async function StudentSubmitPage({ params }: { params: { code: st
 
   const { data: classes } = await admin.from("classes").select("level, grade, name").order("level").order("grade").order("name");
 
-  if (exam.status !== "열림") {
+  // #109: "열림" 상태가 아니어도, 과외선생님 스토어에 판매 중(tutor_download_cost가 null이 아님)인
+  // 시험이면 계속 제출을 받는다 — 학교 쪽 status는 '닫힘' 그대로 두고 별도 재오픈 없이 확장.
+  const acceptingSubmissions = exam.status === "열림" || exam.tutor_download_cost !== null;
+
+  if (!acceptingSubmissions) {
     return (
       <Wrap>
         <strong>{exam.name}</strong> 시험은 지금 제출을 받지 않습니다.
