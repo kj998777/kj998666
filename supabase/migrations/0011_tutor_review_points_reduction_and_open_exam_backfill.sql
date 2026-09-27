@@ -14,14 +14,26 @@
 --       한 번은 이렇게 수동으로 채워 줘야 함). 결과가 괜찮으면 다음에 범위를 넓힐 수 있음(전체 학년/
 --       학기로 확대하거나, "열림" 상태 시험 전체를 상시 스토어에 올리는 정책으로 바꾸는 것도 가능 —
 --       지금은 원장님 지시대로 이 범위만).
+--
+-- [이 파일은 최초 배포본(commit bc6efc6)을 대체하는 수정본입니다]
+-- 최초 배포본은 submit_tutor_review/submit_tutor_verification을 0004 시절의 "3-인자" 시그니처
+-- (p_item_explanation_id, p_answer_display, p_solution)로 재정의했습니다. 그런데 0005에서 이미
+-- "4-인자" 시그니처(p_image_path text default null 추가)로 함수를 교체하고 3-인자 버전은
+-- `drop function if exists ...(uuid, text, text);`로 명시적으로 지웠기 때문에, 앱은 지금 항상
+-- 4-인자로 이 함수들을 호출합니다. 최초 배포본을 그대로 실행하면 PostgreSQL이 "다른 시그니처의
+-- 새 오버로드"로 인식해 아무도 호출하지 않는 3-인자 함수만 새로 생기고, 실제로 호출되는 4-인자
+-- 함수는 그대로 남아 포인트가 여전히 10으로 적립됩니다(에러 없이 조용히 의도한 효과가 없음).
+-- 이 수정본은 0005의 4-인자 함수 본문을 그대로 가져와 v_points만 1로 바꿨습니다.
+-- (최초 배포본을 아직 실행하지 않으셨다면 이 파일만 실행하시면 됩니다 — 별도 정리 작업 불필요.)
 
 -- -------------------------------------------------------------------------
--- 1. #112 — 최초 제출(primary) 적립 포인트 10 → 1
+-- 1. #112 — 최초 제출(primary) 적립 포인트 10 → 1 (0005의 4-인자 시그니처 그대로 유지)
 -- -------------------------------------------------------------------------
 create or replace function public.submit_tutor_review(
   p_item_explanation_id uuid,
   p_answer_display text,
-  p_solution text
+  p_solution text,
+  p_image_path text default null
 )
 returns jsonb
 language plpgsql
@@ -47,6 +59,9 @@ begin
   end if;
   if char_length(p_answer_display) > 500 or char_length(coalesce(p_solution, '')) > 4000 then
     raise exception '입력이 너무 깁니다.' using errcode = 'P0036';
+  end if;
+  if p_image_path is not null and char_length(p_image_path) > 500 then
+    raise exception '사진 경로가 올바르지 않습니다.' using errcode = 'P0038';
   end if;
 
   select ie.exam_id, ie.item_label, e.status, ie.tutor_reviewed, ie.claimed_by, ie.claim_expires_at
@@ -81,9 +96,9 @@ begin
   where id = p_item_explanation_id;
 
   insert into public.tutor_item_reviews
-    (item_explanation_id, exam_id, item_label, tutor_id, kind, answer_display, solution, needs_verification)
+    (item_explanation_id, exam_id, item_label, tutor_id, kind, answer_display, solution, needs_verification, image_path)
   values
-    (p_item_explanation_id, v_exam_id, v_item_label, auth.uid(), 'primary', p_answer_display, p_solution, v_needs_verification)
+    (p_item_explanation_id, v_exam_id, v_item_label, auth.uid(), 'primary', p_answer_display, p_solution, v_needs_verification, p_image_path)
   returning id into v_review_id;
 
   insert into public.tutor_points_ledger (tutor_id, delta, reason, ref_exam_id, ref_item_label)
@@ -98,12 +113,13 @@ end;
 $$;
 
 -- -------------------------------------------------------------------------
--- 2. #112 — 사후 검증(verify) 적립 포인트 10 → 1
+-- 2. #112 — 사후 검증(verify) 적립 포인트 10 → 1 (0005의 4-인자 시그니처 그대로 유지)
 -- -------------------------------------------------------------------------
 create or replace function public.submit_tutor_verification(
   p_item_explanation_id uuid,
   p_answer_display text,
-  p_solution text
+  p_solution text,
+  p_image_path text default null
 )
 returns jsonb
 language plpgsql
@@ -127,6 +143,9 @@ begin
   if char_length(p_answer_display) > 500 or char_length(coalesce(p_solution, '')) > 4000 then
     raise exception '입력이 너무 깁니다.' using errcode = 'P0036';
   end if;
+  if p_image_path is not null and char_length(p_image_path) > 500 then
+    raise exception '사진 경로가 올바르지 않습니다.' using errcode = 'P0038';
+  end if;
 
   select r.id, r.tutor_id, r.exam_id, r.item_label
     into v_primary_id, v_primary_tutor, v_exam_id, v_item_label
@@ -146,9 +165,9 @@ begin
   where id = v_primary_id;
 
   insert into public.tutor_item_reviews
-    (item_explanation_id, exam_id, item_label, tutor_id, kind, answer_display, solution, matches_primary_review_id)
+    (item_explanation_id, exam_id, item_label, tutor_id, kind, answer_display, solution, matches_primary_review_id, image_path)
   values
-    (p_item_explanation_id, v_exam_id, v_item_label, auth.uid(), 'verify', p_answer_display, p_solution, v_primary_id)
+    (p_item_explanation_id, v_exam_id, v_item_label, auth.uid(), 'verify', p_answer_display, p_solution, v_primary_id, p_image_path)
   returning id into v_verify_id;
 
   insert into public.tutor_points_ledger (tutor_id, delta, reason, ref_exam_id, ref_item_label)
@@ -161,6 +180,9 @@ begin
   return jsonb_build_object('ok', true, 'pointsEarned', v_points, 'verifyReviewId', v_verify_id, 'primaryReviewId', v_primary_id);
 end;
 $$;
+
+grant execute on function public.submit_tutor_review(uuid, text, text, text) to authenticated;
+grant execute on function public.submit_tutor_verification(uuid, text, text, text) to authenticated;
 
 -- -------------------------------------------------------------------------
 -- 3. #114 — 테스트: 2025년 1학년 2학기 중간고사 범위에서 "열림" 상태인 시험만 골라 고정 3포인트로
