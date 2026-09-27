@@ -117,7 +117,9 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="card w-full max-w-sm">
-        <h1 className="text-lg font-semibold mb-1">학원 시험관리 {title}</h1>
+        <div className="brand-mark text-lg mb-1">메딕차트</div>
+        <p className="text-[11px] tracking-[0.2em] text-slate-400 mb-3 uppercase">Medic Chart</p>
+        <h1 className="text-base font-semibold mb-1">{title}</h1>
         <p className="text-sm text-slate-500 mb-4 whitespace-pre-line">{subtitle}</p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
