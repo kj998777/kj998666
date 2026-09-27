@@ -47,18 +47,10 @@ export default async function ReviewItemPage({
       <div className="card space-y-2">
         <div className="flex items-center justify-between gap-3">
           {/* kind가 verify여도 화면에 표시하지 않는다 — "새 문항과 똑같은 화면"이어야 검증자가
-              눈치채지 못하고 자기 실력대로 다시 푼다(블라인드 재검증, 계획 문서 참고). */}
+              눈치채지 못하고 자기 실력대로 다시 풀다(블라인드 재검증, 계획 문서 참고). */}
           <h1 className="text-lg font-semibold">
             {exam?.name ?? "시험"} · {item.item_label}번
           </h1>
-          <a
-            href={`/tutor/review/${item.id}/pdf`}
-            target="_blank"
-            rel="noreferrer"
-            className="btn-secondary whitespace-nowrap"
-          >
-            원본 문제지 PDF 보기
-          </a>
         </div>
         <p className="text-sm text-slate-500">
           {item.area && `${item.area} · `}
@@ -77,8 +69,8 @@ export default async function ReviewItemPage({
           />
         </div>
         <p className="text-xs text-slate-400">
-          문제가 여러 쪽에 걸쳐 있거나 이미지가 잘 안 보이면 위 &quot;원본 문제지 PDF 보기&quot;에서
-          전체를 확인해 주세요.
+          문제가 여러 쪽에 걸쳐 있으면 이미지 아래 &quot;이전 쪽 / 다음 쪽&quot; 버튼으로 앞뒤 쪽을
+          확인해 주세요.
         </p>
       </div>
 
