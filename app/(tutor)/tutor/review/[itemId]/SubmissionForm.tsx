@@ -23,6 +23,24 @@ export default function SubmissionForm({
   const [result, setResult] = useState<{ pointsEarned: number; isMatch?: boolean } | null>(null);
   const [nextMsg, setNextMsg] = useState("");
 
+  // "다음 문항 받기"/"포기하고 다른 문항 받기" 공통 로직 — 큐 페이지로 보내고 사용자가 버튼을 한
+  // 번 더 누르게 하지 않고, 여기서 바로 claimNextReviewItem을 불러 배정된 문항으로 즉시 이동한다.
+  function goToNextItem() {
+    start(async () => {
+      setNextMsg("");
+      try {
+        const next = await claimNextReviewItem();
+        if (!next) {
+          setNextMsg("지금은 검토할 문항이 없습니다. 나중에 다시 확인해 주세요.");
+          return;
+        }
+        router.push(`/tutor/review/${next.itemExplanationId}?kind=${next.kind}`);
+      } catch (e: any) {
+        setNextMsg(e?.message ?? "문항을 배정받지 못했습니다.");
+      }
+    });
+  }
+
   function handleImageChange(file: File | null) {
     setImage(file);
     setImagePreviewUrl((prev) => {
@@ -42,25 +60,7 @@ export default function SubmissionForm({
               : "원 제출과 일치하지 않아 관리자 확인이 필요합니다."}
           </p>
         )}
-        <button
-          className="btn-primary"
-          disabled={pending}
-          onClick={() =>
-            start(async () => {
-              setNextMsg("");
-              try {
-                const next = await claimNextReviewItem();
-                if (!next) {
-                  setNextMsg("지금은 검토할 문항이 없습니다. 나중에 다시 확인해 주세요.");
-                  return;
-                }
-                router.push(`/tutor/review/${next.itemExplanationId}?kind=${next.kind}`);
-              } catch (e: any) {
-                setNextMsg(e?.message ?? "문항을 배정받지 못했습니다.");
-              }
-            })
-          }
-        >
+        <button className="btn-primary" disabled={pending} onClick={goToNextItem}>
           다음 문항 받기
         </button>
         {nextMsg && <p className="text-sm text-slate-500">{nextMsg}</p>}
@@ -142,13 +142,14 @@ export default function SubmissionForm({
           onClick={() =>
             start(async () => {
               await releaseReviewClaim(itemExplanationId);
-              router.push("/tutor/review");
+              goToNextItem();
             })
           }
         >
           포기하고 다른 문항 받기
         </button>
       </div>
+      {nextMsg && <p className="text-sm text-slate-500">{nextMsg}</p>}
     </div>
   );
 }
