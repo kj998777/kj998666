@@ -33,7 +33,10 @@ export default function TutorDownloadCostInput({ code, cost }: { code: string; c
         onChange={(e) => setValue(e.target.value.replace(/[^0-9]/g, ""))}
         onBlur={(e) => commit(e.target.value)}
       />
-      <span className="text-xs text-slate-400">빈 값 = 스토어에 안 보임</span>
+      <span className="text-xs text-slate-400">
+        빈 값 = 스토어에 안 보임 · 시험을 닫으면 자동으로 3P로 판매 개시됩니다(여기서 비워두면
+        판매를 막을 수 있습니다)
+      </span>
       {msg && <span className="text-xs text-red-600">{msg}</span>}
     </div>
   );
