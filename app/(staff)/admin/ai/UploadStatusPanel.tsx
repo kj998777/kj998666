@@ -3,8 +3,12 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { pollAiJob } from "../../exams/ai-actions";
-import { pollDigitizeAction } from "../../exams/[code]/digitize-actions";
+import { pollAiJob, startAiProcessing, cancelAiProcessing } from "../../exams/ai-actions";
+import {
+  pollDigitizeAction,
+  startDigitizeAction,
+  cancelDigitizeAction,
+} from "../../exams/[code]/digitize-actions";
 import { ACTIVE as AI_ACTIVE, STAGE_LABEL as AI_LABEL } from "../../exams/aiJobStage";
 
 // 디지털화(dg_*) 단계 이름표 — aiJobStage.ts 와 같은 표를 쓰고 싶지만 단계 이름 체계가 달라(dg_ 접두사)
@@ -30,11 +34,19 @@ function timeAgo(iso: string) {
 }
 
 type PollFn = (code: string) => Promise<{ stage: string; message: string; updatedAt: string } | null>;
+type ActionFn = (code: string) => Promise<{ ok: boolean; msg?: string }>;
 type SetRows = (updater: UploadJobRow[] | ((prev: UploadJobRow[]) => UploadJobRow[])) => void;
 
 // 이 페이지에 떠 있는 동안, 진행 중인 항목들을 실제로 폴링(=한 걸음씩 진행, lazy tick)한다 —
 // 그냥 읽기만 하면 다른 화면을 아무도 열어 두지 않은 작업은 여기서도 멈춘 것처럼 보이기 때문에,
 // AiJobPanel과 같은 방식으로 이 패널 자체가 진행을 밀어준다.
+//
+// 재시도(retry)/취소(cancel) 버튼도 여기서 직접 제공한다 — 예전에는 오류로 멈춘 시험을 다시
+// 돌리려면 시험 상세 화면까지 들어가야 했는데(AiJobPanel.tsx의 "같은 PDF로 다시 시도" 버튼),
+// 그러면 AI 설정 탭에서 오류를 발견해도 여기서 바로 조치할 수가 없었다. retry/cancel 성공 시의
+// 결과 단계·메시지는 서버 쪽 로직(startExamAiJob/cancelExamAiJob, startDigitizeJob/cancelDigitizeJob)
+// 이 항상 고정된 값으로 설정하므로(예: 시작하면 "upload"+"시험지를 AI에 올리는 중…"), 여기서도
+// AiJobPanel과 동일하게 그 값으로 낙관적 갱신한다 — 그러면 다음 4초 폴링부터 자연히 이어서 진행됨.
 function JobList({
   rows,
   setRows,
@@ -43,6 +55,11 @@ function JobList({
   doneStage,
   errorStage,
   poll,
+  retry,
+  retryStage,
+  retryMessage,
+  cancel,
+  cancelMessage,
 }: {
   rows: UploadJobRow[];
   setRows: SetRows;
@@ -51,10 +68,44 @@ function JobList({
   doneStage: string;
   errorStage: string;
   poll: PollFn;
+  retry: ActionFn;
+  retryStage: string;
+  retryMessage: string;
+  cancel: ActionFn;
+  cancelMessage: string;
 }) {
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
   const [pending, start] = useTransition();
+  const [acting, setActing] = useState<Record<string, boolean>>({});
+  const [rowErr, setRowErr] = useState<Record<string, string>>({});
+
+  function runAction(code: string, action: "retry" | "cancel") {
+    setActing((prev) => ({ ...prev, [code]: true }));
+    setRowErr((prev) => {
+      const next = { ...prev };
+      delete next[code];
+      return next;
+    });
+    start(async () => {
+      const fn = action === "retry" ? retry : cancel;
+      const r = await fn(code);
+      setActing((prev) => {
+        const next = { ...prev };
+        delete next[code];
+        return next;
+      });
+      if (!r.ok) {
+        setRowErr((prev) => ({ ...prev, [code]: r.msg ?? "처리하지 못했습니다." }));
+        return;
+      }
+      const stage = action === "retry" ? retryStage : errorStage;
+      const message = action === "retry" ? retryMessage : cancelMessage;
+      setRows((prev) =>
+        prev.map((row) => (row.code === code ? { ...row, stage, message, updatedAt: new Date().toISOString() } : row))
+      );
+    });
+  }
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -91,31 +142,58 @@ function JobList({
           <th className="py-1 pr-2 font-normal">단계</th>
           <th className="py-1 pr-2 font-normal">메시지</th>
           <th className="py-1 pr-2 font-normal">갱신</th>
+          <th className="py-1 pr-2 font-normal">액션</th>
         </tr>
       </thead>
       <tbody>
-        {rows.map((r) => (
-          <tr key={r.code} className="border-b border-slate-100 last:border-0 align-top">
-            <td className="py-1.5 pr-2 whitespace-nowrap">
-              <Link href={`/exams/${encodeURIComponent(r.code)}`} className="link-accent">
-                {r.name}
-              </Link>
-              <span className="text-slate-400"> ({r.code})</span>
-            </td>
-            <td className="py-1.5 pr-2 whitespace-nowrap">
-              <span className={"badge " + (r.stage === errorStage ? "bg-red-100 text-red-700" : "bg-sky-100 text-sky-700")}>
-                {labels[r.stage] ?? r.stage}
-              </span>
-            </td>
-            <td className="py-1.5 pr-2 text-slate-600">{r.message}</td>
-            <td className="py-1.5 pr-2 text-slate-400 whitespace-nowrap">{timeAgo(r.updatedAt)}</td>
-          </tr>
-        ))}
+        {rows.map((r) => {
+          const isActing = !!acting[r.code];
+          const isError = r.stage === errorStage;
+          const isActive = activeStages.has(r.stage);
+          return (
+            <tr key={r.code} className="border-b border-slate-100 last:border-0 align-top">
+              <td className="py-1.5 pr-2 whitespace-nowrap">
+                <Link href={`/exams/${encodeURIComponent(r.code)}`} className="link-accent">
+                  {r.name}
+                </Link>
+                <span className="text-slate-400"> ({r.code})</span>
+              </td>
+              <td className="py-1.5 pr-2 whitespace-nowrap">
+                <span className={"badge " + (isError ? "bg-red-100 text-red-700" : "bg-sky-100 text-sky-700")}>
+                  {labels[r.stage] ?? r.stage}
+                </span>
+              </td>
+              <td className="py-1.5 pr-2 text-slate-600">{r.message}</td>
+              <td className="py-1.5 pr-2 text-slate-400 whitespace-nowrap">{timeAgo(r.updatedAt)}</td>
+              <td className="py-1.5 pr-2 whitespace-nowrap">
+                {isError && (
+                  <button
+                    className="btn-secondary py-0.5 px-2 text-xs"
+                    disabled={isActing}
+                    onClick={() => runAction(r.code, "retry")}
+                  >
+                    {isActing ? "다시 시도 중…" : "같은 PDF로 다시 시도"}
+                  </button>
+                )}
+                {isActive && (
+                  <button
+                    className="btn-secondary py-0.5 px-2 text-xs"
+                    disabled={isActing}
+                    onClick={() => runAction(r.code, "cancel")}
+                  >
+                    {isActing ? "취소 중…" : "취소"}
+                  </button>
+                )}
+                {rowErr[r.code] && <p className="text-xs text-red-600 mt-1">{rowErr[r.code]}</p>}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
       {pending && (
         <tfoot>
           <tr>
-            <td colSpan={4} className="text-xs text-slate-400 pt-1">
+            <td colSpan={5} className="text-xs text-slate-400 pt-1">
               확인 중…
             </td>
           </tr>
@@ -164,6 +242,11 @@ export default function UploadStatusPanel({
           doneStage="done"
           errorStage="error"
           poll={pollAiJob}
+          retry={startAiProcessing}
+          retryStage="upload"
+          retryMessage="시험지를 AI에 올리는 중…"
+          cancel={cancelAiProcessing}
+          cancelMessage="선생님이 처리를 취소했습니다."
         />
       </div>
       <div>
@@ -176,6 +259,11 @@ export default function UploadStatusPanel({
           doneStage="dg_done"
           errorStage="dg_error"
           poll={pollDigitizeAction}
+          retry={startDigitizeAction}
+          retryStage="dg_upload"
+          retryMessage="시험지를 AI에 올리는 중…"
+          cancel={cancelDigitizeAction}
+          cancelMessage="선생님이 디지털화를 취소했습니다."
         />
       </div>
       <p className="text-xs text-slate-400">
