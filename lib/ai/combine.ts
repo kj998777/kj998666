@@ -34,6 +34,7 @@ export type CombinedRow = {
   type: "mc" | "short";
   points: number | null;
   page: number;
+  bbox: QuestionMeta["bbox"];
   assigned: boolean;
   flag: CombinedFlag;
   area: string;
@@ -84,6 +85,7 @@ export function autoCombine(
     type: q.type,
     points: q.points,
     page: q.page,
+    bbox: q.bbox,
     assigned: false,
     flag: {},
     area: "",
