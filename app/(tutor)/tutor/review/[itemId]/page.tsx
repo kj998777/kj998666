@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireTutor } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
 import SubmissionForm from "./SubmissionForm";
+import ProblemPageImage from "./ProblemPageImage";
 
 // 편향 방지: answer_display/solution/difficulty_reason/exam_error_* 는 절대 select하지 않는다.
 // primary 문항도 AI가 만든 초안(정답·풀이)이 낮은 확신/오답이라서 검토 큐에 온 것이므로, 그 초안을
@@ -20,7 +21,7 @@ export default async function ReviewItemPage({
   const supabase = await createClient();
   const { data: item } = (await supabase
     .from("item_explanations")
-    .select("id, exam_id, item_label, area, unit, difficulty, problem_statement")
+    .select("id, exam_id, item_label, area, unit, difficulty, source_page")
     .eq("id", params.itemId)
     .maybeSingle()) as any;
 
@@ -64,14 +65,12 @@ export default async function ReviewItemPage({
           {item.unit && `${item.unit} · `}
           난이도 {item.difficulty}
         </p>
-        {item.problem_statement && (
-          <p className="whitespace-pre-wrap text-sm text-slate-700 border-t border-slate-100 pt-2">
-            {item.problem_statement}
-          </p>
-        )}
+        <div className="border-t border-slate-100 pt-2">
+          <ProblemPageImage pdfUrl={`/tutor/review/${item.id}/pdf`} page={item.source_page ?? null} />
+        </div>
         <p className="text-xs text-slate-400">
-          그림·표·&lt;보기&gt;가 있는 문항은 이 텍스트만으로 부족할 수 있습니다 — 원본 PDF를 함께 확인해
-          주세요.
+          문제가 여러 쪽에 걸쳐 있거나 이미지가 잘 안 보이면 위 &quot;원본 문제지 PDF 보기&quot;에서
+          전체를 확인해 주세요.
         </p>
       </div>
 
