@@ -57,12 +57,22 @@ export default async function TutorPurchasesPage() {
                     </td>
                     <td className="py-1 pr-2">
                       {exam && (
-                        <a
-                          href={`/tutor/store/${encodeURIComponent(exam.code)}/download`}
-                          className="btn-secondary py-1 px-2 inline-block"
-                        >
-                          다운로드
-                        </a>
+                        <div className="flex gap-1 flex-wrap justify-end">
+                          <a
+                            href={`/tutor/store/${encodeURIComponent(exam.code)}/download`}
+                            className="btn-secondary py-1 px-2 inline-block"
+                          >
+                            다운로드
+                          </a>
+                          {/* #109: 이 시험은 스토어에서 팔리는 동안 /s/[code] 제출도 받을 수 있다 —
+                              구매한 과외선생님이 여기서 링크를 받아 본인 학생들에게 나눠줄 수 있게 함. */}
+                          <Link
+                            href={`/tutor/store/${encodeURIComponent(exam.code)}/results`}
+                            className="btn-secondary py-1 px-2 inline-block"
+                          >
+                            제출 현황
+                          </Link>
+                        </div>
                       )}
                     </td>
                   </tr>
