@@ -33,6 +33,8 @@ export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // 회원가입 때만: 비밀번호 재확인(2026-09-29 원장님 요청) — 오타로 모르는 비밀번호가 설정되는 일을 막는다
+  const [password2, setPassword2] = useState("");
   // 회원가입 때만: 기수·이름(2026-09-28) — 관리자가 계정 관리 화면에서 누구인지 바로 알아보도록
   const [cohort, setCohort] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -112,6 +114,11 @@ export default function LoginPage() {
     if (password.length < 6) {
       setBusy(false);
       setErr("비밀번호는 6자 이상이어야 합니다.");
+      return;
+    }
+    if (password !== password2) {
+      setBusy(false);
+      setErr("비밀번호 확인이 일치하지 않습니다. 두 칸에 같은 비밀번호를 입력해 주세요.");
       return;
     }
     if (!normalizeCohort(cohort) || !displayName.trim()) {
@@ -240,13 +247,37 @@ export default function LoginPage() {
               />
             </div>
           )}
+          {mode === "signup" && (
+            <div>
+              <label className="label" htmlFor="password2">
+                비밀번호 확인
+              </label>
+              <input
+                id="password2"
+                type="password"
+                required
+                minLength={6}
+                className="input"
+                placeholder="비밀번호를 한 번 더 입력"
+                value={password2}
+                onChange={(e) => setPassword2(e.target.value)}
+                autoComplete="new-password"
+              />
+              {password2 && password !== password2 && (
+                <p className="text-xs text-red-600 mt-1">비밀번호가 일치하지 않습니다.</p>
+              )}
+              {password2 && password === password2 && (
+                <p className="text-xs text-green-600 mt-1">비밀번호가 일치합니다.</p>
+              )}
+            </div>
+          )}
           {err && <p className="text-sm text-red-600 whitespace-pre-line">{err}</p>}
           {msg && <p className="text-sm text-green-600 whitespace-pre-line">{msg}</p>}
           <button
             type="submit"
             className="btn-primary w-full"
             disabled={
-              busy || !email || (mode !== "forgot" && !password) || (mode === "signup" && (!cohort.trim() || !displayName.trim()))
+              busy || !email || (mode !== "forgot" && !password) || (mode === "signup" && (!cohort.trim() || !displayName.trim() || !password2 || password !== password2))
             }
           >
             {busy ? "처리 중…" : mode === "login" ? "로그인" : mode === "signup" ? "회원가입" : "재설정 메일 보내기"}
