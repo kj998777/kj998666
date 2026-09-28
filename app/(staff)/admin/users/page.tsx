@@ -13,7 +13,8 @@ export default async function AdminUsersPage() {
     .select("id, email, role, created_at")
     .order("created_at", { ascending: true });
 
-  const staffProfiles = (profiles ?? []).filter((p: any) => p.role !== "tutor");
+  const pendingProfiles = (profiles ?? []).filter((p: any) => p.role === "대기");
+  const staffProfiles = (profiles ?? []).filter((p: any) => p.role !== "tutor" && p.role !== "대기");
   const tutorProfiles = (profiles ?? []).filter((p: any) => p.role === "tutor");
 
   let tutorStatsById: Record<string, { points_balance: number; reviews_submitted: number; reviews_flagged: number }> = {};
@@ -47,6 +48,30 @@ export default async function AdminUsersPage() {
           <InviteForm defaultRole="tutor" />
         </div>
       </div>
+
+      {pendingProfiles.length > 0 && (
+        <div className="card border-amber-300 bg-amber-50">
+          <h2 className="font-medium mb-1 text-amber-900">대기중인 계정 ({pendingProfiles.length}명)</h2>
+          <p className="text-sm text-amber-800 mb-3">
+            직접 회원가입한 계정입니다. 알맞은 권한을 지정해 줄 때까지는 아무 화면도 볼 수 없습니다.
+          </p>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-amber-700 border-b border-amber-200">
+                <th className="py-2 pr-2">이메일</th>
+                <th className="py-2 pr-2">권한</th>
+                <th className="py-2 pr-2">가입일</th>
+                <th className="py-2 pr-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingProfiles.map((p: { id: string; email: string; role: Role; created_at: string }) => (
+                <UserRow key={p.id} profile={p} isMe={p.id === session.userId} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="card">
         <h2 className="font-medium mb-3">직원 계정 ({staffProfiles.length}명)</h2>

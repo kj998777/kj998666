@@ -105,6 +105,7 @@ export default function UserRow({
             });
           }}
         >
+          <option value="대기">대기(권한없음)</option>
           <option value="viewer">뷰어</option>
           <option value="editor">편집자</option>
           <option value="admin">관리자</option>
