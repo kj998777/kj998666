@@ -1,0 +1,280 @@
+import Link from "next/link";
+import { requireTutor } from "@/lib/auth/requireTutor";
+
+// 과외선생님 사용법(2026-09-28 원장님 요청: "처음 쓰는 사람도 쓸 수 있게, 이미지와 화살표로 설명").
+// 이미지는 public/guide/*.webp — 실제 화면과 같은 모양의 예시 화면(가짜 데이터)에 빨간 테두리·화살표·
+// 번호를 그려 넣은 것. 아래 각 단계의 번호 목록이 그림 속 번호와 1:1로 대응한다.
+// 화면 문구가 바뀌면 그림도 같이 다시 만들어야 한다.
+
+type Shot = { src: string; w: number; h: number; alt: string };
+type Step = {
+  id: string;
+  title: string;
+  lead: string;
+  shot: Shot;
+  points: React.ReactNode[];
+  tip?: React.ReactNode;
+};
+
+const SECTIONS: { id: string; title: string; summary: string; steps: Step[] }[] = [
+  {
+    id: "start",
+    title: "시작하기",
+    summary: "로그인하면 가장 먼저 보이는 “내 활동” 화면입니다.",
+    steps: [
+      {
+        id: "dashboard",
+        title: "내 활동 화면 둘러보기",
+        lead: "위쪽 메뉴에서 언제든 원하는 곳으로 이동할 수 있습니다.",
+        shot: { src: "/guide/01-dashboard.webp", w: 1180, h: 577, alt: "내 활동 화면 — 검토하기, 기출 스토어, 포인트, 검토하러 가기 버튼 위치" },
+        points: [
+          <><b>검토하기</b> — 문항을 풀어서 포인트를 버는 곳입니다.</>,
+          <><b>기출 스토어</b> — 모은 포인트로 기출문제 PDF를 사는 곳입니다.</>,
+          <><b>포인트</b> — 지금 가진 포인트입니다. 어느 화면에서든 오른쪽 위에 항상 보입니다.</>,
+          <>처음이라면 <b>검토하러 가기</b>를 눌러 포인트부터 모아 보세요.</>,
+        ],
+      },
+    ],
+  },
+  {
+    id: "review",
+    title: "1단계 · 문항 검토하고 포인트 받기",
+    summary: "AI가 푼 정답·풀이 중 확인이 필요한 문항을 직접 풀어 주면 1문항당 1포인트가 바로 들어옵니다.",
+    steps: [
+      {
+        id: "review-start",
+        title: "문항 받기",
+        lead: "검토하기 화면에서 버튼 하나만 누르면 됩니다. 어떤 문항이 나올지는 자동으로 정해집니다.",
+        shot: { src: "/guide/02-review-start.webp", w: 1180, h: 281, alt: "검토하기 화면 — 다음 문항 받기 버튼" },
+        points: [<><b>다음 문항 받기</b>를 누르면 문항 하나가 선생님께 배정됩니다.</>],
+        tip: <>받은 문항은 <b>30분 동안</b> 선생님만 풀 수 있도록 잡아 둡니다. 30분이 지나면 다른 분께 넘어갈 수 있으니 받은 뒤 바로 풀어 주세요.</>,
+      },
+      {
+        id: "review-problem",
+        title: "문제 확인하기",
+        lead: "원본 시험지에서 그 문항 부분만 잘라 크게 보여 줍니다.",
+        shot: { src: "/guide/03-problem.webp", w: 1180, h: 467, alt: "문항 화면 — 문제 이미지, 전체 쪽 보기, 이전 쪽/다음 쪽 버튼" },
+        points: [
+          <>원본 시험지에서 잘라 낸 <b>문제 이미지</b>입니다. 그림·표·보기도 그대로 보입니다.</>,
+          <>문제가 잘려 보이거나 엉뚱한 부분이 나오면 <b>전체 쪽 보기</b>로 시험지 한 쪽을 통째로 보세요.</>,
+          <>문제가 다른 쪽에 이어지면 <b>← 이전 쪽 / 다음 쪽 →</b>으로 넘겨 가며 찾을 수 있습니다.</>,
+        ],
+      },
+      {
+        id: "review-answer",
+        title: "정답과 풀이 적어서 제출하기",
+        lead: "문제 아래쪽에 입력 칸이 있습니다. 정답만 필수이고 나머지는 선택입니다.",
+        shot: { src: "/guide/04-answer.webp", w: 1180, h: 621, alt: "제출 양식 — 정답, 기호 버튼, 풀이, 풀이 사진, 제출, 포기하고 다른 문항 받기" },
+        points: [
+          <><b>정답</b>(필수) — 객관식은 번호, 주관식은 값을 적습니다. 아래 기호 버튼(√, π, ² …)을 누르면 입력 칸에 바로 들어갑니다.</>,
+          <><b>풀이</b>(선택) — 짧게라도 적어 주시면 학생 보고서의 해설로 쓰입니다.</>,
+          <><b>풀이 사진</b>(선택) — 손으로 푼 종이를 사진으로 찍어 올려도 됩니다.</>,
+          <><b>제출</b> — 누르는 즉시 정답이 반영되고 포인트가 들어옵니다.</>,
+          <>풀기 어려운 문항이면 <b>포기하고 다른 문항 받기</b>를 누르세요. 불이익은 없습니다.</>,
+        ],
+      },
+      {
+        id: "review-done",
+        title: "제출 완료 — 포인트 확인",
+        lead: "제출하면 바로 이 화면이 나옵니다.",
+        shot: { src: "/guide/05-done.webp", w: 1180, h: 225, alt: "제출 완료 화면 — +1P 적립 메시지, 다음 문항 받기, 포인트 배지" },
+        points: [
+          <>+1P가 적립됐다는 메시지가 나옵니다.</>,
+          <><b>다음 문항 받기</b>로 계속 이어서 풀 수 있습니다.</>,
+          <>오른쪽 위 <b>포인트</b> 숫자가 늘어난 것을 확인할 수 있습니다.</>,
+        ],
+        tip: <>제출한 문항 중 일부(약 15%)는 다른 선생님이 모르는 상태로 한 번 더 풀어 답을 맞춰 봅니다(사후 검증). 답이 서로 다르면 내 활동의 <b>사후 검증 불일치</b> 숫자가 올라가고 원장님이 확인합니다.</>,
+      },
+    ],
+  },
+  {
+    id: "store",
+    title: "2단계 · 기출 스토어에서 기출문제 받기",
+    summary: "모은 포인트로 시험을 구매합니다. 한 번 구매한 시험은 몇 번이든 다시 받을 수 있습니다.",
+    steps: [
+      {
+        id: "store-list",
+        title: "시험 고르고 구매하기",
+        lead: "기출 스토어에는 검토가 끝난 시험이 모두 올라와 있습니다.",
+        shot: { src: "/guide/06-store.webp", w: 1180, h: 565, alt: "기출 스토어 — 3P로 구매, 관리하기, PDF 준비 중, 검토 대기중, 구매 내역" },
+        points: [
+          <><b>3P로 구매</b> — 누르면 포인트 3이 빠지고 그 시험이 선생님 것이 됩니다.</>,
+          <>이미 산 시험은 <b>관리하기</b> 버튼으로 바뀝니다. 여기서 PDF·학생 제출·보고서를 모두 다룹니다(아래 3단계).</>,
+          <><b>PDF 준비 중</b> — 시험지 파일을 아직 올리는 중인 시험입니다. 준비되면 구매 버튼이 생깁니다.</>,
+          <><b>검토 대기중</b> — 아직 검토가 끝나지 않은 시험입니다. 검토에 참여하면 더 빨리 스토어에 올라옵니다.</>,
+          <><b>구매 내역</b> — 내가 산 시험만 모아 볼 수 있습니다.</>,
+        ],
+      },
+    ],
+  },
+  {
+    id: "manage",
+    title: "3단계 · 구매한 시험 관리하기",
+    summary: "“관리하기”를 누르면 탭 세 개가 있는 화면이 열립니다.",
+    steps: [
+      {
+        id: "manage-download",
+        title: "기출문제 PDF 받기",
+        lead: "학생에게 나눠 줄 시험지를 받습니다.",
+        shot: { src: "/guide/07-download.webp", w: 1180, h: 507, alt: "관리 화면 다운로드 탭 — 탭 메뉴, PDF 받기, 선생님 전용 제출 링크와 링크 복사" },
+        points: [
+          <>위쪽 <b>탭</b>으로 다운로드 / 제출 학생·보고서 / 수정 요청을 오갑니다.</>,
+          <><b>PDF 받기</b> — 원본 뒤쪽의 정답·해설 쪽은 빼고 문제만 남긴 시험지가 받아집니다. 앞에는 표지, 맨 뒤에는 <b>선생님 전용 답안 제출 QR</b>이 붙어 있습니다.</>,
+          <><b>선생님 전용 제출 링크</b> — QR 대신 카톡 등으로 보낼 때 <b>링크 복사</b>를 누르세요.</>,
+        ],
+        tip: <>이 QR·링크로 제출한 학생만 선생님 화면에 보입니다. 학원 학생이나 다른 선생님 학생의 제출은 보이지 않습니다.</>,
+      },
+      {
+        id: "manage-student",
+        title: "학생이 답 제출하기 (학생 휴대폰 화면)",
+        lead: "학생이 QR을 찍거나 링크를 열면 이 화면이 나옵니다. 로그인은 필요 없습니다.",
+        shot: { src: "/guide/10-student.webp", w: 560, h: 437, alt: "학생 제출 화면 — 이름, 문항별 답 선택, 제출하기" },
+        points: [
+          <>학생이 <b>이름</b>을 적습니다.</>,
+          <>문항마다 답을 고르거나(객관식) 적습니다(주관식).</>,
+          <><b>제출하기</b>를 누르면 바로 채점되어 선생님 화면에 올라옵니다.</>,
+        ],
+        tip: <>같은 이름으로 두 번 제출할 수는 없습니다. 동명이인이 있으면 &ldquo;김민준A&rdquo;처럼 구분해서 적게 해 주세요.</>,
+      },
+      {
+        id: "manage-report",
+        title: "채점 결과와 성적 보고서 받기",
+        lead: "“제출 학생·보고서” 탭에서 점수를 확인하고 보고서를 PDF로 만듭니다. 보고서 칸에는 처음에 “불러오기” 버튼만 있으니 먼저 눌러 주세요.",
+        shot: { src: "/guide/08-results.webp", w: 1180, h: 814, alt: "제출 학생·보고서 탭 — 종합 보고서 PDF 만들기, 개별 보고서 ZIP 받기, 학생 목록" },
+        points: [
+          <><b>종합 보고서 PDF 만들기</b> — 제출한 학생 전체의 평균·문항별 정답률 등을 한 파일로 만듭니다.</>,
+          <>학생을 체크한 뒤 <b>개별 보고서</b>를 받습니다. 여러 명이면 ZIP 파일 하나로, 한 명이면 이름 옆 <b>PDF</b>로 바로 받을 수 있습니다.</>,
+          <>아래 표에서 학생 이름을 누르면 그 학생이 문항별로 무엇을 맞고 틀렸는지 볼 수 있습니다.</>,
+        ],
+        tip: <>보고서는 버튼을 누른 뒤 브라우저에서 직접 만들어지므로 학생이 많으면 수십 초 걸릴 수 있습니다. 끝날 때까지 창을 닫지 말아 주세요.</>,
+      },
+      {
+        id: "manage-edit",
+        title: "정답·해설이 틀렸을 때 수정 요청하기",
+        lead: "“해설·정답 수정 요청” 탭에서 고칠 내용을 보내면 원장님이 확인한 뒤 반영합니다.",
+        shot: { src: "/guide/09-edit.webp", w: 1180, h: 695, alt: "수정 요청 탭 — 문항 펼치기, 고칠 정답과 메모, 고친 해설, 수정 요청 보내기, 내 요청 상태" },
+        points: [
+          <>틀린 문항 번호를 눌러 펼칩니다. 지금 저장된 해설이 보입니다.</>,
+          <><b>고칠 정답</b>과 <b>메모(이유)</b>를 적습니다.</>,
+          <>해설도 고치고 싶으면 <b>고친 해설</b>에 적습니다(선택).</>,
+          <><b>수정 요청 보내기</b>를 누릅니다.</>,
+          <>보낸 요청은 문항 옆에 <b>내 요청: 확인 대기</b>로 표시되고, 원장님이 확인하면 &ldquo;반영됨&rdquo; 또는 &ldquo;반영 안 함&rdquo;으로 바뀝니다.</>,
+        ],
+        tip: <>정답이 반영되면 이미 제출한 학생들의 점수도 자동으로 다시 채점됩니다.</>,
+      },
+    ],
+  },
+];
+
+const FAQ: { q: string; a: React.ReactNode }[] = [
+  { q: "포인트는 어떻게 모으고 어디에 쓰나요?", a: <>검토 1문항 제출 = <b>+1P</b>, 기출 시험 1개 구매 = <b>−3P</b>입니다. 돈으로 사고팔 수는 없습니다.</> },
+  { q: "한 번 산 시험을 다시 받으면 포인트가 또 빠지나요?", a: <>아니요. 구매 내역이나 스토어의 <b>관리하기</b>에서 언제든 무료로 다시 받을 수 있습니다.</> },
+  { q: "“다음 문항 받기”를 눌렀는데 문항이 안 나와요.", a: <>지금 검토할 문항이 모두 끝난 상태입니다. 새 시험이 올라오면 다시 생기니 나중에 들어와 주세요.</> },
+  { q: "제출하려는데 “선점이 만료됐다”고 나와요.", a: <>문항을 받은 뒤 30분이 지나 다른 분께 넘어갈 수 있는 상태가 된 것입니다. <b>다음 문항 받기</b>로 새로 받아 주세요.</> },
+  { q: "“사후 검증 불일치”가 올라갔어요. 불이익이 있나요?", a: <>다른 선생님의 답과 달랐다는 뜻일 뿐, 포인트가 빠지지는 않습니다. 원장님이 두 답을 비교해 맞는 쪽으로 정리합니다. 반복되면 원장님이 따로 연락드릴 수 있습니다.</> },
+  { q: "학생 제출이 제 화면에 안 보여요.", a: <>학생이 <b>선생님 전용 QR이나 링크</b>로 들어왔는지 확인해 주세요. 학원용 일반 링크로 제출하면 선생님 화면에는 보이지 않습니다.</> },
+];
+
+function Num({ n }: { n: number }) {
+  return (
+    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-600 text-xs font-bold text-white">
+      {n}
+    </span>
+  );
+}
+
+export default async function TutorGuidePage() {
+  await requireTutor();
+
+  return (
+    <div className="space-y-10">
+      <div className="space-y-3">
+        <h1 className="text-lg font-semibold">사용법</h1>
+        <p className="text-sm text-slate-500">
+          처음 오셨다면 위에서부터 순서대로 따라 해 보세요. 그림 속 <span className="font-medium text-rose-600">빨간 번호</span>가
+          그림 아래 설명 번호와 같습니다. (그림은 예시 화면이라 이름·점수 등은 실제와 다릅니다.)
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {[
+            ["1", "검토하고 포인트 받기", "문항 1개 = 1P", "#review"],
+            ["2", "기출 스토어에서 구매", "시험 1개 = 3P", "#store"],
+            ["3", "학생 제출·보고서 관리", "QR·링크로 제출", "#manage"],
+          ].map(([n, t, s, href]) => (
+            <a key={n} href={href} className="card flex items-center gap-3 hover:border-slate-300">
+              <span className="text-2xl font-semibold text-rose-600">{n}</span>
+              <span>
+                <span className="block text-sm font-medium text-slate-900">{t}</span>
+                <span className="block text-xs text-slate-500">{s}</span>
+              </span>
+            </a>
+          ))}
+        </div>
+      </div>
+
+      {SECTIONS.map((sec) => (
+        <section key={sec.id} id={sec.id} className="space-y-6 scroll-mt-4">
+          <div className="border-b border-slate-200 pb-2">
+            <h2 className="text-base font-semibold">{sec.title}</h2>
+            <p className="text-sm text-slate-500">{sec.summary}</p>
+          </div>
+          {sec.steps.map((st) => (
+            <div key={st.id} id={st.id} className="card space-y-4 scroll-mt-4">
+              <div>
+                <h3 className="font-medium">{st.title}</h3>
+                <p className="text-sm text-slate-500">{st.lead}</p>
+              </div>
+              <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={st.shot.src}
+                  width={st.shot.w}
+                  height={st.shot.h}
+                  alt={st.shot.alt}
+                  loading="lazy"
+                  className="mx-auto h-auto w-full"
+                  style={{ maxWidth: st.shot.w }}
+                />
+              </div>
+              <ol className="space-y-2">
+                {st.points.map((p, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
+                    <Num n={i + 1} />
+                    <span className="pt-0.5">{p}</span>
+                  </li>
+                ))}
+              </ol>
+              {st.tip && (
+                <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  <b>알아두기</b> · {st.tip}
+                </p>
+              )}
+            </div>
+          ))}
+        </section>
+      ))}
+
+      <section id="faq" className="space-y-3 scroll-mt-4">
+        <div className="border-b border-slate-200 pb-2">
+          <h2 className="text-base font-semibold">자주 묻는 질문</h2>
+        </div>
+        <div className="card divide-y divide-slate-100 py-1">
+          {FAQ.map((f) => (
+            <details key={f.q} className="py-2">
+              <summary className="cursor-pointer text-sm font-medium text-slate-800">{f.q}</summary>
+              <p className="mt-2 text-sm text-slate-600">{f.a}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <div className="flex gap-3">
+        <Link href="/tutor/review" className="btn-primary">
+          검토하러 가기
+        </Link>
+        <Link href="/tutor/store" className="btn-secondary">
+          기출 스토어 보기
+        </Link>
+      </div>
+    </div>
+  );
+}
