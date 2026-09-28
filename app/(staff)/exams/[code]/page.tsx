@@ -176,12 +176,14 @@ export default async function ExamDetailPage({
           </p>
           {(explanations ?? []).length > 0 && (
             <p className="text-sm text-amber-800">
-              {/* #1: 과외선생님 검토가 이 문항 수만큼 전부 끝나면(tutor_reviewed=true) 관리자가
-                  따로 확정하지 않아도 자동으로 시험이 열리고 스토어에 등록됩니다. */}
-              과외선생님 검토 진행:{" "}
-              {(explanations as any[]).filter((e) => e.tutor_reviewed).length} /{" "}
-              {(explanations as any[]).length}문항 완료
-              {(explanations as any[]).every((e) => e.tutor_reviewed) && " — 곧 자동으로 열립니다"}
+              {/* #3: 문항별 정답이 모두 확정되면(과외선생님 답이 정답표와 일치하면 자동, 아니면 관리자가
+                  검토현황에서 확정) 자동으로 시험이 열리고 스토어에 등록됩니다. */}
+              정답 확정 {(explanations as any[]).filter((e) => e.review_confirmed).length} /{" "}
+              {(explanations as any[]).length}문항 · 과외선생님 제출{" "}
+              {(explanations as any[]).filter((e) => e.tutor_reviewed).length}문항 —{" "}
+              <Link href="/admin/review-status" className="underline">
+                검토현황에서 문항별로 확정하기
+              </Link>
             </p>
           )}
           {notes.length > 0 && (
