@@ -1,6 +1,6 @@
 import "server-only";
 import { addUsage, aiCreditKind, aiErr, createBatch, failWhy, getBatch, getBatchResults, toolInputOf } from "./anthropic";
-import { autoBbox } from "./normalize";
+import { autoBbox, autoLabel } from "./normalize";
 import { getExamPdfBuffer } from "./pdf";
 import { fetchAllPages } from "@/lib/supabase/fetchAll";
 import { clearLowBalanceAlert, getAiCreds, recordLowBalanceAlert, recordUsage } from "./settings";
@@ -58,7 +58,8 @@ function locatePrompt(targets: Target[]): string {
     .map((t) => `- label "${t.label}"` + (t.page ? ` (추정 쪽: ${t.page})` : "") + (t.hint ? ` — 문제 내용 요약: ${t.hint}` : ""))
     .join("\n");
   return [
-    "첨부한 시험지 PDF에서 아래 문항들이 각각 어디에 인쇄돼 있는지 찾아 locate_items 도구로 제출하세요.",
+    "첨부한 시험지 PDF에서 문항들이 각각 어디에 인쇄돼 있는지 찾아 locate_items 도구로 제출하세요.",
+    "아래 목록의 문항은 반드시 포함하고, 그 밖에도 시험지에 있는 모든 문항(1번부터 마지막 번호, 서답형까지)의 자리를 함께 제출하세요 — 앞뒤 문항의 자리로 각 문항의 경계를 맞추는 데 씁니다.",
     "문항 번호(label)는 시험지에 인쇄된 번호입니다. 서답형은 \"서1\", \"서답형 1\" 같은 식으로 인쇄돼 있을 수 있습니다.",
     "요약은 AI가 만든 것이라 표현이 시험지와 다를 수 있으니, 번호를 기준으로 찾고 요약은 확인용으로만 쓰세요.",
     "",
@@ -66,12 +67,60 @@ function locatePrompt(targets: Target[]): string {
     "bbox: 이 문항 전체(문항 번호·문제 글·그림/그래프/표·<보기>·조건 상자·선택지 ①~⑤ 모두 포함, 다음 문항이나 앞 문항과는 안 겹치게)가 인쇄된 사각형 영역. 그 쪽을 가로 1000 × 세로 1000 칸으로 나눴을 때 왼쪽 위가 (0,0), 오른쪽 아래가 (1000,1000)이라고 보고: x0,y0 = 문항 영역의 왼쪽 위, x1,y1 = 오른쪽 아래. 과외선생님 화면에서 이 영역만 잘라서 확대해 보여 주는 데 쓰이므로, 문항의 모든 부분(특히 그림과 마지막 선택지)이 잘리지 않게 넉넉히 잡되 다른 문항 내용은 최대한 포함하지 마세요. 2단 편집이면 그 문항이 있는 단 안에서만 좌표를 잡으세요. 소문항(예 27-(1))은 원래 큰 문항 전체 영역을 씁니다.",
     "쪽 전체(0,0,1000,1000)를 답으로 내지 마세요 — 그 문항 부분만입니다.",
     "",
-    "찾을 문항:",
+    "꼭 포함할 문항:",
     list,
   ].join("\n");
 }
 
 const TABLE = "item_locate_jobs";
+
+export type Found = { label: string; page: number; bbox: { x0: number; y0: number; x1: number; y1: number } };
+
+/**
+ * 2026-09-29: AI가 준 문항 영역을 앞뒤 문항 자리로 바로잡는다(각 문항의 영역을 따로 받으면 아래쪽이 잘리거나 다음 문항까지
+ * 넘치는 일이 잦았다). 같은 쪽·같은 단의 문항을 위에서부터 줄 세운 뒤, 각 문항의 아래 끝을 "다음 문항 시작 바로 위"로 맞추고,
+ * 가로는 그 단 전체 폭으로 넓힌다. 소문항(27-(1) 등)은 큰 문항 하나로 본다. 순수 함수(테스트용으로 내보냄).
+ */
+export function refineByNeighbors(found: Found[]): Map<string, Found> {
+  const baseOf = (l: string) => l.replace(/-\(.*$/, "");
+  const byBase = new Map<string, Found>();
+  for (const f of found) {
+    const b = baseOf(f.label);
+    if (!byBase.has(b)) byBase.set(b, { ...f, bbox: { ...f.bbox } });
+  }
+  const list = Array.from(byBase.entries());
+  const pages = new Map<number, [string, Found][]>();
+  for (const e of list) {
+    const arr = pages.get(e[1].page) ?? [];
+    arr.push(e);
+    pages.set(e[1].page, arr);
+  }
+  for (const arr of pages.values()) {
+    // 대부분이 쪽 가로의 60% 넘게 차지하면 1단
+    const wide = arr.filter(([, f]) => f.bbox.x1 - f.bbox.x0 > 600).length;
+    const single = wide * 2 >= arr.length;
+    const colOf = (f: Found) => (single ? 0 : (f.bbox.x0 + f.bbox.x1) / 2 < 500 ? 0 : 1);
+    for (const c of [0, 1]) {
+      const col = arr.filter(([, f]) => colOf(f) === c).sort((a, b) => a[1].bbox.y0 - b[1].bbox.y0);
+      if (!col.length) continue;
+      const cx0 = Math.min(...col.map(([, f]) => f.bbox.x0));
+      const cx1 = Math.max(...col.map(([, f]) => f.bbox.x1));
+      for (let i = 0; i < col.length; i++) {
+        const f = col[i][1];
+        f.bbox.x0 = cx0;
+        f.bbox.x1 = cx1;
+        const next = col[i + 1]?.[1];
+        if (next && next.bbox.y0 - 4 > f.bbox.y0 + 15) f.bbox.y1 = next.bbox.y0 - 4;
+      }
+    }
+  }
+  const out = new Map<string, Found>();
+  for (const f of found) {
+    const r = byBase.get(baseOf(f.label));
+    if (r) out.set(f.label, { label: f.label, page: r.page, bbox: { ...r.bbox } });
+  }
+  return out;
+}
 
 function kstTime(d = new Date()): string {
   return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
@@ -283,16 +332,23 @@ async function stepWait(client: Client, job: any): Promise<void> {
 
   const targets = await targetsOf(client, examId);
   const want = new Set(targets.map((t) => t.label));
-  const norm = (s: unknown) => String(s ?? "").replace(/\s+/g, "");
-  let saved = 0;
+  const norm = (s: unknown) => autoLabel(s); // "서답형 1"·"서1"·"3번" 같은 표기 차이를 맞춤
+  // 받은 모든 문항 자리를 정리한 뒤(쪽 전체에 가까운 영역은 버림) 앞뒤 문항으로 경계를 맞춘다
+  const clean: Found[] = [];
   for (const f of found) {
-    const label = String(f?.label ?? "");
-    const match = want.has(label) ? label : targets.find((t) => norm(t.label) === norm(label))?.label;
-    if (!match) continue;
     const bbox = autoBbox(f?.bbox);
     const page = Number(f?.page);
-    // 쪽 전체에 가까운 영역(가로·세로 모두 95% 이상)은 잘라 보여 주는 의미가 없으므로 저장하지 않는다.
     if (!bbox || !(page >= 1) || (bbox.x1 - bbox.x0 >= 950 && bbox.y1 - bbox.y0 >= 950)) continue;
+    clean.push({ label: norm(f?.label), page: Math.round(page), bbox });
+  }
+  const refined = refineByNeighbors(clean);
+  let saved = 0;
+  for (const [label, r] of refined) {
+    const match = want.has(label) ? label : targets.find((t) => norm(t.label) === label)?.label;
+    // (want에는 DB 표기 그대로, label은 정리한 표기 — 둘 다 autoLabel 규칙이라 대부분 같다)
+    if (!match) continue;
+    const bbox = r.bbox;
+    const page = r.page;
     const { error } = await (client.from("item_explanations") as any)
       .update({
         source_page: Math.round(page),
@@ -472,6 +528,77 @@ export async function countStaleDigitized(client: Client): Promise<{ exams: numb
 /** 옛 좌표를 지우고 AI 영역 찾기를 다시 건다. 처리한 시험·문항 수를 돌려준다. */
 export async function resetStaleDigitized(client: Client): Promise<{ exams: number; items: number }> {
   const ids = await staleDigitizedExamIds(client);
+  let exams = 0;
+  let items = 0;
+  for (const examId of ids) {
+    const { data, error } = (await (client.from("item_explanations") as any)
+      .update({ source_page: null, bbox_x0: null, bbox_y0: null, bbox_x1: null, bbox_y1: null })
+      .eq("exam_id", examId)
+      .eq("tutor_reviewed", false)
+      .eq("review_confirmed", false)
+      .not("source_page", "is", null)
+      .select("id")) as any;
+    if (error) continue;
+    const n = ((data as any[]) ?? []).length;
+    if (!n) continue;
+    exams++;
+    items += n;
+    await enqueueLocateJobIfMissing(client, examId);
+  }
+  return { exams, items };
+}
+
+// ---------------------------------------------------------------------------
+// 2026-09-29 원장님 요청: 영역 찾기가 "완료"된 문항도 위치를 전부 다시 점검
+//
+// 글자 정보가 있는 PDF(is_scanned=false, 디지털 적용 아님)는 과외선생님 화면이 PDF 글자 위치에서 문항 번호를 직접 찾아
+// 자르므로(cropLocator.ts) 저장된 AI 좌표에 기대지 않는다 → 대상에서 뺀다. 스캔본·디지털 조판본(그림 PDF)·판단 불가 PDF의
+// 검수대기 시험만, 검토 대기 문항의 좌표를 지우고 앞뒤 문항 경계 맞추기(refineByNeighbors)가 들어간 새 영역 찾기를 다시 건다.
+// ---------------------------------------------------------------------------
+async function recheckExamIds(client: Client): Promise<string[]> {
+  const [{ data: metas, error }, { data: pending }] = await Promise.all([
+    fetchAllPages((f: number, t: number) =>
+      client.from("exam_pdf_meta").select("exam_id, is_scanned, replaced_with_digitized").order("exam_id").range(f, t)
+    ),
+    fetchAllPages((f: number, t: number) =>
+      client.from("exams").select("id").eq("status", "검수대기").order("id").range(f, t)
+    ),
+  ]);
+  if (error) return [];
+  const pend = new Set(((pending as any[]) ?? []).map((e) => e.id));
+  return ((metas as any[]) ?? [])
+    .filter((m) => pend.has(m.exam_id) && (m.is_scanned !== false || m.replaced_with_digitized === true))
+    .map((m) => m.exam_id);
+}
+
+/** 다시 점검할 대상: 시험 수와 그 안의 위치가 저장된 검토 대기 문항 수 */
+export async function countRecheck(client: Client): Promise<{ exams: number; items: number }> {
+  const ids = await recheckExamIds(client);
+  let items = 0;
+  const hit = new Set<string>();
+  for (let i = 0; i < ids.length; i += 150) {
+    const { data } = await fetchAllPages((f: number, t: number) =>
+      client
+        .from("item_explanations")
+        .select("id, exam_id")
+        .in("exam_id", ids.slice(i, i + 150))
+        .eq("tutor_reviewed", false)
+        .eq("review_confirmed", false)
+        .not("source_page", "is", null)
+        .order("id")
+        .range(f, t)
+    );
+    for (const r of (data as any[]) ?? []) {
+      items++;
+      hit.add(r.exam_id);
+    }
+  }
+  return { exams: hit.size, items };
+}
+
+/** 위치를 지우고 새 영역 찾기를 건다. 처리한 시험·문항 수를 돌려준다. */
+export async function resetForRecheck(client: Client): Promise<{ exams: number; items: number }> {
+  const ids = await recheckExamIds(client);
   let exams = 0;
   let items = 0;
   for (const examId of ids) {
