@@ -14,6 +14,24 @@ function pathOf(examId: string): string {
   return `${examId}.pdf`;
 }
 
+/**
+ * 버그 수정(2026-09-28): 브라우저 직접 업로드는 이제 올릴 때마다 새 경로(`<examId>/<시각>.pdf`)에
+ * 올린다(lib/supabase/uploadPdf.ts 참고 — 같은 경로에 덮어쓰면 캐시 때문에 예전 파일이 내려오는 문제).
+ * 그중 가장 최근 것을 고른다. 버전 폴더가 비어 있으면 예전 방식 경로(`<examId>.pdf`).
+ */
+async function latestUploadedPath(client: Client, examId: string): Promise<{ path: string; older: string[] }> {
+  const { data } = await client.storage.from(BUCKET).list(examId, { limit: 100 });
+  const versions = ((data as any[]) ?? [])
+    .map((o) => String(o.name))
+    .filter((n) => /^\d+\.pdf$/.test(n))
+    .sort((a, b) => Number(b.slice(0, -4)) - Number(a.slice(0, -4)));
+  if (!versions.length) return { path: pathOf(examId), older: [] };
+  return {
+    path: `${examId}/${versions[0]}`,
+    older: [...versions.slice(1).map((n) => `${examId}/${n}`), pathOf(examId)],
+  };
+}
+
 export async function saveExamPdf(
   client: Client,
   examId: string,
@@ -55,7 +73,7 @@ export async function finalizePdfUpload(
   examId: string,
   meta: { isScanned: boolean | null; uploadedBy: string; source?: "upload" | "digitized" }
 ): Promise<{ pages: number | null }> {
-  const path = pathOf(examId);
+  const { path, older } = await latestUploadedPath(client, examId);
   const { data, error } = await client.storage.from(BUCKET).download(path);
   if (error || !data) throw new Error("방금 올린 PDF를 서버에서 확인하지 못했습니다: " + (error?.message || "?"));
   const buf = Buffer.from(await data.arrayBuffer());
@@ -73,6 +91,14 @@ export async function finalizePdfUpload(
     { onConflict: "exam_id" }
   );
   if (metaErr) throw metaErr;
+  // 이전 버전 정리(관리자만 삭제 권한이 있음 — 편집자가 올린 경우 등 실패해도 무시).
+  if (older.length) {
+    try {
+      await client.storage.from(BUCKET).remove(older);
+    } catch {
+      /* 무시 */
+    }
+  }
   return { pages };
 }
 
