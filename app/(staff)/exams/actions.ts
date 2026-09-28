@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import type { SchoolLevel } from "@/lib/supabase/types";
+import { tagJejuSchool } from "@/lib/exams/tagJeju";
 
 function schoolLevelField(formData: FormData): SchoolLevel | null {
   const v = String(formData.get("school_level") ?? "").trim();
@@ -44,9 +45,13 @@ export async function createExam(formData: FormData) {
   if (!name) return { ok: false, msg: "시험 이름을 입력해 주세요." };
 
   const supabase = await createClient();
-  const { error } = await supabase
+  const level = schoolLevelField(formData);
+  const { data: created, error } = (await supabase
     .from("exams")
-    .insert({ code, name, status: "닫힘", created_by: userId, school_level: schoolLevelField(formData) } as any);
+    .insert({ code, name, status: "닫힘", created_by: userId, school_level: level } as any)
+    .select("id")
+    .single()) as any;
+  if (!error && created) await tagJejuSchool(supabase, created.id, name, level);
   if (error) {
     const msg = error.message.includes("duplicate") || error.code === "23505"
       ? "이미 사용 중인 시험 코드입니다."
@@ -66,6 +71,21 @@ export async function updateSchoolLevel(code: string, level: SchoolLevel | null)
   if (error) return { ok: false, msg: "바꾸지 못했습니다: " + error.message };
   revalidatePath(`/exams/${code}`);
   revalidatePath("/exams");
+  return { ok: true };
+}
+
+/** 제주도 내 학교 시험인지 표시를 바꾼다 — 검토 문항 배정 때 제주 학교 문제가 먼저 나간다(0019). */
+export async function updateExamJeju(code: string, jeju: boolean) {
+  await requireRole("editor");
+  const supabase = await createClient();
+  const { error } = await (supabase.from("exams") as any).update({ is_jeju: jeju }).eq("code", code);
+  if (error) {
+    const msg = /is_jeju/.test(error.message)
+      ? "데이터베이스 마이그레이션 0019가 아직 적용되지 않았습니다."
+      : "바꾸지 못했습니다: " + error.message;
+    return { ok: false, msg };
+  }
+  revalidatePath(`/exams/${code}`);
   return { ok: true };
 }
 

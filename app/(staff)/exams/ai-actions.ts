@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { finalizePdfUpload } from "@/lib/ai/pdf";
 import { startExamAiJob, cancelExamAiJob, tickExamJob } from "@/lib/ai/pipeline";
 import { startDigitizeJob } from "@/lib/ai/digitize";
+import { tagJejuSchool } from "@/lib/exams/tagJeju";
 import { getJob, isActiveStage, setJob } from "@/lib/ai/job";
 import type { SchoolLevel } from "@/lib/supabase/types";
 
@@ -70,6 +71,8 @@ export async function createExamRow(formData: FormData): Promise<CreateExamRowRe
     const msg = error.code === "23505" ? "이미 사용 중인 시험 코드입니다." : "만들지 못했습니다: " + error.message;
     return { ok: false, msg };
   }
+  // 이름으로 제주 학교 여부·학교급 자동 표시(검토 배정 우선순위용)
+  await tagJejuSchool(supabase, exam.id, name, schoolLevelField(formData));
   return { ok: true, id: exam.id, code: exam.code };
 }
 
