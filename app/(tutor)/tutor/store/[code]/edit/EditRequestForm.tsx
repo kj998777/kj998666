@@ -28,7 +28,7 @@ export default function EditRequestForm({ code, itemLabel }: { code: string; ite
         고친 해설(선택, 수식은 $…$)
         <textarea className="input mt-1 h-28" value={solution} onChange={(e) => setSolution(e.target.value)} maxLength={4000} />
       </label>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           className="btn-primary py-1 px-3 text-sm"
           disabled={pending}
