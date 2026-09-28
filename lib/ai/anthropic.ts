@@ -14,6 +14,7 @@ export const AI_API = "https://api.anthropic.com";
 export const AI_VERSION = "2023-06-01";
 
 export const AI_MODELS: Record<string, string> = {
+  "claude-opus-5-5": "Claude Opus 5.5 (최신·정확도 높음, Opus 5보다 저렴)",
   "claude-opus-5": "Claude Opus 5 (정확도 높음)",
   "claude-sonnet-5": "Claude Sonnet 5 (저렴)",
   "claude-fable-5-1": "Claude Fable 5.1 (가장 강력·고가)",
@@ -22,6 +23,7 @@ export const AI_DEFAULT_MODEL = "claude-opus-5";
 
 // 100만 토큰당 달러 [입력, 출력]. 배치 API는 절반 할인.
 const AI_PRICE: Record<string, [number, number]> = {
+  "claude-opus-5-5": [4, 20],
   "claude-opus-5": [5, 25],
   "claude-sonnet-5": [2, 10],
   "claude-fable-5-1": [10, 50],
@@ -104,11 +106,47 @@ export async function deleteFile(apiKey: string, fileId: string): Promise<void> 
 
 export type BatchRequest = { custom_id: string; params: Record<string, unknown> };
 
+// 2026-09-29 원장님 요청으로 Opus 5.5 추가. 이 모델은 API 규칙이 조금 다르다(공식 문서 "What's new in Opus 5.5"):
+//   1) 도구 강제 사용(tool_choice type "tool"/"any")이 400 오류 → "auto"만 가능
+//   2) thinking을 끄거나(disabled) 예산 방식(enabled)으로 주면 400 오류 → "adaptive"만 가능(깊이는 effort로)
+// 파이프라인·디지털화·오류검사·영역찾기는 모두 도구 강제 사용으로 결과를 받으므로, 이 모델일 때만 요청을 보내기 직전에
+// 여기서 한곳에서 바꿔 준다: 도구는 "auto"로 두고 "반드시 이 도구로 제출하라"는 문장을 덧붙인다(결과를 도구 호출에서만
+// 읽는 방식은 그대로라, 모델이 도구를 안 부르면 기존처럼 "도구 결과 없음"으로 처리돼 다시 시도된다).
+const NO_FORCED_TOOL_MODELS = new Set(["claude-opus-5-5"]);
+
+export function adaptParamsForModel(params: Record<string, any>): Record<string, any> {
+  if (!NO_FORCED_TOOL_MODELS.has(String(params?.model))) return params;
+  const out: Record<string, any> = { ...params };
+  const t = out.thinking?.type;
+  if (t === "disabled" || t === "enabled") out.thinking = { type: "adaptive" };
+  const tc = out.tool_choice;
+  if (tc && (tc.type === "tool" || tc.type === "any")) {
+    const names: string[] =
+      tc.type === "tool" ? [tc.name] : ((out.tools as any[]) ?? []).map((x) => x?.name).filter(Boolean);
+    out.tool_choice = { type: "auto" };
+    const note =
+      `[제출 방법] 답은 반드시 ${names.map((n) => `${n}`).join(" 또는 ")} 도구를 호출해서 제출하세요. ` +
+      "도구를 부르지 않고 글로만 답하면 결과가 처리되지 않습니다.";
+    const msgs = Array.isArray(out.messages) ? [...out.messages] : [];
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m?.role !== "user") continue;
+      const content = typeof m.content === "string" ? [{ type: "text", text: m.content }] : [...(m.content ?? [])];
+      content.push({ type: "text", text: note });
+      msgs[i] = { ...m, content };
+      break;
+    }
+    out.messages = msgs;
+  }
+  return out;
+}
+
 export async function createBatch(
   apiKey: string,
   requests: BatchRequest[]
 ): Promise<AiCallResult> {
-  return anthropicCall("post", "/v1/messages/batches", apiKey, { requests });
+  const adapted = requests.map((r) => ({ ...r, params: adaptParamsForModel(r.params) }));
+  return anthropicCall("post", "/v1/messages/batches", apiKey, { requests: adapted });
 }
 
 export async function getBatch(apiKey: string, batchId: string): Promise<any> {
