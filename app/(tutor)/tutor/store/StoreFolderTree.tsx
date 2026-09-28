@@ -62,7 +62,7 @@ function Folder({
     <div className="border-b border-slate-100 last:border-0">
       <button
         type="button"
-        className="w-full flex items-center justify-between gap-2 py-2 text-left hover:bg-slate-50 rounded px-1"
+        className="w-full flex flex-wrap items-center justify-between gap-2 py-2 text-left hover:bg-slate-50 rounded px-1"
         onClick={() => setOpen((v) => !v)}
       >
         <span className="flex items-center gap-2">

@@ -54,7 +54,7 @@ export default async function TutorStorePage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-lg font-semibold">기출 스토어</h1>
           <p className="text-sm text-slate-500">
@@ -86,7 +86,7 @@ export default async function TutorStorePage() {
           </p>
           <ul className="text-sm divide-y divide-slate-100">
             {(inReview as any[]).map((e) => (
-              <li key={e.id} className="py-1.5 flex items-center justify-between gap-2">
+              <li key={e.id} className="py-1.5 flex flex-wrap items-center justify-between gap-2">
                 <span>
                   {e.name} <span className="text-slate-400">({e.code})</span>
                 </span>
