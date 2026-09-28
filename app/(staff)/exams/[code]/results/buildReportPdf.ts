@@ -82,16 +82,22 @@ function loadKatex(): Promise<any> {
   return katexReady;
 }
 
-let html2pdfReady: Promise<any> | null = null;
-function loadHtml2Pdf(): Promise<any> {
-  if (!html2pdfReady) {
-    html2pdfReady = (async () => {
-      if ((window as any).html2pdf) return (window as any).html2pdf;
-      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js");
-      return (window as any).html2pdf;
-    })();
+// 보고서 PDF는 html2canvas(쪽 그림) + jsPDF(PDF 조립)를 직접 쓴다. 예전에는 html2pdf.js 묶음을 썼는데,
+// 그 묶음은 이 둘을 밖으로 노출하지 않고, 자체 작업 틀의 폭이 A4 본문 폭(190mm ≈ 718px)으로 고정돼
+// 760px 폭의 보고서 오른쪽 끝이 잘렸다(아래 "보고서 잘림" 설명 참고).
+let pdfToolsReady: Promise<void> | null = null;
+function loadPdfTools(): Promise<void> {
+  if (!pdfToolsReady) {
+    pdfToolsReady = (async () => {
+      const g = window as any;
+      if (!g.html2canvas) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+      if (!g.jspdf?.jsPDF) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
+    })().catch((e) => {
+      pdfToolsReady = null; // 다음에 다시 시도할 수 있게
+      throw e;
+    });
   }
-  return html2pdfReady;
+  return pdfToolsReady;
 }
 
 let jszipReady: Promise<any> | null = null;
@@ -666,7 +672,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
 
 export async function ensureReportTools(onProgress?: (m: string) => void): Promise<{ katex: any }> {
   onProgress && onProgress("PDF·수식 도구를 불러오는 중…");
-  const [katex] = await Promise.all([loadKatex(), loadHtml2Pdf()]);
+  const [katex] = await Promise.all([loadKatex(), loadPdfTools()]);
   injectReportStyles();
   try {
     await document.fonts.load("16px KaTeX_Main");
@@ -677,18 +683,181 @@ export async function ensureReportTools(onProgress?: (m: string) => void): Promi
   return { katex };
 }
 
-async function renderElementToPdfBytes(el: HTMLElement): Promise<Uint8Array> {
-  const html2pdfFn = (window as any).html2pdf;
-  const worker = html2pdfFn()
-    .set({
-      margin: [12, 10, 14, 10],
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", scrollX: 0, scrollY: 0 },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      pagebreak: { mode: ["css", "legacy"] },
-    })
-    .from(el)
-    .toPdf();
-  const pdf = await worker.get("pdf");
+// ---------------------------------------------------------------------
+// 버그 수정(2026-09-28, "보고서가 잘림"): 예전에는 보고서 전체를 html2canvas로 "한 장의 거대한
+// 캔버스"로 그린 뒤 A4 높이로 잘라 붙였다. 그래서
+//   (1) 보고서가 길면(학생·문항이 많은 종합 보고서 등) 캔버스가 브라우저 최대 크기(높이 약 32,767px —
+//       2배 해상도로 A4 15쪽 정도)를 넘어 그 뒤가 통째로 비거나 잘렸고,
+//   (2) 쪽 경계가 글줄 한가운데를 지나 글자가 위아래로 반씩 잘렸다(표 줄·카드만 보호되고 있었음).
+// 이제는 먼저 A4 한 쪽에 들어가는 만큼씩 블록(제목·표 줄·카드·문단)을 직접 쪽 상자에 나눠 담고
+// (긴 표는 줄 단위로 나누며 머리줄을 반복, 긴 덩어리는 안쪽 요소 단위로 나눔, 제목은 다음 내용과 함께),
+// 쪽마다 따로 캔버스로 그려 PDF에 붙인다. 한 요소가 혼자서도 한 쪽보다 크면(아주 긴 풀이 한 줄 등)
+// 그 쪽만 예전처럼 잘라서 이어 붙인다.
+// ---------------------------------------------------------------------
+
+const PAGE_MARGIN_MM = { top: 12, right: 10, bottom: 14, left: 10 };
+const CONTENT_W_MM = 210 - PAGE_MARGIN_MM.left - PAGE_MARGIN_MM.right; // 190mm = 보고서 폭 760px
+const CONTENT_H_MM = 297 - PAGE_MARGIN_MM.top - PAGE_MARGIN_MM.bottom; // 271mm
+const REPORT_W_PX = 760;
+const PAGE_H_PX = Math.floor((REPORT_W_PX * CONTENT_H_MM) / CONTENT_W_MM) - 4; // 약 1080px
+
+function meaningfulChildren(el: Element): Node[] {
+  return Array.from(el.childNodes).filter(
+    (n) => n.nodeType === Node.ELEMENT_NODE || (n.nodeType === Node.TEXT_NODE && (n.textContent || "").trim() !== "")
+  );
+}
+
+class Paginator {
+  pages: HTMLElement[] = [];
+  private cur!: HTMLElement;
+  private placed = 0; // 이 쪽에 실제로 담은 내용 수(빈 틀 제외)
+  private shells = new Map<Element, Element>(); // 원본 컨테이너 → 이 쪽의 빈 틀
+
+  constructor(private stage: HTMLElement, private rootTemplate: HTMLElement) {
+    this.newPage();
+  }
+
+  private newPage() {
+    const p = this.rootTemplate.cloneNode(false) as HTMLElement;
+    p.style.width = REPORT_W_PX + "px";
+    this.stage.appendChild(p);
+    this.pages.push(p);
+    this.cur = p;
+    this.placed = 0;
+    this.shells = new Map();
+  }
+
+  private overflow(): boolean {
+    return this.cur.scrollHeight > PAGE_H_PX;
+  }
+
+  /** 원본 컨테이너 체인에 대응하는 이 쪽의 틀을 (없으면 만들어) 가장 안쪽 담을 곳을 돌려준다. */
+  private containerFor(chain: Element[]): Element {
+    let parent: Element = this.cur;
+    for (const t of chain) {
+      let shell = this.shells.get(t);
+      if (!shell) {
+        shell = t.cloneNode(false) as Element;
+        if (t.tagName === "TABLE") {
+          for (const c of Array.from(t.children)) {
+            if (c.tagName === "COLGROUP" || c.tagName === "THEAD") shell.appendChild(c.cloneNode(true));
+          }
+          const tb = t.querySelector(":scope > tbody");
+          shell.appendChild(tb ? tb.cloneNode(false) : document.createElement("tbody"));
+        }
+        (parent.tagName === "TABLE" ? parent.querySelector(":scope > tbody")! : parent).appendChild(shell);
+        this.shells.set(t, shell);
+      }
+      parent = shell;
+    }
+    return parent.tagName === "TABLE" ? parent.querySelector(":scope > tbody")! : parent;
+  }
+
+  private breakPage(chain: Element[]) {
+    // 맨 위 단계에서 쪽을 넘길 때, 이 쪽 마지막이 제목이면 다음 쪽으로 함께 넘긴다.
+    let carry: Element | null = null;
+    if (chain.length === 0 && this.placed > 1) {
+      const last = this.cur.lastElementChild;
+      if (last && /^H[1-3]$/.test(last.tagName)) {
+        carry = last;
+        this.cur.removeChild(last);
+      }
+    }
+    this.newPage();
+    if (carry) {
+      this.cur.appendChild(carry);
+      this.placed = 1;
+    }
+  }
+
+  private childrenOf(node: Element): Node[] {
+    if (node.tagName === "TABLE") {
+      const tb = node.querySelector(":scope > tbody");
+      return tb ? Array.from(tb.children) : [];
+    }
+    return meaningfulChildren(node);
+  }
+
+  private splittable(node: Node): node is Element {
+    if (node.nodeType !== Node.ELEMENT_NODE) return false;
+    const el = node as Element;
+    // 표 한 줄·칸, 수식, 작은 배지 등은 절대 쪼개지 않는다.
+    if (/^(TR|TD|TH|THEAD|SPAN|B|I|CODE|IMG|SVG)$/.test(el.tagName) || el.classList.contains("katex")) return false;
+    return this.childrenOf(el).length > 1;
+  }
+
+  place(node: Node, chain: Element[] = []) {
+    if (chain.length === 0 && this.placed > 0 && node instanceof Element && node.classList.contains("rpt-pagebreak")) {
+      this.breakPage(chain);
+    }
+    const container = this.containerFor(chain);
+    const clone = node.cloneNode(true);
+    container.appendChild(clone);
+    if (!this.overflow()) {
+      this.placed++;
+      return;
+    }
+    container.removeChild(clone);
+
+    // 표·목록은 남은 자리부터 줄 단위로 채운다. 그 밖의 덩어리(카드 등)는 통째로 다음 쪽으로 넘기되,
+    // 새 쪽에서도 안 들어가면 안쪽 요소 단위로 나눈다.
+    const fillByRows = node instanceof Element && /^(TABLE|UL|OL|TBODY)$/.test(node.tagName);
+    if (this.placed > 0 && !(fillByRows && this.splittable(node))) {
+      this.breakPage(chain);
+      this.place(node, chain);
+      return;
+    }
+    if (this.splittable(node)) {
+      for (const child of this.childrenOf(node)) this.place(child, [...chain, node]);
+      return;
+    }
+    // 더 나눌 수 없는데 한 쪽보다 큼 → 그대로 두고(그 쪽만 잘라 붙임) 다음 쪽으로.
+    this.containerFor(chain).appendChild(clone);
+    this.placed++;
+    this.breakPage([]);
+  }
+}
+
+async function pageToCanvas(el: HTMLElement): Promise<HTMLCanvasElement> {
+  const h2c = (window as any).html2canvas;
+  return h2c(el, {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: "#ffffff",
+    width: REPORT_W_PX,
+    windowWidth: REPORT_W_PX + 40,
+    scrollX: 0,
+    scrollY: 0,
+    logging: false,
+  });
+}
+
+async function renderPagesToPdfBytes(pages: HTMLElement[]): Promise<Uint8Array> {
+  const JsPDF = (window as any).jspdf.jsPDF;
+  const pdf = new JsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+
+  let first = true;
+  for (const el of pages) {
+    const canvas = await pageToCanvas(el);
+    const pxPerMm = canvas.width / CONTENT_W_MM;
+    const slicePx = Math.floor(CONTENT_H_MM * pxPerMm);
+    // 보통은 한 조각(= 한 쪽). 더 나눌 수 없는 요소가 한 쪽보다 큰 경우에만 여러 조각으로 잘린다.
+    for (let y = 0; y < canvas.height; y += slicePx) {
+      const h = Math.min(slicePx, canvas.height - y);
+      if (h < 8 && y > 0) break;
+      const part = document.createElement("canvas");
+      part.width = canvas.width;
+      part.height = h;
+      const ctx = part.getContext("2d")!;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, part.width, part.height);
+      ctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
+      if (!first) pdf.addPage("a4", "portrait");
+      first = false;
+      pdf.addImage(part.toDataURL("image/jpeg", 0.95), "JPEG", PAGE_MARGIN_MM.left, PAGE_MARGIN_MM.top, CONTENT_W_MM, h / pxPerMm);
+    }
+  }
+
   const nPages = pdf.internal.getNumberOfPages();
   for (let i = 1; i <= nPages; i++) {
     pdf.setPage(i);
@@ -700,17 +869,23 @@ async function renderElementToPdfBytes(el: HTMLElement): Promise<Uint8Array> {
   return new Uint8Array(buf);
 }
 
-/** html 문자열을 감춰진 DOM에 넣고 PDF 바이트로 만든 뒤 정리한다. */
+/** html 문자열을 감춰진 DOM에 넣고, A4 쪽 단위로 나눠 PDF 바이트로 만든 뒤 정리한다. */
 export async function htmlToPdfBytes(html: string): Promise<Uint8Array> {
   const stageWrap = document.createElement("div");
-  stageWrap.style.cssText = "position:fixed;left:-99999px;top:0;height:0;overflow:hidden";
+  // 화면 밖에 두되 레이아웃(높이 측정)은 정상적으로 되도록 크기를 막지 않는다.
+  stageWrap.style.cssText = `position:absolute;left:-100000px;top:0;width:${REPORT_W_PX + 40}px;`;
   document.body.appendChild(stageWrap);
-  const el = document.createElement("div");
-  el.innerHTML = html;
-  stageWrap.appendChild(el);
+  const src = document.createElement("div");
+  src.innerHTML = html;
+  stageWrap.appendChild(src);
   await new Promise((r) => setTimeout(r, 60));
   try {
-    return await renderElementToPdfBytes(el.firstElementChild as HTMLElement);
+    const root = src.firstElementChild as HTMLElement;
+    const pager = new Paginator(stageWrap, root);
+    for (const child of meaningfulChildren(root)) pager.place(child);
+    src.remove();
+    const pages = pager.pages.filter((p) => p.childNodes.length > 0);
+    return await renderPagesToPdfBytes(pages);
   } finally {
     document.body.removeChild(stageWrap);
   }
