@@ -1,12 +1,24 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth/requireRole";
 import SignOutButton from "./SignOutButton";
+import { createClient } from "@/lib/supabase/server";
 
 const ROLE_LABEL: Record<string, string> = { admin: "관리자", editor: "편집자", viewer: "뷰어" };
 
 export default async function StaffLayout({ children }: { children: React.ReactNode }) {
   // 로그인 안 했으면 /login 으로, profiles 행이 없으면(=아직 초대 안 받음) 여기서 막힘
   const session = await requireRole("viewer");
+
+  // 관리자에게만: 회원가입 후 승인을 기다리는 계정 수(2026-09-28 원장님 요청 2) — "계정 관리" 옆 숫자
+  let pendingCount = 0;
+  if (session.role === "admin") {
+    const supabase = await createClient();
+    const { count } = await supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("role", "대기");
+    pendingCount = count ?? 0;
+  }
 
   return (
     <div className="min-h-screen">
@@ -31,7 +43,14 @@ export default async function StaffLayout({ children }: { children: React.ReactN
             <Link href="/exams" className="nav-link">시험·정답</Link>
             <Link href="/classes" className="nav-link">반 관리</Link>
             {session.role === "admin" && (
-              <Link href="/admin/users" className="nav-link">계정 관리</Link>
+              <Link href="/admin/users" className="nav-link">
+                계정 관리
+                {pendingCount > 0 && (
+                  <span className="ml-1 inline-flex items-center justify-center rounded-full bg-brand-700 text-white text-[11px] leading-none min-w-[1.1rem] h-[1.1rem] px-1 align-middle">
+                    {pendingCount}
+                  </span>
+                )}
+              </Link>
             )}
             {session.role === "admin" && (
               <Link href="/admin/ai" className="nav-link">AI 설정</Link>
