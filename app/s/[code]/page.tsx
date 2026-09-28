@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import StudentSubmitForm from "./StudentSubmitForm";
+import { tutorIdFromToken } from "@/lib/tutor/link";
 
 // 학생이 QR/링크로 접속할 때마다 시험 상태(존재/열림·닫힘)를 항상 최신으로 봐야 하므로
 // 이 페이지는 절대 캐시하지 않는다 — createAdminClient()는 cookies()를 쓰지 않으므로
@@ -13,7 +14,13 @@ export const dynamic = "force-dynamic";
 // (존재하지 않음/닫힘) 학생에게 정확한 안내 문구를 보여주려면 상태를 먼저 알아야 하기 때문.
 // 이 서비스롤 접근은 이 서버 컴포넌트 안에서만 쓰이고, 클라이언트로는 정답이 전혀 내려가지 않는다
 // (answer_key 조회 시 item_label/type/sort_order만 select, correct_answers는 절대 select하지 않음).
-export default async function StudentSubmitPage({ params }: { params: { code: string } }) {
+export default async function StudentSubmitPage({
+  params,
+  searchParams,
+}: {
+  params: { code: string };
+  searchParams?: { t?: string };
+}) {
   const code = decodeURIComponent(params.code);
   const admin = createAdminClient();
 
@@ -27,11 +34,25 @@ export default async function StudentSubmitPage({ params }: { params: { code: st
     return <Wrap>존재하지 않는 시험입니다. 선생님께 받은 링크를 다시 확인해 주세요.</Wrap>;
   }
 
+  // #4: 과외선생님 전용 링크(?t=토큰) — 그 과외선생님이 이 시험을 구매했으면 시험 상태와 무관하게
+  // 받고, 학원 반 선택 없이 이름만 받는다.
+  let tutorToken: string | null = null;
+  if (searchParams?.t) {
+    const tutorId = await tutorIdFromToken(searchParams.t);
+    const { data: purchase } = tutorId
+      ? await (admin.from("tutor_exam_purchases") as any).select("id").eq("exam_id", exam.id).eq("tutor_id", tutorId).maybeSingle()
+      : { data: null };
+    if (!purchase) {
+      return <Wrap>제출 링크가 올바르지 않습니다. 선생님께 받은 링크를 다시 확인해 주세요.</Wrap>;
+    }
+    tutorToken = searchParams.t;
+  }
+
   const { data: classes } = await admin.from("classes").select("level, grade, name").order("level").order("grade").order("name");
 
   // #109: "열림" 상태가 아니어도, 과외선생님 스토어에 판매 중(tutor_download_cost가 null이 아님)인
   // 시험이면 계속 제출을 받는다 — 학교 쪽 status는 '닫힘' 그대로 두고 별도 재오픈 없이 확장.
-  const acceptingSubmissions = exam.status === "열림" || exam.tutor_download_cost !== null;
+  const acceptingSubmissions = !!tutorToken || exam.status === "열림" || exam.tutor_download_cost !== null;
 
   if (!acceptingSubmissions) {
     return (
@@ -42,7 +63,7 @@ export default async function StudentSubmitPage({ params }: { params: { code: st
     );
   }
 
-  if (!classes || classes.length === 0) {
+  if (!tutorToken && (!classes || classes.length === 0)) {
     return <Wrap>등록된 반이 없어 제출할 수 없습니다. 선생님께 문의해 주세요.</Wrap>;
   }
 
@@ -62,7 +83,8 @@ export default async function StudentSubmitPage({ params }: { params: { code: st
     <StudentSubmitForm
       code={exam.code}
       examName={exam.name}
-      classes={classes}
+      classes={classes ?? []}
+      tutorToken={tutorToken}
       items={items.map((it) => ({ item_label: it.item_label, type: it.type }))}
     />
   );

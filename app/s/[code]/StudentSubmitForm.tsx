@@ -14,13 +14,16 @@ export default function StudentSubmitForm({
   examName,
   classes,
   items,
+  tutorToken = null,
 }: {
   code: string;
   examName: string;
   classes: ClassRow[];
   items: Item[];
+  // #4: 과외선생님 전용 링크로 들어왔으면 반 선택 없이 바로 이름·답 입력
+  tutorToken?: string | null;
 }) {
-  const [step, setStep] = useState<"level" | "grade" | "class" | "form">("level");
+  const [step, setStep] = useState<"level" | "grade" | "class" | "form">(tutorToken ? "form" : "level");
   const [level, setLevel] = useState<Level | null>(null);
   const [grade, setGrade] = useState<number | null>(null);
   const [cls, setCls] = useState<string | null>(null);
@@ -58,7 +61,7 @@ export default function StudentSubmitForm({
       const res = await fetch(`/api/submit/${encodeURIComponent(code)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lv: level, grade, cls, name, answers }),
+        body: JSON.stringify(tutorToken ? { t: tutorToken, name, answers } : { lv: level, grade, cls, name, answers }),
       });
       const json = await res.json();
       setResult({ ok: !!json.ok, msg: json.msg ?? (json.ok ? "제출 완료" : "제출하지 못했습니다.") });
@@ -149,9 +152,9 @@ export default function StudentSubmitForm({
         </div>
       )}
 
-      {step === "form" && level && grade !== null && cls && (
+      {step === "form" && (tutorToken || (level && grade !== null && cls)) && (
         <div className="space-y-4">
-          <BackBar onBack={() => setStep("class")} title={`${level}${grade} ${cls}`} />
+          {!tutorToken && <BackBar onBack={() => setStep("class")} title={`${level}${grade} ${cls}`} />}
 
           <div>
             <label className="label">이름</label>
