@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { purchaseExam } from "./actions";
 
-export default function PurchaseButton({ examId, cost }: { examId: string; cost: number }) {
+export default function PurchaseButton({ examId, examCode, cost }: { examId: string; examCode: string; cost: number }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
@@ -22,9 +22,8 @@ export default function PurchaseButton({ examId, cost }: { examId: string; cost:
               setErr(r.msg ?? "구매하지 못했습니다.");
               return;
             }
-            // revalidatePath만으로는 이미 렌더된 서버 컴포넌트가 바로 갱신되지 않으므로, 여기서
-            // 한 번 더 새로고침해 구매 버튼 → 다운로드 링크로 즉시 바뀌게 한다.
-            router.refresh();
+            // #4: 구매하면 바로 그 시험의 관리 화면(다운로드 / 제출 학생·보고서 / 수정 요청)으로 이동한다.
+            router.push(`/tutor/store/${encodeURIComponent(examCode)}`);
           })
         }
       >

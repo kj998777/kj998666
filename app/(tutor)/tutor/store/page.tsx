@@ -68,15 +68,13 @@ export default async function TutorStorePage() {
                       {owned ? <span className="text-emerald-600">구매함</span> : `${e.tutor_download_cost}P`}
                     </td>
                     <td className="py-1 pr-2">
+                      {/* #4: 구매한 시험은 바로 다운로드 대신 관리 화면(다운로드 / 제출 학생·보고서 / 수정 요청)으로 */}
                       {owned ? (
-                        <a
-                          href={`/tutor/store/${encodeURIComponent(e.code)}/download`}
-                          className="btn-secondary py-1 px-3 inline-block"
-                        >
-                          다운로드
-                        </a>
+                        <Link href={`/tutor/store/${encodeURIComponent(e.code)}`} className="btn-secondary py-1 px-3 inline-block">
+                          관리하기
+                        </Link>
                       ) : (
-                        <PurchaseButton examId={e.id} cost={e.tutor_download_cost} />
+                        <PurchaseButton examId={e.id} examCode={e.code} cost={e.tutor_download_cost} />
                       )}
                     </td>
                   </tr>
