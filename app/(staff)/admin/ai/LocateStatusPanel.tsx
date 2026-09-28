@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { startLocateItems } from "../review-status/actions";
+import { fixDigitizedLocations, startLocateItems } from "../review-status/actions";
 
 // 2026-09-29 원장님 요청: 문항 영역 찾기(lib/ai/locate.ts, 0024) 진행 상황을 AI 설정 화면에서도 보이게.
 // 검토현황의 LocatePanel과 같은 작업 테이블(item_locate_jobs)을 시험별로 보여 주고, 진행 중이면 20초마다
@@ -46,10 +46,12 @@ export default function LocateStatusPanel({
   available,
   missingItems,
   jobs,
+  stale,
 }: {
   available: boolean;
   missingItems: number;
   jobs: LocateJobRow[];
+  stale?: { exams: number; items: number };
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -147,6 +149,31 @@ export default function LocateStatusPanel({
         <span className={"badge " + BADGE.error}>오류 {nError}</span>
         <span className={"badge " + BADGE.done}>완료 {nDone}</span>
       </div>
+
+      {stale && stale.exams > 0 && (
+        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 space-y-2">
+          <p>
+            디지털 시험지를 &ldquo;원본으로 적용&rdquo;한 시험 {stale.exams}개(검토 대기 문항 {stale.items}개)는 문항 위치가 예전
+            스캔본 기준으로 남아 있어, 과외선생님 화면에 엉뚱한 곳이나 다른 번호 문제가 잘려 보입니다. 아래 버튼을 누르면 옛
+            위치를 지우고 새 PDF에서 다시 찾습니다(AI 일괄 처리, 보통 수 분).
+          </p>
+          <button
+            className="btn-primary py-1 px-3 text-xs"
+            disabled={pending}
+            onClick={() =>
+              start(async () => {
+                setMsg("");
+                const r = await fixDigitizedLocations();
+                setMsg(r.msg ?? "");
+                router.refresh();
+                void tick();
+              })
+            }
+          >
+            {pending ? "처리하는 중…" : `시험 ${stale.exams}개 문항 위치 다시 찾기`}
+          </button>
+        </div>
+      )}
 
       {msg && <p className="text-sm text-slate-700">{msg}</p>}
 
