@@ -21,6 +21,7 @@ import { AiSolution, CombinedFlag, autoCombine } from "./combine";
 import { assignPoints } from "./points";
 import { Job, JobState, getJob, isActiveStage, setJob } from "./job";
 import { getExamPdfBuffer } from "./pdf";
+import { openExamIfAllConfirmed } from "@/lib/review/confirm";
 import { clearLowBalanceAlert, getAiCreds, recordLowBalanceAlert, recordUsage } from "./settings";
 
 // Client 타입을 any로 두는 이유는 lib/ai/settings.ts 상단 주석 참고(createServerClient와
@@ -399,7 +400,15 @@ async function finishExam(
       type: r.type === "mc" ? ("객관식" as const) : ("주관식" as const),
     };
   });
+  // #8 (2026-09-28): 과외선생님 검토가 필요한 문항만 검토 큐로 — AI 확신도 low/fail이거나 시험지 오류
+  // 정정(정오표)이 만들어진 문항. 나머지(high/medium)는 "AI 확신"으로 바로 정답 확정한다(0016/0018).
+  const needsReview = (r: (typeof rows)[number]) => r.flag.c === "low" || r.flag.c === "fail" || !!r.fix;
+  const confirmedAt = new Date().toISOString();
+  const reviewCount = rows.filter(needsReview).length;
   const explanationRows = rows.map((r) => ({
+    review_confirmed: !needsReview(r),
+    review_confirm_source: needsReview(r) ? null : "ai_confident",
+    review_confirmed_at: needsReview(r) ? null : confirmedAt,
     exam_id: examId,
     item_label: r.label,
     area: r.area,
@@ -443,7 +452,12 @@ async function finishExam(
   // 해설을 다시 만들면 이전 출제오류 의심 판단은 더 이상 유효하지 않으므로 함께 정리한다.
   await client.from("item_checks").delete().eq("exam_id", examId);
   if (explanationRows.length) {
-    const { error } = await client.from("item_explanations").insert(explanationRows as any);
+    let { error } = await client.from("item_explanations").insert(explanationRows as any);
+    // 0016 마이그레이션 전이면 review_* 열이 없어 실패한다 — 그때는 예전처럼(전부 검토 대상) 넣는다.
+    if (error && /review_confirm/.test(String(error.message))) {
+      const legacy = explanationRows.map(({ review_confirmed, review_confirm_source, review_confirmed_at, ...rest }) => rest);
+      ({ error } = await client.from("item_explanations").insert(legacy as any));
+    }
     if (error) throw error;
   }
   // 해설을 다시 만들면 이전 출제오류 의심 판단은 더 이상 유효하지 않으므로 함께 정리한다.
@@ -469,9 +483,20 @@ async function finishExam(
   const msg =
     `자동 처리가 끝났습니다. 문항 ${rows.length}개` +
     (fail ? ` 중 ${fail}개 실패` : "") +
-    (low ? `, 확인 필요 ${low}개` : "") +
-    " — 확인 필요 문항은 과외선생님 검토 큐에 올라갑니다. 정답을 확인하고 확정해 주세요.";
+    (low ? `, 확신 낮음 ${low}개` : "") +
+    (reviewCount
+      ? ` — 검토가 필요한 ${reviewCount}문항만 과외선생님 검토 큐에 올라갑니다(나머지는 AI 확신으로 정답 확정). 검토현황에서 진행 상황을 볼 수 있습니다.`
+      : " — 모든 문항의 AI 확신도가 높아 검토 없이 정답을 확정했습니다.");
   await setJob(client, examId, "review", msg, state);
+
+  // #8: 검토가 필요한 문항이 하나도 없으면 #1 규칙대로 바로 연다(0016 전이면 조용히 건너뜀).
+  if (!reviewCount) {
+    try {
+      await openExamIfAllConfirmed(client, examId);
+    } catch {
+      /* 무시 — 관리자가 검토현황/시험 상세에서 열 수 있음 */
+    }
+  }
 }
 
 const STAGE_FN: Partial<Record<ExamJobStage, (client: Client, examId: string, state: JobState) => Promise<void>>> = {
