@@ -34,7 +34,10 @@ export default async function TutorDashboardPage() {
       <div>
         <h1 className="text-lg font-semibold">내 활동</h1>
         <p className="text-sm text-slate-500">
-          검토대기 문항을 풀어 포인트를 벌고, 그 포인트로 기출문제 PDF를 받을 수 있습니다.
+          검토대기 문항을 풀어 포인트를 벌고, 그 포인트로 기출문제 PDF를 받을 수 있습니다.{" "}
+          <Link href="/tutor/guide" className="font-medium text-rose-600 hover:underline">
+            처음이세요? 사용법 보기 →
+          </Link>
         </p>
       </div>
 
