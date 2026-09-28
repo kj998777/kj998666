@@ -19,7 +19,7 @@ export default function TutorExamTabs({
   const base = `/tutor/store/${encodeURIComponent(code)}`;
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-semibold">
           {name} <span className="text-slate-400 text-sm font-normal">({code})</span>
         </h1>
