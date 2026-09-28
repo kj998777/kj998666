@@ -45,7 +45,7 @@ export default async function ReviewItemPage({
   return (
     <div className="space-y-4">
       <div className="card space-y-2">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           {/* kind가 verify여도 화면에 표시하지 않는다 — "새 문항과 똑같은 화면"이어야 검증자가
               눈치채지 못하고 자기 실력대로 다시 푼다(블라인드 재검증, 계획 문서 참고). */}
           <h1 className="text-lg font-semibold">

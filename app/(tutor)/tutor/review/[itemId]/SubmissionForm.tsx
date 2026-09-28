@@ -163,7 +163,7 @@ export default function SubmissionForm({
         )}
       </div>
       {err && <p className="text-sm text-red-600">{err}</p>}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           className="btn-primary"
           disabled={pending || !answerDisplay.trim()}
