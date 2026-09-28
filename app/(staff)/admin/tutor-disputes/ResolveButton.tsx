@@ -11,7 +11,7 @@ export default function ResolveButton({ primaryReviewId }: { primaryReviewId: st
   if (done) return <p className="text-sm text-emerald-600">확인 완료로 표시했습니다.</p>;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <button
         className="btn-secondary py-1 px-3"
         disabled={pending}

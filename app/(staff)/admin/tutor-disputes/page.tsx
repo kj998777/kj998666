@@ -65,7 +65,7 @@ export default async function TutorDisputesPage() {
         const exam = examById.get(p.exam_id);
         return (
           <div key={p.id} className="card space-y-2">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="font-medium">
                 {exam?.name ?? "시험"} · {p.item_label}번
               </h2>
