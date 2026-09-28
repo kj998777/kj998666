@@ -3,18 +3,22 @@
 import { useState, useTransition } from "react";
 import { adjustTutorPoints, changeRole, revokeUser } from "./actions";
 import type { Role } from "@/lib/supabase/types";
+import { personLabel } from "@/lib/profile/label";
 
-type Profile = { id: string; email: string; role: Role; created_at: string };
+type Profile = { id: string; email: string; role: Role; created_at: string; display_name?: string | null; cohort?: string | null };
 type TutorStats = { points_balance: number; reviews_submitted: number; reviews_flagged: number };
 
 export default function UserRow({
   profile,
   isMe,
   tutorStats,
+  approveAsTutor,
 }: {
   profile: Profile;
   isMe: boolean;
   tutorStats?: TutorStats;
+  // 대기 계정 목록: "과외선생님으로 승인" 버튼을 함께 보여 준다(2026-09-28)
+  approveAsTutor?: boolean;
 }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
@@ -30,7 +34,11 @@ export default function UserRow({
   return (
     <tr className="border-b border-slate-100">
       <td className="py-2 pr-2">
-        {profile.email} {isMe && <span className="text-slate-400">(나)</span>}
+        {(profile.display_name || profile.cohort) && (
+          <div className="font-medium text-slate-900">{personLabel({ display_name: profile.display_name, cohort: profile.cohort })}</div>
+        )}
+        <span className={profile.display_name || profile.cohort ? "text-slate-500" : ""}>{profile.email}</span>{" "}
+        {isMe && <span className="text-slate-400">(나)</span>}
         {tutorStats && (
           <>
             <div className="text-xs text-slate-400 mt-0.5">
@@ -116,13 +124,28 @@ export default function UserRow({
       <td className="py-2 pr-2 text-slate-500">
         {new Date(profile.created_at).toLocaleDateString("ko-KR")}
       </td>
-      <td className="py-2 pr-2 text-right">
+      <td className="py-2 pr-2 text-right whitespace-nowrap">
+        {approveAsTutor && !isMe && (
+          <button
+            className="btn-primary py-1 px-3 mr-2"
+            disabled={pending}
+            onClick={() => {
+              setErr("");
+              start(async () => {
+                const r = await changeRole(profile.id, "tutor");
+                if (!r.ok) setErr(r.msg ?? "실패했습니다.");
+              });
+            }}
+          >
+            과외선생님으로 승인
+          </button>
+        )}
         {!isMe && (
           <button
             className="btn-danger py-1 px-3"
             disabled={pending}
             onClick={() => {
-              if (!confirm(`${profile.email} 계정을 삭제할까요? 로그인이 즉시 막힙니다.`)) return;
+              if (!confirm(`${personLabel(profile)} 계정을 삭제할까요? 로그인이 즉시 막힙니다.`)) return;
               setErr("");
               start(async () => {
                 const r = await revokeUser(profile.id);

@@ -24,6 +24,20 @@ export default function InviteForm({ defaultRole = "viewer" }: { defaultRole?: "
         </label>
         <input id="email" name="email" type="email" required className="input" placeholder="junior@example.com" />
       </div>
+      <div className="grid grid-cols-[6rem_1fr] gap-2">
+        <div>
+          <label className="label" htmlFor={`cohort-${defaultRole}`}>
+            기수 (선택)
+          </label>
+          <input id={`cohort-${defaultRole}`} name="cohort" maxLength={10} className="input" placeholder="예: 31" />
+        </div>
+        <div>
+          <label className="label" htmlFor={`display_name-${defaultRole}`}>
+            이름 (선택)
+          </label>
+          <input id={`display_name-${defaultRole}`} name="display_name" maxLength={30} className="input" placeholder="홍길동" />
+        </div>
+      </div>
       <div>
         <label className="label" htmlFor="role">
           권한

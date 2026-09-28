@@ -2,16 +2,22 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import InviteForm from "./InviteForm";
 import UserRow from "./UserRow";
-import type { Role } from "@/lib/supabase/types";
 
 export default async function AdminUsersPage() {
   const session = await requireRole("admin");
 
   const supabase = await createClient();
-  const { data: profiles, error } = await supabase
+  // 이름·기수(0021) 열이 아직 없는 DB에서도 목록은 보이도록, 실패하면 예전 열만 다시 읽는다.
+  let { data: profiles, error } = (await supabase
     .from("profiles")
-    .select("id, email, role, created_at")
-    .order("created_at", { ascending: true });
+    .select("id, email, role, created_at, display_name, cohort")
+    .order("created_at", { ascending: true })) as { data: any[] | null; error: any };
+  if (error) {
+    ({ data: profiles, error } = (await supabase
+      .from("profiles")
+      .select("id, email, role, created_at")
+      .order("created_at", { ascending: true })) as { data: any[] | null; error: any });
+  }
 
   const pendingProfiles = (profiles ?? []).filter((p: any) => p.role === "대기");
   const staffProfiles = (profiles ?? []).filter((p: any) => p.role !== "tutor" && p.role !== "대기");
@@ -54,20 +60,21 @@ export default async function AdminUsersPage() {
           <h2 className="font-medium mb-1 text-amber-900">대기중인 계정 ({pendingProfiles.length}명)</h2>
           <p className="text-sm text-amber-800 mb-3">
             직접 회원가입한 계정입니다. 알맞은 권한을 지정해 줄 때까지는 아무 화면도 볼 수 없습니다.
+            후배라면 &ldquo;과외선생님으로 승인&rdquo;을 누르면 됩니다(환영 포인트 3P가 함께 들어갑니다).
           </p>
           <div className="table-wrap">
           <table className="w-full min-w-[30rem] sm:min-w-0 text-sm">
             <thead>
               <tr className="text-left text-amber-700 border-b border-amber-200">
-                <th className="py-2 pr-2">이메일</th>
+                <th className="py-2 pr-2">기수·이름 / 이메일</th>
                 <th className="py-2 pr-2">권한</th>
                 <th className="py-2 pr-2">가입일</th>
                 <th className="py-2 pr-2"></th>
               </tr>
             </thead>
             <tbody>
-              {pendingProfiles.map((p: { id: string; email: string; role: Role; created_at: string }) => (
-                <UserRow key={p.id} profile={p} isMe={p.id === session.userId} />
+              {pendingProfiles.map((p: any) => (
+                <UserRow key={p.id} profile={p} isMe={p.id === session.userId} approveAsTutor />
               ))}
             </tbody>
           </table>
@@ -82,14 +89,14 @@ export default async function AdminUsersPage() {
         <table className="w-full min-w-[30rem] sm:min-w-0 text-sm">
           <thead>
             <tr className="text-left text-slate-500 border-b border-slate-200">
-              <th className="py-2 pr-2">이메일</th>
+              <th className="py-2 pr-2">기수·이름 / 이메일</th>
               <th className="py-2 pr-2">권한</th>
               <th className="py-2 pr-2">가입일</th>
               <th className="py-2 pr-2"></th>
             </tr>
           </thead>
           <tbody>
-            {staffProfiles.map((p: { id: string; email: string; role: Role; created_at: string }) => (
+            {staffProfiles.map((p: any) => (
               <UserRow key={p.id} profile={p} isMe={p.id === session.userId} />
             ))}
           </tbody>
@@ -106,14 +113,14 @@ export default async function AdminUsersPage() {
           <table className="w-full min-w-[30rem] sm:min-w-0 text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-200">
-                <th className="py-2 pr-2">이메일 / 활동</th>
+                <th className="py-2 pr-2">기수·이름 / 이메일 / 활동</th>
                 <th className="py-2 pr-2">권한</th>
                 <th className="py-2 pr-2">가입일</th>
                 <th className="py-2 pr-2"></th>
               </tr>
             </thead>
             <tbody>
-              {tutorProfiles.map((p: { id: string; email: string; role: Role; created_at: string }) => (
+              {tutorProfiles.map((p: any) => (
                 <UserRow key={p.id} profile={p} isMe={p.id === session.userId} tutorStats={tutorStatsById[p.id]} />
               ))}
             </tbody>
