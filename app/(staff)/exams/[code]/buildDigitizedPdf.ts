@@ -47,7 +47,20 @@ type CroppedImg = { src: string; dw: number; dh: number; w: "stem" | "end" };
 type PackItem = { it: DgItem; pg: number; imgs?: CroppedImg[] };
 
 export type BuildProgress = (message: string) => void;
-export type BuildResult = { bytes: Uint8Array; pages: number; items: number; figs: number; figErrors: number };
+/**
+ * 조판된 새 PDF에서 문항이 놓인 자리(1쪽부터 센 쪽 번호 + 그 쪽을 1000×1000으로 본 영역).
+ * 2026-09-29: "원본으로 적용"하면 PDF의 쪽 나눔·배치가 스캔본과 완전히 달라지는데, 문항 영역 좌표는 스캔본 기준으로
+ * 남아 있어 과외선생님 화면에 엉뚱한 곳·다른 번호 문제가 잘려 나왔다. 조판할 때 각 문항의 실제 자리를 재서 함께 저장한다.
+ */
+export type DgLocation = { label: string; page: number; bbox: { x0: number; y0: number; x1: number; y1: number } };
+export type BuildResult = {
+  bytes: Uint8Array;
+  pages: number;
+  items: number;
+  figs: number;
+  figErrors: number;
+  locations: DgLocation[];
+};
 
 // ---------------------------------------------------------------------
 // 레이아웃 상수 (예전 시스템의 DGL 그대로: A4를 96dpi로 본 픽셀값)
@@ -574,10 +587,10 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
         const h = dgItemHtml(katex, items[i].it, items[i].imgs || []);
         const s = pk.sc[i];
         return s
-          ? `<div style="height:${Math.round(hs[i])}px;overflow:hidden"><div style="width:${Math.round(
+          ? `<div data-dgi="${i}" style="height:${Math.round(hs[i])}px;overflow:hidden"><div style="width:${Math.round(
               DGL_CW / s
             )}px;transform:scale(${s});transform-origin:0 0">${h}</div></div>`
-          : `<div>${h}</div>`;
+          : `<div data-dgi="${i}">${h}</div>`;
       })
       .join("");
   }
@@ -612,6 +625,27 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
     })
   );
   await nextTick();
+
+  // 각 문항이 어느 쪽 어디에 놓였는지 잰다(쪽 요소 794×1123px → 1000×1000). 같은 번호가 여러 번 나오면 첫 자리.
+  const locations: DgLocation[] = [];
+  const seenLabel = new Set<string>();
+  pageEls.forEach((pageEl, k) => {
+    const pr = pageEl.getBoundingClientRect();
+    if (!pr.width || !pr.height) return;
+    pageEl.querySelectorAll("[data-dgi]").forEach((el) => {
+      const i = Number((el as HTMLElement).dataset.dgi);
+      const it = items[i]?.it;
+      const label = String(it?.label || "").trim();
+      if (!it || it.type !== "question" || !label || seenLabel.has(label)) return;
+      const r = (el as HTMLElement).getBoundingClientRect();
+      const nx = (v: number) => Math.max(0, Math.min(1000, Math.round(((v - pr.left) / pr.width) * 1000)));
+      const ny = (v: number) => Math.max(0, Math.min(1000, Math.round(((v - pr.top) / pr.height) * 1000)));
+      const bbox = { x0: nx(r.left), y0: ny(r.top), x1: nx(r.right), y1: ny(r.bottom) };
+      if (bbox.x1 - bbox.x0 < 5 || bbox.y1 - bbox.y0 < 5) return;
+      seenLabel.add(label);
+      locations.push({ label, page: k + 1, bbox });
+    });
+  });
 
   const outDoc = await PDFDocument.create();
   const PW = 595.28;
@@ -650,7 +684,7 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
 
   const bytes = await outDoc.save();
   const qItems = items.filter((e) => e.it.type === "question").length;
-  return { bytes, pages: nPg, items: qItems, figs: nFig, figErrors: figErrs.length };
+  return { bytes, pages: nPg, items: qItems, figs: nFig, figErrors: figErrs.length, locations };
 }
 
 export function downloadPdfBytes(bytes: Uint8Array, filename: string): void {

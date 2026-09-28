@@ -79,7 +79,8 @@ export default function DigitizeControl({
       const blob = new Blob([built.bytes as any], { type: "application/pdf" });
       await uploadPdfDirect(examId, blob);
       setApplyMsg("정리하는 중…");
-      const r = await applyDigitizedPdfAsOriginal(code);
+      // 새로 조판한 PDF에서 잰 문항 자리도 함께 넘긴다(과외선생님 화면의 문항 잘라 보기가 새 PDF와 맞도록)
+      const r = await applyDigitizedPdfAsOriginal(code, built.locations);
       if (!r.ok) throw new Error(r.msg ?? "적용하지 못했습니다.");
       setApplyMsg(
         `적용했습니다 (${built.pages}쪽 · 문항 ${built.items}개 · 그림 ${built.figs}개${
