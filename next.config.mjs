@@ -21,6 +21,8 @@ const nextConfig = {
   // (fs.readFile의 동적 경로는 자동 파일 추적(nft)이 놓칠 수 있어 명시적으로 지정).
   outputFileTracingIncludes: {
     "/exams/[code]/pdf": ["./assets/fonts/**", "./assets/branding/**"],
+    // #4: 과외선생님 다운로드도 같은 표지·QR 쪽을 그린다.
+    "/tutor/store/[code]/download": ["./assets/fonts/**", "./assets/branding/**"],
   },
 };
 
