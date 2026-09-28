@@ -6,6 +6,7 @@ import ApproveReviewButton from "../../exams/[code]/ApproveReviewButton";
 import { ConfirmItemControl, ConfirmMatchedButton, EditRequestControl } from "./ConfirmControls";
 import LocatePanel from "./LocatePanel";
 import { getLocateSummary } from "@/lib/ai/locate";
+import { fetchAllIn, fetchAllPages } from "@/lib/supabase/fetchAll";
 
 export const dynamic = "force-dynamic";
 
@@ -38,9 +39,13 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
   const supabase = await createClient();
   const showConfirmed = searchParams?.all === "1";
 
+  // 2026-09-29: 모두 1000줄씩 끝까지 읽는다(lib/supabase/fetchAll.ts). 전에는 한 번에 최대 1000줄만 와서, 미확정 문항이
+  // 1000개를 넘으면 일부 시험이 이 화면에서 말없이 빠질 수 있었다.
   const [{ data: pendingExamsRaw }, { data: unconfirmedRaw, error: unconfErr }]: any[] = await Promise.all([
-    supabase.from("exams").select("id").eq("status", "검수대기"),
-    supabase.from("item_explanations").select("exam_id").eq("review_confirmed", false),
+    fetchAllPages((a, b) => supabase.from("exams").select("id").eq("status", "검수대기").order("id").range(a, b)),
+    fetchAllPages((a, b) =>
+      supabase.from("item_explanations").select("exam_id").eq("review_confirmed", false).order("id").range(a, b)
+    ),
   ]);
 
   if (unconfErr) {
@@ -85,25 +90,46 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
   const [{ data: examsRaw }, { data: itemsRaw }, { data: keysRaw }, { data: reviewsRaw }, { data: jobsRaw }]: any[] =
     await Promise.all([
       // is_jeju·school_level: 검토 배정 순서(0019)를 이 화면에서도 보이게(2026-09-28). 열이 없으면 아래에서 다시 읽음.
-      supabase.from("exams").select("id, code, name, status, is_jeju, school_level").in("id", examIds),
-      supabase
-        .from("item_explanations")
-        .select(
-          "id, exam_id, item_label, answer_display, tutor_reviewed, claimed_by, claim_expires_at, review_confirmed, review_confirm_source, ai_answer_display"
-        )
-        .in("exam_id", examIds),
-      supabase.from("answer_key").select("exam_id, item_label, correct_answers, type, sort_order").in("exam_id", examIds),
-      supabase
-        .from("tutor_item_reviews")
-        .select("id, item_explanation_id, tutor_id, kind, answer_display, image_path, needs_verification, verified, is_match, matches_primary_review_id, created_at")
-        .in("exam_id", examIds)
-        .order("created_at", { ascending: true }),
-      supabase.from("exam_jobs").select("exam_id, flags:state->flags").in("exam_id", examIds),
+      fetchAllIn(examIds, (ids, a, b) =>
+        supabase.from("exams").select("id, code, name, status, is_jeju, school_level").in("id", ids).order("id").range(a, b)
+      ),
+      fetchAllIn(examIds, (ids, a, b) =>
+        supabase
+          .from("item_explanations")
+          .select(
+            "id, exam_id, item_label, answer_display, tutor_reviewed, claimed_by, claim_expires_at, review_confirmed, review_confirm_source, ai_answer_display"
+          )
+          .in("exam_id", ids)
+          .order("id")
+          .range(a, b)
+      ),
+      fetchAllIn(examIds, (ids, a, b) =>
+        supabase
+          .from("answer_key")
+          .select("exam_id, item_label, correct_answers, type, sort_order")
+          .in("exam_id", ids)
+          .order("id")
+          .range(a, b)
+      ),
+      fetchAllIn(examIds, (ids, a, b) =>
+        supabase
+          .from("tutor_item_reviews")
+          .select("id, item_explanation_id, tutor_id, kind, answer_display, image_path, needs_verification, verified, is_match, matches_primary_review_id, created_at")
+          .in("exam_id", ids)
+          .order("created_at", { ascending: true })
+          .order("id")
+          .range(a, b)
+      ),
+      fetchAllIn(examIds, (ids, a, b) =>
+        supabase.from("exam_jobs").select("exam_id, flags:state->flags").in("exam_id", ids).order("exam_id").range(a, b)
+      ),
     ]);
 
   let examRows: any[] = (examsRaw as any[]) ?? [];
   if (!examRows.length && examIds.length) {
-    const { data } = (await supabase.from("exams").select("id, code, name, status").in("id", examIds)) as any;
+    const { data } = await fetchAllIn(examIds, (ids, a, b) =>
+      supabase.from("exams").select("id, code, name, status").in("id", ids).order("id").range(a, b)
+    );
     examRows = data ?? [];
   }
   // 문항 잘라 보기 영역(좌표) 상태 — 0024 전이면 available=false라 패널이 안 보인다.
