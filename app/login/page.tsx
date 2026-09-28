@@ -9,6 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { normalizeCohort } from "@/lib/profile/label";
 
 type Mode = "login" | "signup" | "forgot";
 
@@ -32,6 +33,9 @@ export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // 회원가입 때만: 기수·이름(2026-09-28) — 관리자가 계정 관리 화면에서 누구인지 바로 알아보도록
+  const [cohort, setCohort] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
@@ -110,9 +114,16 @@ export default function LoginPage() {
       setErr("비밀번호는 6자 이상이어야 합니다.");
       return;
     }
+    if (!normalizeCohort(cohort) || !displayName.trim()) {
+      setBusy(false);
+      setErr("기수와 이름을 입력해 주세요.");
+      return;
+    }
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
+      // 이름·기수만 보낸다. 권한(role)은 가입 트리거(0021)가 항상 '대기'로 정하고, 관리자가 승인한다.
+      options: { data: { display_name: displayName.trim().slice(0, 30), cohort: normalizeCohort(cohort) } },
     });
     setBusy(false);
     if (error) {
@@ -140,7 +151,7 @@ export default function LoginPage() {
     mode === "login"
       ? "이메일과 비밀번호로 로그인하세요."
       : mode === "signup"
-        ? "이메일과 비밀번호로 계정을 만드세요."
+        ? "이메일과 비밀번호로 계정을 만드세요.\n가입 후 관리자가 승인하면 사용할 수 있습니다."
         : "가입할 때 쓴 이메일 주소를 입력하면 재설정 링크를 보내드립니다.";
 
   return (
@@ -178,6 +189,39 @@ export default function LoginPage() {
               autoComplete="email"
             />
           </div>
+          {mode === "signup" && (
+            <div className="grid grid-cols-[6rem_1fr] gap-2">
+              <div>
+                <label className="label" htmlFor="cohort">
+                  기수
+                </label>
+                <input
+                  id="cohort"
+                  required
+                  maxLength={10}
+                  className="input"
+                  placeholder="예: 31"
+                  value={cohort}
+                  onChange={(e) => setCohort(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="displayName">
+                  이름
+                </label>
+                <input
+                  id="displayName"
+                  required
+                  maxLength={30}
+                  className="input"
+                  placeholder="홍길동"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  autoComplete="name"
+                />
+              </div>
+            </div>
+          )}
           {mode !== "forgot" && (
             <div>
               <label className="label" htmlFor="password">
@@ -201,7 +245,9 @@ export default function LoginPage() {
           <button
             type="submit"
             className="btn-primary w-full"
-            disabled={busy || !email || (mode !== "forgot" && !password)}
+            disabled={
+              busy || !email || (mode !== "forgot" && !password) || (mode === "signup" && (!cohort.trim() || !displayName.trim()))
+            }
           >
             {busy ? "처리 중…" : mode === "login" ? "로그인" : mode === "signup" ? "회원가입" : "재설정 메일 보내기"}
           </button>
