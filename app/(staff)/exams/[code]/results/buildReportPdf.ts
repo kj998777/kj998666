@@ -1,3 +1,4 @@
+import { normalizeTex } from "@/lib/math/normalizeTex";
 // 브라우저에서 "성적 보고서"(종합/개별) PDF를 만든다.
 //
 // 옛 Apps Script 시스템의 파이썬 스크립트(claude/dg2025-report-content.md의 content.py/build.py/
@@ -133,7 +134,7 @@ function mathHtml(katex: any, text: string | null | undefined): string {
   // 그 앞의 정상 수식은 그대로 렌더링한다 — 문자열 전체를 통째로 포기하면 문항 하나에 $ 가
   // 하나만 빠져도 그 문항의 모든 수식이 명령어 글자 그대로 남는 문제가 생긴다
   // (buildDigitizedPdf.ts의 dgTex()에서 실제로 신고된 버그와 같은 원인이라 여기서도 함께 고쳤다).
-  const s = String(text == null ? "" : text);
+  const s = normalizeTex(String(text == null ? "" : text)); // $$…$$·$ 없는 수식도 $…$ 로(2026-09-28)
   const parts = s.split("$");
   const unpaired = parts.length % 2 === 0;
   const out: string[] = [];
