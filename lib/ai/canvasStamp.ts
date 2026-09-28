@@ -392,3 +392,28 @@ export async function renderStampPng(examCode: string, submitUrl: string): Promi
   g.fillText("시험코드 " + examCode, W / 2, top + s + 34 + 34);
   return canvas.encode("png");
 }
+
+/**
+ * 과외선생님 다운로드용 "받은 사람" 표시(2026-09-28 원장님 요청 3) — 한 줄짜리 회색 글씨를 투명
+ * 배경 PNG로 그린다. pdfStamp가 이 그림 한 장을 PDF에 한 번만 넣고 모든 쪽 아래 여백에 옅게 찍는다
+ * (쪽마다 새로 그리지 않으므로 파일 크기가 거의 늘지 않는다). 글자를 PDF 폰트로 쓰지 않는 이유는
+ * 이 파일 맨 위 설명(한글 폰트 임베드 버그) 참고.
+ */
+export async function renderWatermarkPng(text: string): Promise<Buffer> {
+  await ensureFonts();
+  const fontPx = 44;
+  const font = `${fontPx}px ${QFONT}`;
+  const probe = createCanvas(8, 8).getContext("2d");
+  probe.font = font;
+  const padX = 16;
+  const W = Math.min(4000, Math.ceil(probe.measureText(text).width) + padX * 2);
+  const H = Math.ceil(fontPx * 1.5);
+  const canvas = createCanvas(W, H);
+  const g = canvas.getContext("2d");
+  g.clearRect(0, 0, W, H);
+  g.font = font;
+  g.fillStyle = "#6b6b6b";
+  g.textBaseline = "middle";
+  g.fillText(text, padX, H / 2);
+  return canvas.encode("png");
+}

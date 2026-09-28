@@ -1,10 +1,10 @@
 import "server-only";
 import { readFile } from "fs/promises";
 import path from "path";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, degrees } from "pdf-lib";
 import { getExamPdfBuffer, getExamPdfMeta } from "./pdf";
 import { trailingAnswerPages } from "./answerPages";
-import { renderCoverPng, renderFixSheetPngs, renderStampPng } from "./canvasStamp";
+import { renderCoverPng, renderFixSheetPngs, renderStampPng, renderWatermarkPng } from "./canvasStamp";
 
 // 시험지 PDF에 표지·정오표(정정 페이지)·QR 안내 쪽을 붙여 학생에게 나눠 줄 최종 PDF를 만든다.
 //
@@ -40,6 +40,8 @@ export type StampOptions = {
   examCode: string;
   submitUrl: string;
   fixes: Correction[];
+  // 과외선생님 다운로드: 모든 쪽 아래 여백에 옅게 찍을 "받은 사람" 문구(없으면 안 찍음)
+  watermark?: string;
 };
 
 /** 원본 PDF(examId 로 저장된)에 표지·정정 페이지·QR 쪽을 붙인 최종 PDF 바이트를 만든다. */
@@ -111,6 +113,29 @@ export async function buildStampedExamPdf(client: Client, examId: string, opts: 
     H = (W * stampImg.height) / stampImg.width,
     mg = 12 * pt;
   back.drawImage(stampImg, { x: PW - W - mg, y: mg, width: W, height: H });
+
+  // 5) 받은 사람 표시 — 모든 쪽(표지·백지·QR 쪽 포함) 맨 아래 가운데에 작고 옅게.
+  //    글자 높이 약 6.5pt, 쪽 아래 끝에서 약 5mm 위(문제 본문과 겹치지 않는 여백).
+  if (opts.watermark && opts.watermark.trim()) {
+    const wmImg = await out.embedPng(await renderWatermarkPng(opts.watermark.trim()));
+    for (const page of out.getPages()) {
+      const { width: PWp, height: PHp } = page.getSize();
+      // 스캔본 등 /Rotate가 걸린 쪽은 "보이는" 아래쪽에 똑바로 찍히도록 좌표·각도를 돌려 준다.
+      const r = (((page.getRotation().angle % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+      const VW = r % 180 === 0 ? PWp : PHp; // 보이는 폭
+      let h = 9.5;
+      let w = (h * wmImg.width) / wmImg.height;
+      if (w > VW * 0.9) {
+        w = VW * 0.9;
+        h = (w * wmImg.height) / wmImg.width;
+      }
+      const vx = (VW - w) / 2,
+        vy = 4 * pt; // 보이는 좌표계에서 그림 왼쪽 아래
+      const [x, y] =
+        r === 90 ? [PWp - vy, vx] : r === 180 ? [PWp - vx, PHp - vy] : r === 270 ? [vy, PHp - vx] : [vx, vy];
+      page.drawImage(wmImg, { x, y, width: w, height: h, rotate: degrees(r), opacity: 0.55 });
+    }
+  }
 
   return out.save();
 }
