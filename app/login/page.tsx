@@ -95,6 +95,7 @@ export default function LoginPage() {
           .eq("id", signInData.user.id)
           .maybeSingle();
         if ((profile as any)?.role === "tutor") dest = "/tutor/dashboard";
+        else if ((profile as any)?.role === "대기") dest = "/pending";
       }
       setBusy(false);
       // 서버 컴포넌트/미들웨어가 새 세션 쿠키를 확실히 읽도록 클라이언트 라우팅 대신
@@ -124,8 +125,9 @@ export default function LoginPage() {
       return;
     }
     if (data.session) {
-      // 이메일 확인 절차 없이 바로 로그인된 상태
-      window.location.href = "/dashboard";
+      // 이메일 확인 절차 없이 바로 로그인된 상태 — 자율 가입 계정은 항상 '대기' 권한으로
+      // 시작하므로(#6) 곧장 대기 안내 화면으로 보낸다.
+      window.location.href = "/pending";
       return;
     }
     setMsg("가입이 완료되었습니다. 아래에서 로그인해 주세요.");
