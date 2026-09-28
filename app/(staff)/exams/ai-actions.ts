@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { finalizePdfUpload } from "@/lib/ai/pdf";
+import { applyNewPdfLocations } from "@/lib/ai/relocate";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { startExamAiJob, cancelExamAiJob, tickExamJob } from "@/lib/ai/pipeline";
 import { startDigitizeJob } from "@/lib/ai/digitize";
 import { tagJejuSchool } from "@/lib/exams/tagJeju";
@@ -131,6 +133,12 @@ export async function finalizeAttachExamPdfOnly(code: string) {
     await finalizePdfUpload(supabase, exam.id, { isScanned: null, uploadedBy: userId });
   } catch (e: any) {
     return { ok: false, msg: "PDF 저장에 실패했습니다: " + String(e?.message ?? e) };
+  }
+  // 2026-09-29: PDF가 바뀌면 예전 PDF 기준 문항 잘라 보기 좌표는 틀리므로 지우고 새 PDF에서 다시 찾게 한다(lib/ai/relocate.ts)
+  try {
+    await applyNewPdfLocations(createAdminClient(), exam.id, []);
+  } catch {
+    /* 무시 — AI 설정의 영역 찾기로 다시 할 수 있음 */
   }
   revalidatePath(`/exams/${code}`);
   return { ok: true, msg: "원본 PDF를 저장했습니다. 이제 QR·정오표 PDF를 다운로드할 수 있습니다." };
