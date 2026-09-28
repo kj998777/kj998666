@@ -238,3 +238,20 @@ export async function startLocateItems(): Promise<Result & { queued?: number }> 
       : "이미 진행 중입니다. 잠시 뒤 새로고침해 주세요.",
   };
 }
+
+/** 2026-09-29: 디지털 조판본으로 바꾼 시험의 옛(스캔본 기준) 문항 좌표를 지우고 새 PDF에서 AI로 다시 찾게 한다. */
+export async function fixDigitizedLocations(): Promise<Result & { exams?: number; items?: number }> {
+  await requireRole("admin");
+  const admin = createAdminClient();
+  const { resetStaleDigitized } = await import("@/lib/ai/locate");
+  const r = await resetStaleDigitized(admin);
+  revalidatePath("/admin/review-status");
+  revalidatePath("/admin/ai");
+  return {
+    ok: true,
+    ...r,
+    msg: r.exams
+      ? `시험 ${r.exams}개(문항 ${r.items}개)의 옛 좌표를 지우고 새 PDF에서 영역 찾기를 시작했습니다. 보통 수 분 걸립니다.`
+      : "바로잡을 시험이 없습니다.",
+  };
+}
