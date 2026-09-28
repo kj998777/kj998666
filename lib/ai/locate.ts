@@ -72,6 +72,10 @@ function locatePrompt(targets: Target[]): string {
 
 const TABLE = "item_locate_jobs";
 
+function kstTime(d = new Date()): string {
+  return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+}
+
 async function setLocateJob(client: Client, examId: string, patch: Record<string, unknown>): Promise<void> {
   await (client.from(TABLE) as any).update({ ...patch, updated_at: new Date().toISOString() }).eq("exam_id", examId);
 }
@@ -200,7 +204,7 @@ async function stepSubmit(client: Client, job: any): Promise<void> {
     stage: "wait",
     batch_id: r.json.id,
     attempts: 0,
-    message: `문항 ${targets.length}개의 영역을 찾는 중… (AI 처리 대기, 보통 몇 분)`,
+    message: `문항 ${targets.length}개의 영역을 찾는 중… (${kstTime()} AI에 보냄 · 결과 대기 — 보통 수 분, AI 쪽이 붐비면 1시간 가까이 걸릴 수 있음)`,
   });
 }
 
@@ -274,8 +278,34 @@ async function stepWait(client: Client, job: any): Promise<void> {
 }
 
 /**
- * 진행 중인 영역 찾기 작업을 한 걸음씩 진행한다(오래 기다린 것부터). deadline(Date.now() 기준 ms)이 지나면
- * 멈춘다. 처리한 작업 수를 돌려준다. 0024 전이면 0.
+ * 다른 호출(크론·검토현황 화면의 주기 확인·버튼)과 같은 작업을 동시에 잡지 않도록, 읽어 온 그 상태 그대로일 때만
+ * updated_at을 바꿔 "내가 잡았다"고 표시한다(낙관적 잠금). 성공하면 true.
+ * 2026-09-29: 전에는 잠금이 없어, 크론과 화면 확인이 겹치면 한 시험을 두 번 AI에 보내(배치 중복·크레딧 낭비)
+ * 뒤에 보낸 배치 번호가 앞의 것을 덮어쓰는 일이 생길 수 있었다.
+ */
+async function claimJob(client: Client, job: any): Promise<boolean> {
+  if (!job.updated_at) return true;
+  const { data, error } = (await (client.from(TABLE) as any)
+    .update({ updated_at: new Date().toISOString() })
+    .eq("exam_id", job.exam_id)
+    .eq("stage", job.stage)
+    .eq("updated_at", job.updated_at)
+    .select("exam_id")) as any;
+  if (error) return false;
+  return Array.isArray(data) && data.length > 0;
+}
+
+// 제출 한 번 = 시험지 PDF 내려받기 + AI에 PDF 통째로 올리기라 몇 초~십수 초가 걸린다. 남은 시간이 이보다 적으면
+// 새 제출은 시작하지 않는다(서버 실행 시간 제한에 걸려 "AI엔 보냈는데 기록은 못 한" 상태를 만들지 않도록).
+const SUBMIT_MIN_MS = 15_000;
+const WAIT_MIN_MS = 4_000;
+// 한 번에 동시에 진행할 작업 수. 2026-09-29 전에는 한 시험씩 차례로만 처리해서, 시험이 많으면 제출만 여러
+// 주기에 걸쳐 조금씩 되는 바람에 전체가 한참 늦어졌다.
+const CONCURRENCY = 4;
+
+/**
+ * 진행 중인 영역 찾기 작업을 한 걸음씩 진행한다(오래 기다린 것부터, 최대 CONCURRENCY개씩 동시에).
+ * deadline(Date.now() 기준 ms) 안에서만 새 작업을 시작한다. 처리한 작업 수를 돌려준다. 0024 전이면 0.
  */
 export async function tickLocateJobs(client: Client, deadline: number): Promise<number> {
   const { data: jobs, error } = (await client
@@ -283,11 +313,13 @@ export async function tickLocateJobs(client: Client, deadline: number): Promise<
     .select("exam_id, stage, batch_id, attempts, updated_at")
     .in("stage", ["submit", "wait"])
     .order("updated_at", { ascending: true })
-    .limit(20)) as any;
+    .limit(40)) as any;
   if (error) return 0;
+  const queue: any[] = [...((jobs as any[]) ?? [])];
   let n = 0;
-  for (const job of (jobs as any[]) ?? []) {
-    if (Date.now() > deadline) break;
+
+  async function runOne(job: any): Promise<void> {
+    if (!(await claimJob(client, job))) return; // 다른 호출이 이미 잡음
     try {
       if (job.stage === "submit") await stepSubmit(client, job);
       else if (job.stage === "wait" && job.batch_id) await stepWait(client, job);
@@ -302,6 +334,19 @@ export async function tickLocateJobs(client: Client, deadline: number): Promise<
       }).catch(() => {});
     }
   }
+
+  async function worker(): Promise<void> {
+    for (;;) {
+      const left = deadline - Date.now();
+      // 남은 시간에 맞는 작업을 앞에서부터 고른다(시간이 모자라면 제출은 건너뛰고 결과 확인만).
+      const i = queue.findIndex((j) => left >= (j.stage === "submit" ? SUBMIT_MIN_MS : WAIT_MIN_MS));
+      if (i < 0) return;
+      const [job] = queue.splice(i, 1);
+      await runOne(job);
+    }
+  }
+
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
   return n;
 }
 
