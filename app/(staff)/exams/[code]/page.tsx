@@ -19,6 +19,7 @@ import SchoolLevelSelect from "./SchoolLevelSelect";
 import FolderSelect from "./FolderSelect";
 import ItemExplanationRow from "./ItemExplanationRow";
 import TutorDownloadCostInput from "./TutorDownloadCostInput";
+import { pageRangeLabel, trailingAnswerPages } from "@/lib/ai/answerPages";
 
 const ACTIVE_STAGES = new Set(["upload", "extract_submit", "extract_wait", "solve_submit", "solve_wait"]);
 
@@ -90,6 +91,12 @@ export default async function ExamDetailPage({
             : null,
       }
     : null;
+
+  // #7: 원본 PDF 뒤쪽의 정답·해설·OMR 쪽(마지막 문항 쪽 뒤). 디지털화 결과로 바꾼 PDF는 이미 문제 쪽만 있음.
+  const answerPages: number[] =
+    pdfMeta && !pdfMeta.replaced_with_digitized && typeof pdfMeta.pages === "number"
+      ? trailingAnswerPages(((explanations as any[]) ?? []).map((e) => e.source_page), pdfMeta.pages)
+      : [];
 
   const digitizePoll = digitizeJob
     ? {
@@ -251,6 +258,13 @@ export default async function ExamDetailPage({
             <label className="flex items-center gap-1.5">
               <input type="checkbox" name="addFix" value="1" defaultChecked /> 정정 사항을 정정 페이지로 추가
             </label>
+            {/* #7: 마지막 문항 쪽 뒤의 정답·해설·OMR 쪽 자동 제외 */}
+            {answerPages.length > 0 && (
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" name="autoTrim" value="1" defaultChecked /> 뒤쪽 정답·해설 쪽 빼기 (원본{" "}
+                {pageRangeLabel(answerPages)})
+              </label>
+            )}
           </div>
           <div className="flex items-center gap-2 text-sm">
             <label htmlFor="exclude">뺄 쪽 번호(원본 기준, 쉼표로 구분)</label>
