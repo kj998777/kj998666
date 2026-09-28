@@ -55,7 +55,8 @@ export default async function AdminUsersPage() {
           <p className="text-sm text-amber-800 mb-3">
             직접 회원가입한 계정입니다. 알맞은 권한을 지정해 줄 때까지는 아무 화면도 볼 수 없습니다.
           </p>
-          <table className="w-full text-sm">
+          <div className="table-wrap">
+          <table className="w-full min-w-[30rem] sm:min-w-0 text-sm">
             <thead>
               <tr className="text-left text-amber-700 border-b border-amber-200">
                 <th className="py-2 pr-2">이메일</th>
@@ -70,13 +71,15 @@ export default async function AdminUsersPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
       <div className="card">
         <h2 className="font-medium mb-3">직원 계정 ({staffProfiles.length}명)</h2>
         {error && <p className="text-sm text-red-600">목록을 불러오지 못했습니다: {error.message}</p>}
-        <table className="w-full text-sm">
+        <div className="table-wrap">
+        <table className="w-full min-w-[30rem] sm:min-w-0 text-sm">
           <thead>
             <tr className="text-left text-slate-500 border-b border-slate-200">
               <th className="py-2 pr-2">이메일</th>
@@ -91,6 +94,7 @@ export default async function AdminUsersPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       <div className="card">
@@ -98,7 +102,8 @@ export default async function AdminUsersPage() {
         {tutorProfiles.length === 0 ? (
           <p className="text-sm text-slate-500">아직 초대한 과외선생님이 없습니다.</p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="table-wrap">
+          <table className="w-full min-w-[30rem] sm:min-w-0 text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-200">
                 <th className="py-2 pr-2">이메일 / 활동</th>
@@ -113,6 +118,7 @@ export default async function AdminUsersPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
