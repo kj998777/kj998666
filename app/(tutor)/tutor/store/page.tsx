@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireTutor } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import PurchaseButton from "./PurchaseButton";
 
 // exams_select_tutor_store RLS 정책 덕분에 여기서 select("*")를 해도 "지금 판매 중"이거나
@@ -28,6 +29,14 @@ export default async function TutorStorePage() {
   ]);
 
   const ownedExamIds = new Set(((purchases as any[]) ?? []).map((p) => p.exam_id));
+
+  // 원본 PDF가 아직 없는 시험(예전 시스템에서 옮겨 온 시험 등)은 사도 받을 게 없으므로 "PDF 준비 중"으로만
+  // 보여 주고 구매 버튼을 막는다. 과외선생님은 exam_pdf_meta RLS를 통과하지 못하므로 서비스롤로 "있는지"만 본다.
+  const listedIds = ((exams as any[]) ?? []).map((e) => e.id);
+  const { data: metaRows } = listedIds.length
+    ? await (createAdminClient() as any).from("exam_pdf_meta").select("exam_id").in("exam_id", listedIds)
+    : { data: [] };
+  const hasPdf = new Set(((metaRows as any[]) ?? []).map((m) => m.exam_id));
 
   return (
     <div className="space-y-4">
@@ -73,8 +82,10 @@ export default async function TutorStorePage() {
                         <Link href={`/tutor/store/${encodeURIComponent(e.code)}`} className="btn-secondary py-1 px-3 inline-block">
                           관리하기
                         </Link>
-                      ) : (
+                      ) : hasPdf.has(e.id) ? (
                         <PurchaseButton examId={e.id} examCode={e.code} cost={e.tutor_download_cost} />
+                      ) : (
+                        <span className="text-xs text-slate-400">PDF 준비 중</span>
                       )}
                     </td>
                   </tr>
