@@ -70,15 +70,25 @@ export default function CreateAiExamBatchForm() {
 
   async function submitRow(row: Row) {
     updateRow(row.key, { status: "올리는 중…", msg: undefined });
+    // 서버(ai-actions.ts의 readPdf)도 같은 검사를 하지만, 그건 요청이 서버까지 도착한 "뒤"에야
+    // 실행된다. Vercel 서버리스 함수 자체의 요청 본문 크기 제한(약 4.5MB)을 넘으면 서버 코드가
+    // 실행되기도 전에 플랫폼이 413으로 요청을 거부해 버려서, 아래 createAiExamBatchItem이 정상
+    // 응답 대신 undefined를 돌려주고 그걸 그대로 r.ok로 읽으려다 화면 전체가 "Application error"로
+    // 죽는 문제가 있었다(2026-09-28 원장님 신고로 발견). 그래서 여기서 먼저 걸러 아예 요청을 보내지
+    // 않고, 아래에서도 r이 없을 경우를 방어적으로 처리한다.
+    if (row.file.size > 4 * 1024 * 1024) {
+      updateRow(row.key, { status: "실패", msg: "PDF 용량이 너무 큽니다(4MB 이하로 줄여서 올려 주세요 — 서버 업로드 용량 제한)." });
+      return;
+    }
     const fd = readSharedFields();
     fd.set("code", row.code);
     fd.set("name", row.name);
     fd.set("pdf", row.file);
     const r = await createAiExamBatchItem(fd);
-    if (r.ok) {
+    if (r && r.ok) {
       updateRow(row.key, { status: "완료", resultCode: r.code, msg: r.aiErr ? "AI 처리 시작 실패(상세 화면에서 다시 시도 가능): " + r.aiErr : undefined });
     } else {
-      updateRow(row.key, { status: "실패", msg: r.msg });
+      updateRow(row.key, { status: "실패", msg: r?.msg ?? "요청이 실패했습니다(파일이 너무 크거나 네트워크 문제일 수 있습니다)." });
     }
   }
 
