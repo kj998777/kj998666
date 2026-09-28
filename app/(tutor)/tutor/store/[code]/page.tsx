@@ -29,8 +29,8 @@ export default async function TutorExamHubPage({ params }: { params: { code: str
       <div className="card space-y-2">
         <h2 className="font-medium">기출문제 PDF</h2>
         <p className="text-sm text-slate-500">
-          시험지 앞에는 메딕수학 표지가, 맨 뒤에는 메딕수학 로고와 <strong>선생님 전용 답안 제출 QR</strong>이
-          붙습니다. 학생이 이 QR로 답을 내면 &ldquo;제출 학생·보고서&rdquo; 탭에서 결과를 보고 보고서를 만들 수
+          원본 뒤에 붙어 있던 정답·해설·마킹 쪽은 빼고 문제만 남긴 뒤, 앞에는 메딕수학 표지가, 맨 뒤에는 메딕수학
+          로고와 <strong>선생님 전용 답안 제출 QR</strong>이 붙습니다. 학생이 이 QR로 답을 내면 &ldquo;제출 학생·보고서&rdquo; 탭에서 결과를 보고 보고서를 만들 수
           있습니다. 시험지 오류 정정(정오표)이 있으면 QR 쪽 앞에 함께 들어갑니다.
         </p>
         <a href={`${base}/download`} className="btn-primary inline-block">
