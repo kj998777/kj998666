@@ -87,7 +87,7 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
     }),
     fetchAll((a, b) => admin.from("profiles").select("*").order("created_at").range(a, b)),
     admin.from("tutor_stats").select("*"),
-    admin.from("exams").select("id").eq("status", "검수대기"),
+    fetchAll((a, b) => admin.from("exams").select("id").eq("status", "검수대기").order("id").range(a, b)),
     listBackups(admin),
   ]);
 
@@ -104,16 +104,17 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
   const trustOf = new Map<string, string>(trustEntries);
 
   // 남은 검토 문항(지금)
-  const pendingIds: string[] = ((pendingExams?.data as any[]) ?? []).map((e) => e.id);
+  const pendingIds: string[] = ((pendingExams as any[]) ?? []).map((e) => e.id);
   let queueLeft = 0;
-  if (pendingIds.length) {
+  // 시험 id를 한 번에 수백 개 넣으면 요청 주소가 너무 길어질 수 있어 150개씩 나눠 세고 더한다(2026-09-29)
+  for (let i = 0; i < pendingIds.length; i += 150) {
     const { count } = await admin
       .from("item_explanations")
       .select("id", { count: "exact", head: true })
-      .in("exam_id", pendingIds)
+      .in("exam_id", pendingIds.slice(i, i + 150))
       .eq("tutor_reviewed", false)
       .eq("review_confirmed", false);
-    queueLeft = count ?? 0;
+    queueLeft += count ?? 0;
   }
 
   // 요약
