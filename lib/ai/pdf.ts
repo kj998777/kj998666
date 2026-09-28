@@ -1,4 +1,5 @@
 import "server-only";
+import { countPdfPages } from "./pdfMeta";
 
 // 시험지 원본 PDF 저장/조회. Apps Script의 '시험지PDF' 시트(40000자 base64 청크 방식)를
 // Supabase Storage 버킷(exam-pdfs)의 진짜 파일로 대체 — 훨씬 단순하고 용량 제한도 없다.
@@ -36,6 +37,43 @@ export async function saveExamPdf(
     { onConflict: "exam_id" }
   );
   if (metaErr) throw metaErr;
+}
+
+/**
+ * #2(2026-09-28): 브라우저가 Supabase Storage(exam-pdfs 버킷)에 곧바로 올린(=이미 존재하는) PDF의
+ * 뒷정리를 한다 — Vercel 서버리스 함수의 요청 본문 크기 제한(약 4.5MB)을 피하려고 PDF 바이트를 더
+ * 이상 서버 액션(FormData)으로 받지 않고, 브라우저가 직접 Storage에 올린 뒤 이 함수를 부르는 구조로
+ * 바꿨다(lib/supabase/uploadPdf.ts, app/(staff)/exams/ai-actions.ts). saveExamPdf와 달리 pdf 바이트를
+ * 인자로 받지 않고, 이미 올라간 파일을 다시 내려받아(용량이 작으므로 서버 자원 부담은 적음) 쪽수만
+ * 센 뒤 exam_pdf_meta를 갱신한다.
+ *
+ * source: "digitized"면 디지털화 결과를 "원본으로 적용"한 경우다 — 이때는 스캔본이 아니라 새로
+ * 조판한 깨끗한 버전이므로 is_scanned를 false로, replaced_with_digitized를 true로 남긴다.
+ */
+export async function finalizePdfUpload(
+  client: Client,
+  examId: string,
+  meta: { isScanned: boolean | null; uploadedBy: string; source?: "upload" | "digitized" }
+): Promise<{ pages: number | null }> {
+  const path = pathOf(examId);
+  const { data, error } = await client.storage.from(BUCKET).download(path);
+  if (error || !data) throw new Error("방금 올린 PDF를 서버에서 확인하지 못했습니다: " + (error?.message || "?"));
+  const buf = Buffer.from(await data.arrayBuffer());
+  const pages = await countPdfPages(buf);
+  const isDigitized = meta.source === "digitized";
+  const { error: metaErr } = await (client.from("exam_pdf_meta") as any).upsert(
+    {
+      exam_id: examId,
+      storage_path: path,
+      pages,
+      is_scanned: isDigitized ? false : meta.isScanned,
+      uploaded_by: meta.uploadedBy,
+      replaced_with_digitized: isDigitized,
+    },
+    { onConflict: "exam_id" }
+  );
+  if (metaErr) throw metaErr;
+  return { pages };
 }
 
 export async function getExamPdfMeta(client: Client, examId: string) {
