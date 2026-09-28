@@ -31,6 +31,7 @@ export default async function TutorLayout({ children }: { children: React.ReactN
             <span className="text-slate-500 text-sm">과외선생님</span>
             <Link href="/tutor/review" className="nav-link">검토하기</Link>
             <Link href="/tutor/store" className="nav-link">기출 스토어</Link>
+            <Link href="/tutor/guide" className="nav-link">사용법</Link>
           </nav>
           <div className="flex items-center gap-3 text-sm text-slate-500">
             <span className="badge bg-amber-100 text-amber-700">
