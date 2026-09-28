@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireTutor } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
+import { fetchAllIn } from "@/lib/supabase/fetchAll";
 
 export default async function TutorPurchasesPage() {
   const session = await requireTutor();
@@ -15,7 +16,7 @@ export default async function TutorPurchasesPage() {
   const examIds = ((purchases as any[]) ?? []).map((p) => p.exam_id);
   const { data: exams } =
     examIds.length > 0
-      ? ((await supabase.from("exams").select("id, code, name").in("id", examIds)) as any)
+      ? await fetchAllIn(examIds, (ids, a, b) => supabase.from("exams").select("id, code, name").in("id", ids).order("id").range(a, b))
       : { data: [] as any[] };
   const examById = new Map(((exams as any[]) ?? []).map((e) => [e.id, e]));
 
