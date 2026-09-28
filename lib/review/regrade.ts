@@ -13,7 +13,7 @@ type PerItem = { item_label: string; given: string; correct: boolean; points: nu
 
 export async function regradeExam(admin: Client, examId: string): Promise<number> {
   const [{ data: keys }, { data: results }] = await Promise.all([
-    admin.from("answer_key").select("item_label, correct_answers, points").eq("exam_id", examId).order("sort_order").order("item_label"),
+    admin.from("answer_key").select("item_label, correct_answers, points, type").eq("exam_id", examId).order("sort_order").order("item_label"),
     // 2026-09-29: 제출이 1000건을 넘어도 전부 다시 채점하도록 끝까지 나눠 읽는다(lib/supabase/fetchAll.ts)
     fetchAllPages((f, t) =>
       admin.from("grading_results").select("id, per_item, total_score").eq("exam_id", examId).order("id").range(f, t)
@@ -29,7 +29,7 @@ export async function regradeExam(admin: Client, examId: string): Promise<number
     let total = 0;
     const perItem: PerItem[] = key.map((k) => {
       const given = String(givenBy.get(k.item_label) ?? "");
-      const correct = isCorrect(given, k.correct_answers);
+      const correct = isCorrect(given, k.correct_answers, k.type);
       const pts = Number(k.points) || 0;
       if (correct) total += pts;
       return { item_label: k.item_label, given, correct, points: correct ? pts : 0 };
