@@ -1,9 +1,11 @@
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { getAiSettingsPublic, getCreditInfo } from "@/lib/ai/settings";
+import { countMissingLocateItems } from "@/lib/ai/locate";
 import AiSettingsForm from "./AiSettingsForm";
 import CreditPanel from "./CreditPanel";
 import UploadStatusPanel, { type UploadJobRow } from "./UploadStatusPanel";
+import LocateStatusPanel, { type LocateJobRow } from "./LocateStatusPanel";
 
 // AI 자동 처리(exam_jobs)와 디지털화(digitize_jobs) 중 아직 끝나지 않은 것들을 모아 온다.
 // review(검수대기) 단계는 시험 목록 폴더 트리의 "검수대기" 표시와 중복되므로 여기서는 뺀다.
@@ -52,14 +54,54 @@ async function loadDigitizeJobs(supabase: any): Promise<UploadJobRow[]> {
     .filter((r: UploadJobRow | null): r is UploadJobRow => r !== null);
 }
 
+// 문항 영역 찾기(item_locate_jobs, 0024) — 시험별 작업 전부 + 좌표 없는 검토 대기 문항 수. 0024 전이면 available=false.
+async function loadLocate(
+  supabase: any
+): Promise<{ available: boolean; missingItems: number; jobs: LocateJobRow[] }> {
+  const { data: jobsRaw, error } = (await supabase
+    .from("item_locate_jobs")
+    .select("exam_id, stage, message, attempts, created_at, updated_at")
+    .order("updated_at", { ascending: false })
+    .limit(300)) as any;
+  if (error) return { available: false, missingItems: 0, jobs: [] };
+  const jobs = (jobsRaw as any[]) ?? [];
+
+  const missingItems = await countMissingLocateItems(supabase);
+
+  const examIds = [...new Set(jobs.map((j) => j.exam_id))];
+  const examById = new Map<string, any>();
+  if (examIds.length) {
+    const { data: examsRaw } = (await supabase.from("exams").select("id, code, name").in("id", examIds)) as any;
+    for (const e of (examsRaw as any[]) ?? []) examById.set(e.id, e);
+  }
+  return {
+    available: true,
+    missingItems,
+    jobs: jobs.map((j) => {
+      const e = examById.get(j.exam_id);
+      return {
+        examId: j.exam_id,
+        code: e?.code ?? null,
+        name: e?.name ?? "(삭제된 시험)",
+        stage: j.stage,
+        message: j.message ?? "",
+        attempts: j.attempts ?? 0,
+        createdAt: j.created_at,
+        updatedAt: j.updated_at,
+      };
+    }),
+  };
+}
+
 export default async function AdminAiPage() {
   await requireRole("admin");
   const supabase = await createClient();
-  const [settings, credit, examJobs, digitizeJobs] = await Promise.all([
+  const [settings, credit, examJobs, digitizeJobs, locate] = await Promise.all([
     getAiSettingsPublic(supabase),
     getCreditInfo(supabase),
     loadExamJobs(supabase),
     loadDigitizeJobs(supabase),
+    loadLocate(supabase),
   ]);
 
   return (
@@ -83,6 +125,10 @@ export default async function AdminAiPage() {
 
       <div className="card">
         <UploadStatusPanel initialExamJobs={examJobs} initialDigitizeJobs={digitizeJobs} />
+      </div>
+
+      <div className="card">
+        <LocateStatusPanel available={locate.available} missingItems={locate.missingItems} jobs={locate.jobs} />
       </div>
     </div>
   );
