@@ -1,8 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // 시험지 PDF를 서버 액션(FormData)으로 직접 올리므로 기본 1MB 제한을 늘려 둔다.
-  // (lib/ai 쪽에서도 45MB로 다시 한 번 막아 둠 — Vercel 함수 자체의 요청 본문 한도도 이 값 안쪽이어야 함.)
+  // #2(2026-09-28) 이전에는 시험지 PDF를 서버 액션(FormData)으로 직접 올려서 기본 1MB 제한을 늘려
+  // 둬야 했다. 지금은 PDF 바이트가 브라우저→Supabase Storage 직접 업로드로 바뀌어(최대 20MB,
+  // lib/supabase/uploadPdf.ts) 이 값을 실제로 채울 일은 없어졌지만, 다른 서버 액션이 큰 폼을 받을
+  // 가능성에 대비해 값은 그대로 넉넉하게 남겨 둔다(어차피 Vercel 함수 자체의 요청 본문 한도, 약
+  // 4.5MB가 실질적인 상한이라 이 설정 자체가 병목이었던 적은 없음).
   experimental: {
     serverActions: {
       bodySizeLimit: "50mb",
