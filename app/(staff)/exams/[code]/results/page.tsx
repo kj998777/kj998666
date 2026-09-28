@@ -53,6 +53,7 @@ export default async function ResultsPage({ params }: { params: { code: string }
         {submissions.length === 0 ? (
           <p className="text-sm text-slate-500">아직 제출한 학생이 없습니다.</p>
         ) : (
+          <div className="table-wrap">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-200">
@@ -69,6 +70,7 @@ export default async function ResultsPage({ params }: { params: { code: string }
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

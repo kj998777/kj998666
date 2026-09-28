@@ -153,12 +153,12 @@ export default function ReportPanel({
 
           {students.length > 0 && (
             <div className="border-t border-slate-100 pt-3">
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex flex-wrap items-center justify-between mb-2 gap-2">
                 <label className="text-sm flex items-center gap-1.5">
                   <input type="checkbox" checked={allChecked} onChange={toggleAll} />
                   전체 선택 ({selected.size}/{students.length})
                 </label>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button className="btn-secondary text-sm px-2 py-1" disabled={busy || selected.size === 0} onClick={() => onIndividual(selectedStudents)}>
                     선택한 학생 개별 보고서 {selected.size > 1 ? "ZIP으로 " : ""}받기
                   </button>
@@ -166,7 +166,7 @@ export default function ReportPanel({
               </div>
               <ul className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
                 {students.map((s) => (
-                  <li key={s.id} className="py-1.5 flex items-center justify-between gap-2 text-sm">
+                  <li key={s.id} className="py-1.5 flex flex-wrap items-center justify-between gap-2 text-sm">
                     <label className="flex items-center gap-1.5 min-w-0">
                       <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggle(s.id)} />
                       <span className="text-slate-500 shrink-0">{s.class_label}</span>
