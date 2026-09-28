@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { openExamIfAllConfirmed, tutorAnswerMatches } from "@/lib/review/confirm";
+import { regradeExam } from "@/lib/review/regrade";
 
 // #3 관리자 검토현황 — 문항별 정답 확정. 확정되면 그 문항은 과외선생님 검토 큐에서도 빠지고
 // (tutor_reviewed=true), 시험의 모든 문항이 확정되면 검수대기 시험이 자동으로 열린다.
@@ -63,10 +65,12 @@ export async function confirmItem(itemId: string, answer: string): Promise<Resul
   if (!loaded) return { ok: false, msg: "문항을 찾을 수 없습니다." };
   const { ie, key, code } = loaded;
 
+  let keyChanged = false;
   if (key) {
     if (key.correct_answers !== value) {
       const { error } = await (supabase.from("answer_key") as any).update({ correct_answers: value }).eq("id", key.id);
       if (error) return { ok: false, msg: "정답표를 고치지 못했습니다: " + error.message };
+      keyChanged = true;
     }
   } else {
     return { ok: false, msg: "이 문항의 정답표 줄이 없습니다. 시험 상세에서 먼저 정답을 추가해 주세요." };
@@ -74,6 +78,9 @@ export async function confirmItem(itemId: string, answer: string): Promise<Resul
 
   const err = await markConfirmed(supabase, [ie.id], userId, "admin");
   if (err) return { ok: false, msg: "확정하지 못했습니다: " + err.message };
+
+  // 정답이 바뀌었으면 이미 들어온 제출(있다면)을 새 정답으로 다시 채점
+  if (keyChanged) await regradeExam(createAdminClient(), ie.exam_id);
 
   const examOpened = await openExamIfAllConfirmed(supabase, ie.exam_id);
   refresh(code);
@@ -137,4 +144,71 @@ export async function confirmMatchedItems(examId: string): Promise<Result & { co
   const examOpened = await openExamIfAllConfirmed(supabase, examId);
   refresh((exam as any)?.code);
   return { ok: true, count: ids.length, examOpened };
+}
+
+// -------------------------------------------------------------------------
+// #4: 과외선생님 해설·정답 수정 요청 — 채택/거절
+// -------------------------------------------------------------------------
+
+/**
+ * 수정 요청 채택. answer(관리자가 입력칸에서 최종 확인한 정답표 값)가 지금 정답과 다르면 정답표를 바꾸고
+ * 기존 제출을 다시 채점한다. 요청에 해설이 있으면 해설도 바꾼다.
+ */
+export async function acceptEditRequest(requestId: string, answer: string): Promise<Result & { regraded?: number }> {
+  const { userId } = await requireRole("admin");
+  const supabase = await createClient();
+  const { data: req } = (await (supabase.from("tutor_edit_requests") as any)
+    .select("id, exam_id, item_label, proposed_answer, proposed_solution, status")
+    .eq("id", requestId)
+    .maybeSingle()) as any;
+  if (!req) return { ok: false, msg: "요청을 찾을 수 없습니다." };
+  if (req.status !== "pending") return { ok: false, msg: "이미 처리한 요청입니다." };
+
+  const [{ data: key }, { data: exam }]: any[] = await Promise.all([
+    supabase.from("answer_key").select("id, correct_answers").eq("exam_id", req.exam_id).eq("item_label", req.item_label).maybeSingle(),
+    supabase.from("exams").select("code").eq("id", req.exam_id).maybeSingle(),
+  ]);
+  if (!key) return { ok: false, msg: "정답표에서 이 문항을 찾을 수 없습니다." };
+
+  const value = answer.trim();
+  let keyChanged = false;
+  if (value && value !== key.correct_answers) {
+    if (value.length > 200) return { ok: false, msg: "정답이 너무 깁니다." };
+    const { error } = await (supabase.from("answer_key") as any).update({ correct_answers: value }).eq("id", key.id);
+    if (error) return { ok: false, msg: "정답표를 고치지 못했습니다: " + error.message };
+    keyChanged = true;
+  }
+
+  const patch: Record<string, string> = {};
+  if (req.proposed_solution) patch.solution = req.proposed_solution;
+  if (req.proposed_answer && keyChanged) patch.answer_display = req.proposed_answer;
+  if (Object.keys(patch).length) {
+    patch.updated_at = new Date().toISOString();
+    const { error } = await (supabase.from("item_explanations") as any)
+      .update(patch)
+      .eq("exam_id", req.exam_id)
+      .eq("item_label", req.item_label);
+    if (error) return { ok: false, msg: "해설을 고치지 못했습니다: " + error.message };
+  }
+
+  const { error: uErr } = await (supabase.from("tutor_edit_requests") as any)
+    .update({ status: "accepted", resolved_by: userId, resolved_at: new Date().toISOString() })
+    .eq("id", requestId);
+  if (uErr) return { ok: false, msg: "요청 상태를 바꾸지 못했습니다: " + uErr.message };
+
+  const regraded = keyChanged ? await regradeExam(createAdminClient(), req.exam_id) : 0;
+  refresh(exam?.code);
+  return { ok: true, regraded };
+}
+
+export async function rejectEditRequest(requestId: string): Promise<Result> {
+  const { userId } = await requireRole("admin");
+  const supabase = await createClient();
+  const { error } = await (supabase.from("tutor_edit_requests") as any)
+    .update({ status: "rejected", resolved_by: userId, resolved_at: new Date().toISOString() })
+    .eq("id", requestId)
+    .eq("status", "pending");
+  if (error) return { ok: false, msg: "처리하지 못했습니다: " + error.message };
+  refresh();
+  return { ok: true };
 }

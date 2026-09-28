@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { toKeyAnswer, tutorAnswerMatches } from "@/lib/review/confirm";
 import ApproveReviewButton from "../../exams/[code]/ApproveReviewButton";
-import { ConfirmItemControl, ConfirmMatchedButton } from "./ConfirmControls";
+import { ConfirmItemControl, ConfirmMatchedButton, EditRequestControl } from "./ConfirmControls";
 
 export const dynamic = "force-dynamic";
 
@@ -60,11 +60,22 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
     ]),
   ];
 
+  // #4: 과외선생님 해설·정답 수정 요청(대기) — 0017 적용 전이면 테이블이 없어 조용히 빈 목록.
+  const { data: editReqRaw } = (await (supabase.from("tutor_edit_requests") as any)
+    .select("id, exam_id, item_label, tutor_id, proposed_answer, proposed_solution, note, created_at")
+    .eq("status", "pending")
+    .order("created_at", { ascending: true })) as any;
+  const editReqs: any[] = editReqRaw ?? [];
+  const editBlock = editReqs.length ? await renderEditRequests(supabase, editReqs) : null;
+
   if (examIds.length === 0) {
     return (
-      <div className="card">
-        <h1 className="text-lg font-semibold mb-2">검토현황</h1>
-        <p className="text-sm text-slate-500">지금 검토 중이거나 정답 확정이 필요한 시험이 없습니다.</p>
+      <div className="space-y-4">
+        {editBlock}
+        <div className="card">
+          <h1 className="text-lg font-semibold mb-2">검토현황</h1>
+          <p className="text-sm text-slate-500">지금 검토 중이거나 정답 확정이 필요한 시험이 없습니다.</p>
+        </div>
       </div>
     );
   }
@@ -162,6 +173,7 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
 
   return (
     <div className="space-y-4">
+      {editBlock}
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="text-lg font-semibold">검토현황</h1>
@@ -280,6 +292,84 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** #4 과외선생님 수정 요청 목록(대기). */
+async function renderEditRequests(supabase: any, reqs: any[]) {
+  const examIds = [...new Set(reqs.map((r) => r.exam_id))];
+  const tutorIds = [...new Set(reqs.map((r) => r.tutor_id))];
+  const [{ data: examsRaw }, { data: keysRaw }, { data: explRaw }, { data: profRaw }]: any[] = await Promise.all([
+    supabase.from("exams").select("id, code, name").in("id", examIds),
+    supabase.from("answer_key").select("exam_id, item_label, correct_answers, type").in("exam_id", examIds),
+    supabase.from("item_explanations").select("exam_id, item_label, solution").in("exam_id", examIds),
+    supabase.from("profiles").select("id, email").in("id", tutorIds),
+  ]);
+  const examBy = new Map(((examsRaw as any[]) ?? []).map((e) => [e.id, e]));
+  const keyBy = new Map(((keysRaw as any[]) ?? []).map((k) => [`${k.exam_id}|${k.item_label}`, k]));
+  const explBy = new Map(((explRaw as any[]) ?? []).map((e) => [`${e.exam_id}|${e.item_label}`, e]));
+  const emailBy = new Map(((profRaw as any[]) ?? []).map((p) => [p.id, p.email as string]));
+
+  return (
+    <div className="card border-sky-200 space-y-3">
+      <div>
+        <h2 className="font-medium">과외선생님 수정 요청 ({reqs.length})</h2>
+        <p className="text-xs text-slate-500">
+          구매한 시험에서 과외선생님이 올린 정답·해설 수정 요청입니다. 채택하면 정답표·해설에 반영되고, 정답이 바뀌면 이미
+          제출된 답안을 다시 채점합니다.
+        </p>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {reqs.map((r) => {
+          const exam = examBy.get(r.exam_id);
+          const key = keyBy.get(`${r.exam_id}|${r.item_label}`);
+          const expl = explBy.get(`${r.exam_id}|${r.item_label}`);
+          const initial = r.proposed_answer && key ? toKeyAnswer(key.type, r.proposed_answer) : "";
+          return (
+            <div key={r.id} className="py-3 grid gap-3 md:grid-cols-[1fr_1fr_auto] text-sm">
+              <div className="space-y-1">
+                <p className="font-medium">
+                  {exam ? (
+                    <Link href={`/exams/${encodeURIComponent(exam.code)}`} className="hover:underline">
+                      {exam.name}
+                    </Link>
+                  ) : (
+                    "시험"
+                  )}{" "}
+                  · {r.item_label}번
+                </p>
+                <p className="text-xs text-slate-500">
+                  {emailBy.get(r.tutor_id) ?? "과외선생님"} · {new Date(r.created_at).toLocaleString("ko-KR")}
+                </p>
+                <p>
+                  현재 정답 <span className="font-medium">{key?.correct_answers ?? "—"}</span>
+                  {r.proposed_answer && (
+                    <>
+                      {" "}→ 제안 <span className="font-medium text-sky-700">{r.proposed_answer}</span>
+                    </>
+                  )}
+                </p>
+                {r.note && <p className="text-slate-600">메모: {r.note}</p>}
+              </div>
+              <div className="space-y-1">
+                {r.proposed_solution ? (
+                  <details>
+                    <summary className="cursor-pointer text-xs text-slate-500">제안 해설 / 현재 해설 비교</summary>
+                    <p className="text-xs text-slate-500 mt-1">제안</p>
+                    <div className="bg-sky-50 rounded px-2 py-1 whitespace-pre-wrap max-h-48 overflow-y-auto">{r.proposed_solution}</div>
+                    <p className="text-xs text-slate-500 mt-1">현재</p>
+                    <div className="bg-slate-50 rounded px-2 py-1 whitespace-pre-wrap max-h-48 overflow-y-auto">{expl?.solution || "(없음)"}</div>
+                  </details>
+                ) : (
+                  <p className="text-xs text-slate-400">해설 수정 제안 없음</p>
+                )}
+              </div>
+              <EditRequestControl requestId={r.id} initialAnswer={initial} />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
