@@ -1,7 +1,7 @@
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { getAiSettingsPublic, getCreditInfo } from "@/lib/ai/settings";
-import { countMissingLocateItems, countStaleDigitized } from "@/lib/ai/locate";
+import { countMissingLocateItems, countRecheck, countStaleDigitized } from "@/lib/ai/locate";
 import AiSettingsForm from "./AiSettingsForm";
 import CreditPanel from "./CreditPanel";
 import UploadStatusPanel, { type UploadJobRow } from "./UploadStatusPanel";
@@ -57,17 +57,24 @@ async function loadDigitizeJobs(supabase: any): Promise<UploadJobRow[]> {
 // 문항 영역 찾기(item_locate_jobs, 0024) — 시험별 작업 전부 + 좌표 없는 검토 대기 문항 수. 0024 전이면 available=false.
 async function loadLocate(
   supabase: any
-): Promise<{ available: boolean; missingItems: number; jobs: LocateJobRow[]; stale: { exams: number; items: number } }> {
+): Promise<{
+  available: boolean;
+  missingItems: number;
+  jobs: LocateJobRow[];
+  stale: { exams: number; items: number };
+  recheck: { exams: number; items: number };
+}> {
   const { data: jobsRaw, error } = (await supabase
     .from("item_locate_jobs")
     .select("exam_id, stage, message, attempts, created_at, updated_at")
     .order("updated_at", { ascending: false })
     .limit(300)) as any;
-  if (error) return { available: false, missingItems: 0, jobs: [], stale: { exams: 0, items: 0 } };
+  if (error) return { available: false, missingItems: 0, jobs: [], stale: { exams: 0, items: 0 }, recheck: { exams: 0, items: 0 } };
   const jobs = (jobsRaw as any[]) ?? [];
 
   const missingItems = await countMissingLocateItems(supabase);
   const stale = await countStaleDigitized(supabase).catch(() => ({ exams: 0, items: 0 }));
+  const recheck = await countRecheck(supabase).catch(() => ({ exams: 0, items: 0 }));
 
   const examIds = [...new Set(jobs.map((j) => j.exam_id))];
   const examById = new Map<string, any>();
@@ -79,6 +86,7 @@ async function loadLocate(
     available: true,
     missingItems,
     stale,
+    recheck,
     jobs: jobs.map((j) => {
       const e = examById.get(j.exam_id);
       return {
@@ -135,6 +143,7 @@ export default async function AdminAiPage() {
           missingItems={locate.missingItems}
           jobs={locate.jobs}
           stale={locate.stale}
+          recheck={locate.recheck}
         />
       </div>
     </div>

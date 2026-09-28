@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { fixDigitizedLocations, startLocateItems } from "../review-status/actions";
+import { fixDigitizedLocations, recheckAllLocations, startLocateItems } from "../review-status/actions";
 
 // 2026-09-29 원장님 요청: 문항 영역 찾기(lib/ai/locate.ts, 0024) 진행 상황을 AI 설정 화면에서도 보이게.
 // 검토현황의 LocatePanel과 같은 작업 테이블(item_locate_jobs)을 시험별로 보여 주고, 진행 중이면 20초마다
@@ -47,12 +47,15 @@ export default function LocateStatusPanel({
   missingItems,
   jobs,
   stale,
+  recheck,
 }: {
   available: boolean;
   missingItems: number;
   jobs: LocateJobRow[];
   stale?: { exams: number; items: number };
+  recheck?: { exams: number; items: number };
 }) {
+  const [confirmRecheck, setConfirmRecheck] = useState(false);
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState("");
@@ -172,6 +175,45 @@ export default function LocateStatusPanel({
           >
             {pending ? "처리하는 중…" : `시험 ${stale.exams}개 문항 위치 다시 찾기`}
           </button>
+        </div>
+      )}
+
+      {recheck && recheck.exams > 0 && (
+        <div className="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 space-y-2">
+          <p>
+            <b>이미 찾아 둔(완료) 위치까지 다시 점검</b> — 스캔본·디지털 조판본 시험 {recheck.exams}개의 검토 대기 문항 {recheck.items}개
+            위치를 지우고, 앞뒤 문항 자리로 경계를 맞추는 새 방식으로 다시 찾습니다. 글자를 고를 수 있는 PDF 시험은 과외선생님 화면이
+            문항 번호를 직접 찾아 자르므로 대상이 아닙니다. 시험마다 AI 요청이 1번씩 들어가고, 다시 찾는 몇 분 동안은 해당 문항이 쪽
+            전체로 보입니다.
+          </p>
+          {!confirmRecheck ? (
+            <button className="btn-secondary py-1 px-3 text-xs" disabled={pending} onClick={() => setConfirmRecheck(true)}>
+              시험 {recheck.exams}개 위치 전부 다시 찾기…
+            </button>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-600">정말 다시 찾을까요?</span>
+              <button
+                className="btn-primary py-1 px-3 text-xs"
+                disabled={pending}
+                onClick={() =>
+                  start(async () => {
+                    setMsg("");
+                    const r = await recheckAllLocations();
+                    setMsg(r.msg ?? "");
+                    setConfirmRecheck(false);
+                    router.refresh();
+                    void tick();
+                  })
+                }
+              >
+                {pending ? "처리하는 중…" : "네, 다시 찾기"}
+              </button>
+              <button className="btn-secondary py-1 px-3 text-xs" disabled={pending} onClick={() => setConfirmRecheck(false)}>
+                취소
+              </button>
+            </div>
+          )}
         </div>
       )}
 
