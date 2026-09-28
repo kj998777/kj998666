@@ -41,20 +41,20 @@ export default async function TutorDashboardPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <div className="card text-center">
-          <div className="text-3xl font-semibold text-amber-600">{s.points_balance}</div>
-          <div className="text-sm text-slate-500 mt-1">보유 포인트</div>
+          <div className="text-2xl sm:text-3xl font-semibold text-amber-600">{s.points_balance}</div>
+          <div className="text-xs sm:text-sm text-slate-500 mt-1">보유 포인트</div>
         </div>
         <div className="card text-center">
-          <div className="text-3xl font-semibold">{s.reviews_submitted}</div>
-          <div className="text-sm text-slate-500 mt-1">제출한 검토</div>
+          <div className="text-2xl sm:text-3xl font-semibold">{s.reviews_submitted}</div>
+          <div className="text-xs sm:text-sm text-slate-500 mt-1">제출한 검토</div>
         </div>
         <div className="card text-center">
-          <div className={"text-3xl font-semibold " + (s.reviews_flagged > 0 ? "text-red-600" : "")}>
+          <div className={"text-2xl sm:text-3xl font-semibold " + (s.reviews_flagged > 0 ? "text-red-600" : "")}>
             {s.reviews_flagged}
           </div>
-          <div className="text-sm text-slate-500 mt-1">사후 검증 불일치</div>
+          <div className="text-xs sm:text-sm text-slate-500 mt-1">사후 검증 불일치</div>
         </div>
       </div>
 
@@ -72,6 +72,7 @@ export default async function TutorDashboardPage() {
         {(ledger ?? []).length === 0 ? (
           <p className="text-sm text-slate-500">아직 내역이 없습니다.</p>
         ) : (
+          <div className="table-wrap">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-200">
@@ -96,6 +97,7 @@ export default async function TutorDashboardPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
