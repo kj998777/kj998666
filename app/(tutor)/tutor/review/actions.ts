@@ -37,12 +37,18 @@ async function uploadReviewPhoto(itemExplanationId: string, image: File | null |
   return path;
 }
 
-/** 다음 검토 문항(새 문항 또는 사후 검증 대상)을 하나 배정받는다. 큐가 비어 있으면 null. */
-export async function claimNextReviewItem(): Promise<{ itemExplanationId: string; kind: "primary" | "verify" } | null> {
+/**
+ * 다음 검토 문항(새 문항 또는 사후 검증 대상)을 하나 배정받는다. 큐가 비어 있으면 null.
+ * 배정이 거절되면(예: 신뢰도 "정지", 0025) { error: 안내 문구 }. 서버 액션에서 throw한 오류 문구는 운영 환경에서
+ * 화면에 그대로 전달되지 않으므로 값으로 돌려준다.
+ */
+export async function claimNextReviewItem(): Promise<
+  { itemExplanationId: string; kind: "primary" | "verify" } | { error: string } | null
+> {
   await requireTutor();
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("claim_next_review_item");
-  if (error) throw new Error(error.message);
+  if (error) return { error: error.message || "문항을 배정받지 못했습니다." };
   return data ?? null;
 }
 
