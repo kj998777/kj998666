@@ -2,6 +2,7 @@ import "server-only";
 import { addUsage, aiCreditKind, aiErr, createBatch, failWhy, getBatch, getBatchResults, toolInputOf } from "./anthropic";
 import { autoBbox } from "./normalize";
 import { getExamPdfBuffer } from "./pdf";
+import { fetchAllPages } from "@/lib/supabase/fetchAll";
 import { clearLowBalanceAlert, getAiCreds, recordLowBalanceAlert, recordUsage } from "./settings";
 
 // 문항 영역(bbox) 다시 찾기 — 2026-09-28 원장님 제보·결정("AI로 좌표만 다시 찾기").
@@ -130,7 +131,9 @@ async function missingItemExamIds(client: Client, examIds: string[]): Promise<st
 
 /** 검토 대기 시험들에서 좌표 없는 검토 문항 수(화면 표시용). */
 export async function countMissingLocateItems(client: Client): Promise<number> {
-  const { data: exams } = (await client.from("exams").select("id").eq("status", "검수대기")) as any;
+  const { data: exams } = await fetchAllPages((f: number, t: number) =>
+    client.from("exams").select("id").eq("status", "검수대기").order("id").range(f, t)
+  );
   const ids: string[] = ((exams as any[]) ?? []).map((e) => e.id);
   if (!ids.length) return 0;
   try {
@@ -145,7 +148,9 @@ export async function countMissingLocateItems(client: Client): Promise<number> {
  * 오류로 멈춘 작업은 다시 시작). 만든(다시 시작한) 시험 수를 돌려준다. 0024 전이면 0.
  */
 export async function enqueueMissingLocateJobs(client: Client): Promise<{ queued: number; missingItems: number }> {
-  const { data: exams } = (await client.from("exams").select("id").eq("status", "검수대기")) as any;
+  const { data: exams } = await fetchAllPages((f: number, t: number) =>
+    client.from("exams").select("id").eq("status", "검수대기").order("id").range(f, t)
+  );
   const examIds: string[] = ((exams as any[]) ?? []).map((e) => e.id);
   if (!examIds.length) return { queued: 0, missingItems: 0 };
 

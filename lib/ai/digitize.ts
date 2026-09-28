@@ -16,6 +16,7 @@ import {
 } from "./anthropic";
 import { DG_TOOL, dgPrompt } from "./prompts";
 import { getExamPdfBuffer } from "./pdf";
+import { claimJobLease } from "./job";
 import { countPdfPages } from "./pdfMeta";
 import { clearLowBalanceAlert, getAiCreds, recordLowBalanceAlert, recordUsage } from "./settings";
 
@@ -50,7 +51,8 @@ async function setDgJob(client: Client, examId: string, stage: DigitizeJobStage,
     const json = JSON.stringify(state ?? {});
     if (json.length > 200000) throw new Error("작업 상태가 너무 커서 저장하지 못했습니다.");
     const { error } = await (client.from("digitize_jobs") as any).upsert(
-      { exam_id: examId, stage, message: message.slice(0, 500), state: state ?? {} },
+      // updated_at 직접 기록(2026-09-29, lib/ai/job.ts setJob 참고 — 자동 갱신 트리거가 없음)
+      { exam_id: examId, stage, message: message.slice(0, 500), state: state ?? {}, updated_at: new Date().toISOString() },
       { onConflict: "exam_id" }
         );
     if (error) throw error;
@@ -317,6 +319,8 @@ export async function tickDigitizeJob(client: Client, examId: string, minInterva
 
   const fn = STAGE_FN[job.stage];
     if (!fn) return job;
+    // 시험 화면과 AI 설정 화면이 동시에 폴링하면 같은 쪽들을 두 번 AI에 보낼 수 있어 먼저 맡은 호출만 진행(job.ts 참고)
+    if (!(await claimJobLease(client, "digitize_jobs", { exam_id: examId }, job))) return job;
     try {
           await fn(client, examId, job.state);
     } catch (e: any) {

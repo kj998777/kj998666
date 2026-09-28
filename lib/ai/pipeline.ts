@@ -19,7 +19,7 @@ import { EXTRACT_PROMPT, EXTRACT_TOOL, QuestionMeta, SOLVE_TOOL, solvePrompt } f
 import { autoBaseCount, autoNormQs, autoStrList, autoTotalOf } from "./normalize";
 import { AiSolution, CombinedFlag, autoCombine } from "./combine";
 import { assignPoints } from "./points";
-import { Job, JobState, getJob, isActiveStage, setJob } from "./job";
+import { Job, JobState, claimJobLease, getJob, isActiveStage, setJob } from "./job";
 import { getExamPdfBuffer } from "./pdf";
 import { openExamIfAllConfirmed } from "@/lib/review/confirm";
 import { clearLowBalanceAlert, getAiCreds, recordLowBalanceAlert, recordUsage } from "./settings";
@@ -520,6 +520,8 @@ export async function tickExamJob(client: Client, examId: string, minIntervalMs 
 
   const fn = STAGE_FN[job.stage];
   if (!fn) return job;
+  // 다른 호출(크론·다른 화면)이 이미 이 걸음을 진행 중이면 건너뛴다 — 같은 배치를 두 번 보내지 않도록.
+  if (!(await claimJobLease(client, "exam_jobs", { exam_id: examId }, job))) return job;
   try {
     await fn(client, examId, job.state);
   } catch (e: any) {

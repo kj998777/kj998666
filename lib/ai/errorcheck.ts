@@ -13,6 +13,7 @@ import {
 } from "./anthropic";
 import { ERROR_CHECK_TOOL, errorCheckPrompt } from "./prompts";
 import { getExamPdfBuffer } from "./pdf";
+import { claimJobLease } from "./job";
 import { getAiCreds, recordLowBalanceAlert, recordUsage, clearLowBalanceAlert } from "./settings";
 
 // 문항별 "출제오류 의심" AI 판단. Apps Script v37의 eq 파이프라인(같은 해설재작성 큐, 문항 1개당
@@ -44,7 +45,8 @@ export async function getItemCheck(client: Client, examId: string, label: string
 
 async function setCheck(client: Client, examId: string, label: string, stage: ItemCheckStage, message: string, state: State): Promise<void> {
   const { error } = await (client.from("item_checks") as any).upsert(
-    { exam_id: examId, item_label: label, stage, message: message.slice(0, 500), state },
+    // updated_at 직접 기록(2026-09-29, lib/ai/job.ts setJob 참고 — 자동 갱신 트리거가 없음)
+    { exam_id: examId, item_label: label, stage, message: message.slice(0, 500), state, updated_at: new Date().toISOString() },
     { onConflict: "exam_id,item_label" }
   );
   if (error) throw error;
@@ -236,6 +238,8 @@ export async function tickErrorCheck(client: Client, examId: string, label: stri
 
   const fn = STAGE_FN[check.stage];
   if (!fn) return check;
+  // 같은 문항 확인을 두 화면이 동시에 진행시키면 배치를 두 번 보낼 수 있어 먼저 맡은 호출만 진행(job.ts 참고)
+  if (!(await claimJobLease(client, "item_checks", { exam_id: examId, item_label: label }, check))) return check;
   try {
     await fn(client, examId, label, check.state);
   } catch (e: any) {
