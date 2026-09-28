@@ -27,6 +27,9 @@ export default async function StaffLayout({ children }: { children: React.ReactN
               <Link href="/admin/ai" className="nav-link">AI 설정</Link>
             )}
             {session.role === "admin" && (
+              <Link href="/admin/review-status" className="nav-link">검토현황</Link>
+            )}
+            {session.role === "admin" && (
               <Link href="/admin/tutor-disputes" className="nav-link">과외 검토 분쟁</Link>
             )}
           </nav>
