@@ -53,6 +53,7 @@ export type Database = {
           folder_kind: "중간" | "기말" | "기타" | null;
           school_level: SchoolLevel | null;
           tutor_download_cost: number | null;
+          is_jeju: boolean;
         };
         Insert: {
           code: string;
@@ -75,6 +76,7 @@ export type Database = {
           folder_kind?: "중간" | "기말" | "기타" | null;
           school_level?: SchoolLevel | null;
           tutor_download_cost?: number | null;
+          is_jeju?: boolean;
         };
         Relationships: [];
       };
