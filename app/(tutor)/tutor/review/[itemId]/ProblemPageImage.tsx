@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { resolveRegion, type Region } from "./cropLocator";
 
 // pdf.js를 CDN에서 불러와 원본 시험지 PDF의 문항이 있는 쪽만 이미지로 그려서 보여준다.
 // "AI가 요약한 문장을 읽고 푸는 게 불편하다"는 피드백에 따라, 요약문 대신 실제로 인쇄된 문제를
@@ -71,29 +72,53 @@ export default function ProblemPageImage({
   pdfUrl,
   page,
   bbox,
+  label,
 }: {
   pdfUrl: string;
   page: number | null;
   bbox: ProblemBbox | null;
+  label: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
   const [err, setErr] = useState("");
   const [currentPage, setCurrentPage] = useState(page && page > 0 ? page : 1);
   const [numPages, setNumPages] = useState<number | null>(null);
-  const knownPage = !!(page && page > 0);
-  const hasBbox = !!(knownPage && bbox && bbox.x1 > bbox.x0 && bbox.y1 > bbox.y0);
-  // AI가 짚어 준 문제 영역만 볼지, 쪽 전체를 볼지 — bbox가 있으면 기본은 영역만(가독성 우선).
+  // 2026-09-29: 실제로 자를 자리 — AI 좌표를 그대로 쓰지 않고 PDF 글자 위치(문항 번호)나 그림(단·빈 줄)으로
+  // 바로잡은 결과(cropLocator.ts). undefined = 아직 계산 중, null = 못 찾음(쪽 전체 보기).
+  const [region, setRegion] = useState<Region | null | undefined>(undefined);
+  const aiHadBbox = !!(page && page > 0 && bbox && bbox.x1 > bbox.x0 && bbox.y1 > bbox.y0);
+  const knownPage = !!region || !!(page && page > 0);
+  const hasBbox = !!region;
+  // 문제 영역만 볼지, 쪽 전체를 볼지 — 영역을 찾았으면 기본은 영역만(가독성 우선).
   const [showFullPage, setShowFullPage] = useState(false);
-  // 지금 이 쪽에서 실제로 자르고 있는지: bbox가 있고, 전체 보기를 안 눌렀고, 문항이 있는 쪽 그대로일 때만.
-  const cropping = hasBbox && !showFullPage && currentPage === (page as number);
+  // 지금 이 쪽에서 실제로 자르고 있는지: 영역이 있고, 전체 보기를 안 눌렀고, 문항이 있는 쪽 그대로일 때만.
+  const cropping = !!region && !showFullPage && currentPage === region.page;
 
   useEffect(() => {
-    setCurrentPage(page && page > 0 ? page : 1);
+    let cancelled = false;
+    setRegion(undefined);
     setShowFullPage(false);
-  }, [pdfUrl, page]);
+    (async () => {
+      let r: Region | null = null;
+      try {
+        const [lib, doc] = await Promise.all([loadPdfJs(), loadDoc(pdfUrl)]);
+        r = await resolveRegion(lib, doc, label, page && page > 0 ? page : null, aiHadBbox ? bbox : null);
+      } catch {
+        r = null;
+      }
+      if (cancelled) return;
+      setRegion(r);
+      setCurrentPage(r ? r.page : page && page > 0 ? page : 1);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pdfUrl, label, page, bbox?.x0, bbox?.y0, bbox?.x1, bbox?.y1]);
 
   useEffect(() => {
+    if (region === undefined) return; // 자리를 정하는 중
     let cancelled = false;
     setStatus("loading");
     (async () => {
@@ -112,11 +137,13 @@ export default function ProblemPageImage({
         if (!canvas) return;
         const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
 
-        if (cropping && bbox) {
-          const x0 = Math.max(0, bbox.x0 - BBOX_PAD);
-          const y0 = Math.max(0, bbox.y0 - BBOX_PAD);
-          const x1 = Math.min(1000, bbox.x1 + BBOX_PAD);
-          const y1 = Math.min(1000, bbox.y1 + BBOX_PAD);
+        if (cropping && region) {
+          const b = region.bbox;
+          const pad = region.source === "text" ? 6 : BBOX_PAD; // 글자 위치로 찾은 영역은 이미 여유를 둠
+          const x0 = Math.max(0, b.x0 - pad);
+          const y0 = Math.max(0, b.y0 - pad);
+          const x1 = Math.min(1000, b.x1 + pad);
+          const y1 = Math.min(1000, b.y1 + pad);
           const fracW = (x1 - x0) / 1000;
           const fracH = (y1 - y0) / 1000;
           // 잘라낸 부분이 화면에서 약 1100px 너비로 보이도록 원본 렌더 배율을 역산한다(문항이
@@ -162,7 +189,7 @@ export default function ProblemPageImage({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdfUrl, currentPage, cropping, bbox?.x0, bbox?.y0, bbox?.x1, bbox?.y1]);
+  }, [pdfUrl, currentPage, cropping, region]);
 
   function goPage(delta: number) {
     setCurrentPage((p) => {
@@ -175,9 +202,14 @@ export default function ProblemPageImage({
 
   return (
     <div className="space-y-2">
-      {!knownPage && status !== "error" && (
+      {region !== undefined && !knownPage && status !== "error" && (
         <p className="text-xs text-amber-600">
           이 문항은 인쇄된 쪽 번호를 몰라 1쪽부터 보여드립니다. 아래에서 쪽을 넘겨 문제를 찾아 주세요.
+        </p>
+      )}
+      {region === null && knownPage && status !== "error" && (
+        <p className="text-xs text-amber-600">
+          이 문항의 위치를 정확히 찾지 못해 쪽 전체를 보여드립니다. {label}번 문제를 찾아 주세요(쪽이 다르면 아래에서 넘겨 주세요).
         </p>
       )}
       <div className="border border-slate-200 rounded overflow-auto bg-slate-50">

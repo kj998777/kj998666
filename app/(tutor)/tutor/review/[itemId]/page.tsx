@@ -60,6 +60,7 @@ export default async function ReviewItemPage({
         <div className="border-t border-slate-100 pt-2">
           <ProblemPageImage
             pdfUrl={`/tutor/review/${item.id}/pdf`}
+            label={String(item.item_label ?? "")}
             page={item.source_page ?? null}
             bbox={
               item.bbox_x0 != null && item.bbox_y0 != null && item.bbox_x1 != null && item.bbox_y1 != null
