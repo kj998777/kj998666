@@ -22,9 +22,10 @@ export type Database = {
   public: {
     Tables: {
       profiles: {
-        Row: { id: string; email: string; role: Role; created_at: string };
-        Insert: { id: string; email: string; role?: Role };
-        Update: { role?: Role };
+        // display_name·cohort: 0021(회원가입 때 받는 이름·기수)
+        Row: { id: string; email: string; role: Role; created_at: string; display_name: string | null; cohort: string | null };
+        Insert: { id: string; email: string; role?: Role; display_name?: string | null; cohort?: string | null };
+        Update: { role?: Role; display_name?: string | null; cohort?: string | null };
         Relationships: [];
       };
       classes: {
