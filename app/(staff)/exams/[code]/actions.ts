@@ -80,13 +80,27 @@ export async function updateItemExplanation(
   return { ok: true };
 }
 
-/** 과외선생님 스토어에서 이 시험을 몇 포인트에 팔지 지정. null이면 판매 대상에서 뺀다. */
+/**
+ * 과외선생님 스토어에서 이 시험을 몇 포인트에 팔지 지정. null이면 판매 대상에서 뺀다.
+ * #1: 검토가 끝나 정답이 확정된("열림") 시험만 스토어에 등록할 수 있다 — 지금까지는 화면
+ * (page.tsx)에서만 '닫힘' 상태일 때 입력칸을 보여주는 식이었고 여기(서버 액션)에는 상태 검사가
+ * 전혀 없어 다른 상태에서도 직접 호출하면 등록이 가능한 허점이 있었다. 판매를 그만두는(cost=null)
+ * 요청은 상태와 무관하게 항상 허용한다(이미 열림이 아닌 시험도 판매 중단은 언제든 할 수 있어야
+ * 하므로).
+ */
 export async function updateTutorDownloadCost(code: string, cost: number | null) {
   await requireRole("editor");
   if (cost !== null && (!Number.isFinite(cost) || cost <= 0)) {
     return { ok: false, msg: "포인트는 0보다 큰 숫자여야 합니다." };
   }
   const supabase = await createClient();
+  if (cost !== null) {
+    const exam = await getExamId(code);
+    if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
+    if (exam.status !== "열림") {
+      return { ok: false, msg: "검토가 끝나 '열림' 상태인 시험만 스토어에 등록할 수 있습니다." };
+    }
+  }
   const { error } = await (supabase.from("exams") as any)
     .update({ tutor_download_cost: cost })
     .eq("code", code);

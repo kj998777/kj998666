@@ -174,6 +174,16 @@ export default async function ExamDetailPage({
           <p className="text-sm text-amber-800">
             AI가 만든 정답·해설입니다. 아래 정답표를 확인·수정한 뒤 확정하면 시험이 열립니다.
           </p>
+          {(explanations ?? []).length > 0 && (
+            <p className="text-sm text-amber-800">
+              {/* #1: 과외선생님 검토가 이 문항 수만큼 전부 끝나면(tutor_reviewed=true) 관리자가
+                  따로 확정하지 않아도 자동으로 시험이 열리고 스토어에 등록됩니다. */}
+              과외선생님 검토 진행:{" "}
+              {(explanations as any[]).filter((e) => e.tutor_reviewed).length} /{" "}
+              {(explanations as any[]).length}문항 완료
+              {(explanations as any[]).every((e) => e.tutor_reviewed) && " — 곧 자동으로 열립니다"}
+            </p>
+          )}
           {notes.length > 0 && (
             <ul className="text-sm text-amber-800 list-disc list-inside space-y-0.5">
               {notes.map((n) => (
@@ -283,7 +293,7 @@ export default async function ExamDetailPage({
         {canEdit && <AddAnswerKeyForm code={exam.code} nextSortOrder={(keys ?? []).length} />}
       </div>
 
-      {canEdit && exam.status === "닫힘" && (
+      {canEdit && exam.status === "열림" && (
         <TutorDownloadCostInput code={exam.code} cost={exam.tutor_download_cost ?? null} />
       )}
 
