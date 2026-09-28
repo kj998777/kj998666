@@ -6,6 +6,7 @@ import { requireTutor } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isCorrect } from "@/lib/grading";
+import { autoConfirmIfMatch } from "@/lib/review/confirm";
 
 const PHOTO_BUCKET = "tutor-review-photos";
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 10MB
@@ -79,8 +80,20 @@ export async function submitPrimaryReview(
   });
   if (error) return { ok: false, msg: error.message };
 
+  // #3: 제출된 답이 정답표와 같으면 자동 확정 → 시험의 모든 문항이 확정되면 자동으로 연다.
+  // 과외선생님 세션으로는 시험 상태를 바꿀 수 없으므로(관리자 전용 트리거) 서비스롤로 처리한다.
+  // 여기서 실패해도 제출 자체는 이미 끝났으므로 오류를 삼키고(관리자가 검토현황에서 확정 가능) 계속 진행.
+  let examOpened = false;
+  try {
+    const r = await autoConfirmIfMatch(createAdminClient(), itemExplanationId);
+    examOpened = r.examOpened;
+  } catch (e) {
+    console.error("autoConfirmIfMatch failed", e);
+  }
+
   revalidatePath("/tutor/dashboard");
-  return { ok: true, pointsEarned: data?.pointsEarned ?? 0 };
+  revalidatePath("/admin/review-status");
+  return { ok: true, pointsEarned: data?.pointsEarned ?? 0, examOpened };
 }
 
 /**
