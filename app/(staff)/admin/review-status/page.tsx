@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { toKeyAnswer, tutorAnswerMatches } from "@/lib/review/confirm";
 import ApproveReviewButton from "../../exams/[code]/ApproveReviewButton";
 import { ConfirmItemControl, ConfirmMatchedButton, EditRequestControl } from "./ConfirmControls";
+import LocatePanel from "./LocatePanel";
+import { getLocateSummary } from "@/lib/ai/locate";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +84,8 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
 
   const [{ data: examsRaw }, { data: itemsRaw }, { data: keysRaw }, { data: reviewsRaw }, { data: jobsRaw }]: any[] =
     await Promise.all([
-      supabase.from("exams").select("id, code, name, status").in("id", examIds),
+      // is_jeju·school_level: 검토 배정 순서(0019)를 이 화면에서도 보이게(2026-09-28). 열이 없으면 아래에서 다시 읽음.
+      supabase.from("exams").select("id, code, name, status, is_jeju, school_level").in("id", examIds),
       supabase
         .from("item_explanations")
         .select(
@@ -98,8 +101,23 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
       supabase.from("exam_jobs").select("exam_id, flags:state->flags").in("exam_id", examIds),
     ]);
 
-  const exams = ((examsRaw as any[]) ?? []).sort(
-    (a, b) => Number(b.status === "검수대기") - Number(a.status === "검수대기") || String(a.name).localeCompare(String(b.name), "ko")
+  let examRows: any[] = (examsRaw as any[]) ?? [];
+  if (!examRows.length && examIds.length) {
+    const { data } = (await supabase.from("exams").select("id, code, name, status").in("id", examIds)) as any;
+    examRows = data ?? [];
+  }
+  // 문항 잘라 보기 영역(좌표) 상태 — 0024 전이면 available=false라 패널이 안 보인다.
+  const pendingIds = ((pendingExamsRaw as any[]) ?? []).map((e) => e.id);
+  const locate = await getLocateSummary(supabase, pendingIds);
+  const examNameById = new Map(examRows.map((e) => [e.id, e.name as string]));
+  // 과외선생님 검토 배정과 같은 순서: 검수대기 → 제주 학교 → 고등 > 중등 > 그 밖 → 이름
+  const levelRank = (l: string | null | undefined) => (l === "고" ? 0 : l === "중" ? 1 : 2);
+  const exams = examRows.sort(
+    (a, b) =>
+      Number(b.status === "검수대기") - Number(a.status === "검수대기") ||
+      Number(!!b.is_jeju) - Number(!!a.is_jeju) ||
+      levelRank(a.school_level) - levelRank(b.school_level) ||
+      String(a.name).localeCompare(String(b.name), "ko")
   );
   const items: Item[] = itemsRaw ?? [];
   const keyOf = new Map(((keysRaw as any[]) ?? []).map((k) => [`${k.exam_id}|${k.item_label}`, k]));
@@ -173,6 +191,12 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
 
   return (
     <div className="space-y-4">
+      {locate.available && (
+        <LocatePanel
+          missingItems={locate.missingItems}
+          jobs={locate.jobs.map((j) => ({ ...j, examName: examNameById.get(j.examId) ?? "시험" }))}
+        />
+      )}
       {editBlock}
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
@@ -184,6 +208,8 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
           <p className="text-xs text-slate-400 mt-1">
             과외선생님 답이 정답표와 같으면 자동 확정되고, 시험의 모든 문항이 확정되면 시험이 자동으로 열립니다.
             &ldquo;이 정답으로 확정&rdquo;은 입력칸의 값을 정답표에 그대로 저장합니다(여러 정답은 | 로 구분).
+            시험은 과외선생님에게 문항이 배정되는 순서(제주 학교 → 고등 → 중등)대로 보입니다. 제주 학교인데
+            &ldquo;타 지역&rdquo;으로 표시된 시험은 시험 상세에서 &ldquo;제주도 내 학교 시험&rdquo;을 체크해 주세요.
           </p>
         </div>
         <Link href={showConfirmed ? "/admin/review-status" : "/admin/review-status?all=1"} className="text-sm link-accent">
@@ -208,7 +234,13 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
                     }
                   >
                     {exam.status}
-                  </span>
+                  </span>{" "}
+                  {"is_jeju" in exam && (
+                    <span className={"badge " + (exam.is_jeju ? "bg-sky-100 text-sky-700" : "bg-slate-100 text-slate-500")}>
+                      {exam.is_jeju ? "제주" : "타 지역"}
+                      {exam.school_level ? ` · ${exam.school_level === "고" ? "고등" : exam.school_level === "중" ? "중등" : exam.school_level}` : ""}
+                    </span>
+                  )}
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
                   확정 {rows.length - unconfirmed}/{rows.length} · 과외 제출 {submitted}/{rows.length}
