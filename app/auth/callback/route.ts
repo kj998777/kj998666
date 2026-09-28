@@ -13,7 +13,11 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   // 비밀번호 재설정 링크는 ?next=/reset-password 를 붙여서 보낸다(resetPasswordForEmail 참고).
-  const explicitNext = searchParams.get("next");
+  // 보안(2026-09-29 야간 점검): next는 우리 사이트 안의 경로("/..." 로 시작)만 허용한다. 전에는 아무 값이나
+  // origin 뒤에 그대로 붙여서, 예를 들어 next=".evil.com" 이나 "@evil.com" 을 넣은 링크를 누르면 로그인 직후 다른
+  // 사이트(medicchart.vercel.app.evil.com 등)로 보내져 가짜 로그인 화면 같은 피싱에 쓰일 수 있었다.
+  const rawNext = searchParams.get("next");
+  const explicitNext = rawNext && /^\/(?![\/\\])/.test(rawNext) ? rawNext : null;
   let next = explicitNext || "/dashboard";
 
   if (!code) {
