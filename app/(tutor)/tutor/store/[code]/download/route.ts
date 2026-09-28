@@ -1,12 +1,19 @@
 import { requireTutorApi } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getExamPdfBuffer } from "@/lib/ai/pdf";
+import { buildStampedExamPdf, type Correction } from "@/lib/ai/pdfStamp";
+import { ensureTutorLinkToken, tutorSubmitPath } from "@/lib/tutor/link";
 import { contentDispositionAttachment } from "@/lib/http/contentDisposition";
 
-// 실제 "다운로드"(기출 스토어) — purchase_exam_download RPC로 이미 구매(포인트 차감)한 시험만
-// 통과시킨다. 이 GET 라우트 자체는 조회만 하고 아무것도 차감하지 않으므로 몇 번을 다시 받아도 안전.
-export async function GET(_request: Request, { params }: { params: { code: string } }) {
+export const dynamic = "force-dynamic";
+
+// 기출 스토어 "다운로드" — purchase_exam_download RPC로 이미 구매(포인트 차감)한 시험만 통과시킨다.
+// 이 GET 라우트 자체는 조회만 하고 아무것도 차감하지 않으므로 몇 번을 다시 받아도 안전.
+//
+// #4 (2026-09-28): 원본 PDF를 그대로 주던 것을, 앞에 메딕수학 표지·뒤에 메딕수학 로고 + 이 과외선생님
+// 전용 답안 제출 QR(/s/코드?t=토큰)을 반드시 붙여서 준다(정오표가 있으면 QR 쪽 앞에 함께).
+// 과외선생님은 exam-pdfs 버킷·정오표 테이블 RLS를 통과하지 못하므로, 구매 확인 뒤 서비스롤로 읽는다.
+export async function GET(request: Request, { params }: { params: { code: string } }) {
   const auth = await requireTutorApi();
   if (auth.error) return auth.error;
 
@@ -31,12 +38,39 @@ export async function GET(_request: Request, { params }: { params: { code: strin
     return Response.json({ ok: false, msg: "이 시험을 아직 구매하지 않았습니다." }, { status: 403 });
   }
 
-  const admin = createAdminClient();
-  let bytes: Buffer;
+  let token: string;
   try {
-    bytes = await getExamPdfBuffer(admin, exam.id);
+    token = await ensureTutorLinkToken(auth.session.userId);
   } catch (e: any) {
-    return Response.json({ ok: false, msg: e?.message || "PDF를 불러오지 못했습니다." }, { status: 404 });
+    return Response.json({ ok: false, msg: e?.message || "제출 링크를 만들지 못했습니다." }, { status: 500 });
+  }
+  const submitUrl = new URL(request.url).origin + tutorSubmitPath(exam.code, token);
+
+  const admin = createAdminClient();
+  const { data: correctionRows } = (await admin
+    .from("exam_corrections")
+    .select("item_label, issue, fix")
+    .eq("exam_id", exam.id)
+    .order("item_label")) as any;
+  const fixes: Correction[] = ((correctionRows as any[]) ?? []).map((c) => ({
+    label: c.item_label,
+    issue: c.issue ?? "",
+    fix: c.fix ?? "",
+  }));
+
+  let bytes: Uint8Array;
+  try {
+    bytes = await buildStampedExamPdf(admin, exam.id, {
+      cover: true,
+      addFixPage: true,
+      excludePages: [],
+      examName: exam.name,
+      examCode: exam.code,
+      submitUrl,
+      fixes,
+    });
+  } catch (e: any) {
+    return Response.json({ ok: false, msg: e?.message || "PDF를 만들지 못했습니다." }, { status: 404 });
   }
 
   return new Response(bytes as any, {
