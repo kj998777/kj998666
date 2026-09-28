@@ -2,7 +2,8 @@ import "server-only";
 import { readFile } from "fs/promises";
 import path from "path";
 import { PDFDocument } from "pdf-lib";
-import { getExamPdfBuffer } from "./pdf";
+import { getExamPdfBuffer, getExamPdfMeta } from "./pdf";
+import { trailingAnswerPages } from "./answerPages";
 import { renderCoverPng, renderFixSheetPngs, renderStampPng } from "./canvasStamp";
 
 // 시험지 PDF에 표지·정오표(정정 페이지)·QR 안내 쪽을 붙여 학생에게 나눠 줄 최종 PDF를 만든다.
@@ -33,6 +34,8 @@ export type StampOptions = {
   cover: boolean;
   addFixPage: boolean;
   excludePages: number[]; // 1-indexed, 원본에서 뺄 쪽(해설·마킹 등)
+  // #7: 마지막 문항 쪽 뒤의 정답·해설·OMR 쪽을 자동으로 뺀다(lib/ai/answerPages.ts)
+  autoTrimAnswerPages?: boolean;
   examName: string;
   examCode: string;
   submitUrl: string;
@@ -48,6 +51,9 @@ export async function buildStampedExamPdf(client: Client, examId: string, opts: 
 
   const keep = new Set(Array.from({ length: totalSrcPages }, (_, i) => i + 1));
   for (const p of opts.excludePages) keep.delete(p);
+  if (opts.autoTrimAnswerPages) {
+    for (const p of await detectAnswerPages(client, examId, totalSrcPages)) keep.delete(p);
+  }
   const keptIdx = Array.from(keep).sort((a, b) => a - b).map((n) => n - 1);
   if (!keptIdx.length) throw new Error("모든 쪽을 뺄 수는 없습니다.");
 
@@ -107,4 +113,15 @@ export async function buildStampedExamPdf(client: Client, examId: string, opts: 
   back.drawImage(stampImg, { x: PW - W - mg, y: mg, width: W, height: H });
 
   return out.save();
+}
+
+/**
+ * #7: 이 시험 원본 PDF에서 자동으로 뺄 뒤쪽(정답·해설·OMR) 쪽 번호. 원본을 디지털화 결과로 바꾼 경우
+ * (문제 쪽만 들어 있고 쪽 번호도 달라짐)나 쪽 정보가 부족하면 빈 배열.
+ */
+export async function detectAnswerPages(client: Client, examId: string, totalPages: number): Promise<number[]> {
+  const meta = await getExamPdfMeta(client, examId);
+  if (!meta || meta.replaced_with_digitized) return [];
+  const { data } = (await client.from("item_explanations").select("source_page").eq("exam_id", examId)) as any;
+  return trailingAnswerPages(((data as any[]) ?? []).map((r) => r.source_page), totalPages);
 }
