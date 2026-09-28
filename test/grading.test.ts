@@ -72,6 +72,16 @@ check("빈 답은 항상 오답", () => assert.equal(isCorrect("", "3"), false))
 check("명백한 오답", () => assert.equal(isCorrect("4", "3"), false));
 
 // --- gradeSubmission ---
+check("객관식 복수 정답은 순서 무관 (3,5 = 5,3 = ⑤③)", () => {
+  assert.equal(isCorrect("5,3", "3,5", "객관식"), true);
+  assert.equal(isCorrect("⑤③", "③, ⑤", "객관식"), true);
+  assert.equal(isCorrect("3", "3,5", "객관식"), false);
+  assert.equal(isCorrect("35", "3,5,1", "객관식"), false);
+});
+check("주관식 숫자는 순서 무관 적용 안 함 (12 ≠ 21)", () => {
+  assert.equal(isCorrect("21", "12", "주관식"), false);
+  assert.equal(isCorrect("21", "12"), false);
+});
 check("gradeSubmission: 배점 합산 + 부동소수점 오차 제거", () => {
   const key = [
     { item_label: "1", correct_answers: "3", points: 3.6, type: "객관식" as const },
