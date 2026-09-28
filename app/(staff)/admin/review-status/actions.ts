@@ -229,6 +229,7 @@ export async function startLocateItems(): Promise<Result & { queued?: number }> 
   const { queued, missingItems } = await enqueueMissingLocateJobs(admin);
   if (!missingItems) return { ok: true, msg: "좌표가 없는 검토 대기 문항이 없습니다.", queued: 0 };
   revalidatePath("/admin/review-status");
+  revalidatePath("/admin/ai");
   return {
     ok: true,
     queued,
