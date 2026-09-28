@@ -180,7 +180,8 @@ export default function StudentSubmitForm({
                         key={n}
                         type="button"
                         className={
-                          "btn-secondary py-1 px-2 " +
+                          // 학생이 휴대폰으로 누르는 버튼 — 손가락으로 누르기 쉽게 기본 버튼 크기를 그대로 쓴다.
+                          "btn-secondary " +
                           (answers[i] === String(n) ? "!bg-slate-900 !text-white" : "")
                         }
                         onClick={() =>
