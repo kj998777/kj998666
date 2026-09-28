@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
+import { fetchAllPages } from "@/lib/supabase/fetchAll";
 import CreateExamForm from "./CreateExamForm";
 import CreateAiExamForm from "./CreateAiExamForm";
 import CreateAiExamBatchForm from "./CreateAiExamBatchForm";
@@ -15,12 +16,16 @@ export default async function ExamsPage({ searchParams }: { searchParams?: { lev
   const levelFilter = searchParams?.level && searchParams.level in LEVEL_LABEL ? searchParams.level : null;
 
   const supabase = await createClient();
-  let query = supabase
-    .from("exams")
-    .select("id, code, name, status, school_level, created_at, folder_year, folder_grade, folder_term, folder_kind")
-    .order("created_at", { ascending: false });
-  if (levelFilter) query = query.eq("school_level", levelFilter);
-  const { data: exams, error } = await query;
+  // 2026-09-29: 시험이 1000개를 넘어도 목록에서 빠지지 않도록 끝까지 나눠 읽는다(lib/supabase/fetchAll.ts).
+  const { data: exams, error } = await fetchAllPages((a, b) => {
+    let query = supabase
+      .from("exams")
+      .select("id, code, name, status, school_level, created_at, folder_year, folder_grade, folder_term, folder_kind")
+      .order("created_at", { ascending: false })
+      .order("id");
+    if (levelFilter) query = query.eq("school_level", levelFilter);
+    return query.range(a, b);
+  });
 
   return (
     <div className="space-y-6">
