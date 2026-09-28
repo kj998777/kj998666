@@ -2,7 +2,7 @@
 // 나중에 Supabase CLI가 설치 가능해지면 `supabase gen types typescript` 로 자동 생성본으로
 // 교체해도 되지만, 그 전까지는 이 파일이 스키마와 어긋나지 않도록 마이그레이션을 고칠 때 같이 고칠 것.
 
-export type Role = "admin" | "editor" | "viewer" | "tutor";
+export type Role = "admin" | "editor" | "viewer" | "tutor" | "대기";
 export type ExamStatus = "열림" | "닫힘" | "검수대기";
 export type AnswerType = "객관식" | "주관식";
 export type Difficulty = "하" | "중하" | "중" | "중상" | "상";
