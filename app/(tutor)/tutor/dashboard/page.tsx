@@ -29,6 +29,9 @@ export default async function TutorDashboardPage() {
 
   const s = (stats as any) ?? { points_balance: 0, reviews_submitted: 0, reviews_flagged: 0 };
 
+  // 신뢰도(0025): 주의·정지면 안내. 0025 전이면 조회가 실패해 아무것도 안 보인다.
+  const { data: trust } = (await (supabase.rpc as any)("tutor_trust_level", { p_tutor: session.userId })) as any;
+
   return (
     <div className="space-y-6">
       <div>
@@ -41,6 +44,18 @@ export default async function TutorDashboardPage() {
         </p>
       </div>
 
+      {trust === "paused" && (
+        <div className="card border-red-300 bg-red-50 text-sm text-red-700">
+          지금은 새 검토 문항 배정이 잠시 멈춰 있습니다. 사후 검증에서 다른 선생님 답과 다른 경우가 여러 번 있어 원장님이
+          확인하는 중입니다. 기출 스토어는 그대로 쓸 수 있고, 궁금한 점은 원장님께 문의해 주세요.
+        </div>
+      )}
+      {trust === "watch" && (
+        <div className="card border-amber-300 bg-amber-50 text-sm text-amber-800">
+          최근 사후 검증에서 다른 선생님 답과 다른 경우가 있어, 당분간 제출하신 문항은 모두 한 번 더 확인합니다. 포인트는
+          그대로 적립됩니다. 문제를 조금 더 꼼꼼히 확인해 주세요.
+        </div>
+      )}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <div className="card text-center">
           <div className="text-2xl sm:text-3xl font-semibold text-amber-600">{s.points_balance}</div>
