@@ -21,6 +21,7 @@
 // 매직 코멘트가 필요) 더 안전한 예전 방식(UMD `<script>` 전역 변수)을 그대로 쓴다.
 
 import { PDFDocument } from "pdf-lib";
+import { normalizeTex } from "@/lib/math/normalizeTex";
 
 // ---------------------------------------------------------------------
 // AI 결과 데이터 타입 (DG_TOOL, lib/ai/prompts.ts 와 같은 모양)
@@ -190,6 +191,7 @@ function injectDigitizeStyles(): void {
 // ---------------------------------------------------------------------
 
 function dgPlainLen(s: string): number {
+  s = normalizeTex(s);
   // 선택지 한 칸이 차지할 폭(px) 어림: 수식은 기호 좌우 여백까지 넉넉히, 한글은 글자당 13.5px
   let p = String(s).split("$");
   if (p.length % 2 === 0) p = [String(s)];
@@ -224,7 +226,8 @@ function dgTex(katex: any, t: string | null | undefined): string {
   // (예전에는 이런 경우 문자열 전체를 통째로 "수식 아님"으로 보고 포기해서, 문항 하나에서
   // AI가 실수로 $ 를 하나 빠뜨리면 그 문항의 모든 수식이 \frac{...} 같은 명령어 글자 그대로
   // 남는 문제가 있었다 — 실제로 신고된 "수식이 명령어 상태 그대로 남는" 버그의 원인.)
-  const s = String(t == null ? "" : t);
+  // AI가 $$…$$·\[…\]로 감싸거나 $ 없이 쓴 수식(\begin{cases}, \dfrac 등)도 $…$ 로 바꿔서 그린다(2026-09-28).
+  const s = normalizeTex(String(t == null ? "" : t));
   const parts = s.split("$");
   const unpaired = parts.length % 2 === 0; // $ 가 홀수 개
   const out: string[] = [];
@@ -246,7 +249,7 @@ function dgTex(katex: any, t: string | null | undefined): string {
 
 function dgLines(s: string | null | undefined): string[] {
   // 글을 줄로 나눔: 수식($…$) 안의 줄바꿈은 나누지 않고, $ 가 홀수 개면 나누지 않음. 빈 줄은 뺌
-  const t = String(s == null ? "" : s);
+  const t = normalizeTex(String(s == null ? "" : s));
   if (((t.match(/\$/g) || []).length) % 2) return [t];
   const out: string[] = [];
   let cur = "";
