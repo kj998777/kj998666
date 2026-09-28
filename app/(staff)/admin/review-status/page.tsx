@@ -1,0 +1,285 @@
+import Link from "next/link";
+import { requireRole } from "@/lib/auth/requireRole";
+import { createClient } from "@/lib/supabase/server";
+import { toKeyAnswer, tutorAnswerMatches } from "@/lib/review/confirm";
+import ApproveReviewButton from "../../exams/[code]/ApproveReviewButton";
+import { ConfirmItemControl, ConfirmMatchedButton } from "./ConfirmControls";
+
+export const dynamic = "force-dynamic";
+
+// #3 관리자 검토현황: 검수대기 시험(과 정답이 아직 확정 안 된 문항이 남은 시험)을 시험별로 모아,
+// 문항마다 정답표(AI) 답 · 과외선생님 제출 답 · 사후검증 결과 · 확정 상태를 보여 주고 바로 확정한다.
+
+const CONF_LABEL: Record<string, string> = { high: "높음", medium: "보통", low: "낮음", fail: "실패" };
+const SOURCE_LABEL: Record<string, string> = {
+  auto_match: "과외 답 일치",
+  admin: "관리자 확정",
+  legacy: "이전 확정",
+  ai_confident: "AI 확신",
+};
+
+type Item = {
+  id: string;
+  exam_id: string;
+  item_label: string;
+  answer_display: string;
+  tutor_reviewed: boolean;
+  claimed_by: string | null;
+  claim_expires_at: string | null;
+  review_confirmed: boolean;
+  review_confirm_source: string | null;
+  ai_answer_display: string | null;
+};
+
+export default async function ReviewStatusPage({ searchParams }: { searchParams?: { all?: string } }) {
+  await requireRole("admin");
+  const supabase = await createClient();
+  const showConfirmed = searchParams?.all === "1";
+
+  const [{ data: pendingExamsRaw }, { data: unconfirmedRaw, error: unconfErr }]: any[] = await Promise.all([
+    supabase.from("exams").select("id").eq("status", "검수대기"),
+    supabase.from("item_explanations").select("exam_id").eq("review_confirmed", false),
+  ]);
+
+  if (unconfErr) {
+    return (
+      <div className="card border-red-300 bg-red-50 text-sm text-red-700 space-y-1">
+        <h1 className="font-semibold">검토현황을 불러오지 못했습니다</h1>
+        <p>
+          데이터베이스 마이그레이션 <code>0016_review_status_confirm.sql</code>이 아직 적용되지 않은 것
+          같습니다. Supabase SQL Editor에서 실행한 뒤 다시 열어 주세요. ({unconfErr.message})
+        </p>
+      </div>
+    );
+  }
+
+  const examIds = [
+    ...new Set([
+      ...((pendingExamsRaw as any[]) ?? []).map((e) => e.id),
+      ...((unconfirmedRaw as any[]) ?? []).map((r) => r.exam_id),
+    ]),
+  ];
+
+  if (examIds.length === 0) {
+    return (
+      <div className="card">
+        <h1 className="text-lg font-semibold mb-2">검토현황</h1>
+        <p className="text-sm text-slate-500">지금 검토 중이거나 정답 확정이 필요한 시험이 없습니다.</p>
+      </div>
+    );
+  }
+
+  const [{ data: examsRaw }, { data: itemsRaw }, { data: keysRaw }, { data: reviewsRaw }, { data: jobsRaw }]: any[] =
+    await Promise.all([
+      supabase.from("exams").select("id, code, name, status").in("id", examIds),
+      supabase
+        .from("item_explanations")
+        .select(
+          "id, exam_id, item_label, answer_display, tutor_reviewed, claimed_by, claim_expires_at, review_confirmed, review_confirm_source, ai_answer_display"
+        )
+        .in("exam_id", examIds),
+      supabase.from("answer_key").select("exam_id, item_label, correct_answers, type, sort_order").in("exam_id", examIds),
+      supabase
+        .from("tutor_item_reviews")
+        .select("id, item_explanation_id, tutor_id, kind, answer_display, image_path, needs_verification, verified, is_match, matches_primary_review_id, created_at")
+        .in("exam_id", examIds)
+        .order("created_at", { ascending: true }),
+      supabase.from("exam_jobs").select("exam_id, flags:state->flags").in("exam_id", examIds),
+    ]);
+
+  const exams = ((examsRaw as any[]) ?? []).sort(
+    (a, b) => Number(b.status === "검수대기") - Number(a.status === "검수대기") || String(a.name).localeCompare(String(b.name), "ko")
+  );
+  const items: Item[] = itemsRaw ?? [];
+  const keyOf = new Map(((keysRaw as any[]) ?? []).map((k) => [`${k.exam_id}|${k.item_label}`, k]));
+  const flagsByExam = new Map(((jobsRaw as any[]) ?? []).map((j) => [j.exam_id, (j.flags ?? {}) as Record<string, any>]));
+
+  const reviews = (reviewsRaw as any[]) ?? [];
+  const primaryByItem = new Map<string, any>();
+  for (const r of reviews) if (r.kind === "primary") primaryByItem.set(r.item_explanation_id, r); // 가장 최근 것
+  const verifyByPrimary = new Map<string, any>();
+  for (const r of reviews) if (r.kind === "verify" && r.matches_primary_review_id) verifyByPrimary.set(r.matches_primary_review_id, r);
+
+  const tutorIds = [...new Set(reviews.map((r) => r.tutor_id))];
+  const { data: profilesRaw } = tutorIds.length
+    ? ((await supabase.from("profiles").select("id, email").in("id", tutorIds)) as any)
+    : { data: [] };
+  const emailById = new Map(((profilesRaw as any[]) ?? []).map((p) => [p.id, p.email as string]));
+
+  const now = Date.now();
+  let totalUnconfirmed = 0;
+  let totalMismatch = 0;
+
+  const examBlocks = exams.map((exam) => {
+    const flags = flagsByExam.get(exam.id) ?? {};
+    const rows = items
+      .filter((it) => it.exam_id === exam.id)
+      .map((it) => {
+        const key = keyOf.get(`${exam.id}|${it.item_label}`);
+        const primary = primaryByItem.get(it.id);
+        const verify = primary ? verifyByPrimary.get(primary.id) : undefined;
+        const match = primary && key ? tutorAnswerMatches(key.type, primary.answer_display, key.correct_answers) : null;
+        const claimed = !!it.claimed_by && !!it.claim_expires_at && new Date(it.claim_expires_at).getTime() > now;
+        let state: { label: string; cls: string };
+        if (it.review_confirmed) {
+          state = { label: "확정 · " + (SOURCE_LABEL[it.review_confirm_source ?? ""] ?? "확정"), cls: "bg-emerald-100 text-emerald-700" };
+        } else if (primary) {
+          state = match
+            ? { label: "제출 · AI와 일치", cls: "bg-amber-100 text-amber-800" }
+            : { label: "제출 · AI와 다름", cls: "bg-red-100 text-red-700" };
+        } else if (claimed) {
+          state = { label: "과외선생님 풀이 중", cls: "bg-sky-100 text-sky-700" };
+        } else {
+          state = { label: "검토 대기", cls: "bg-slate-100 text-slate-600" };
+        }
+        let verifyLabel = "—";
+        if (primary?.needs_verification) {
+          verifyLabel = !verify ? "검증 대기" : verify.is_match === true ? "검증 일치" : verify.is_match === false ? "검증 불일치" : "검증 판정 전";
+        }
+        const initial = primary && key ? toKeyAnswer(key.type, primary.answer_display) : key?.correct_answers ?? "";
+        return {
+          it,
+          key,
+          primary,
+          match,
+          state,
+          verifyLabel,
+          conf: flags[it.item_label]?.c as string | undefined,
+          initial,
+          sort: typeof key?.sort_order === "number" ? key.sort_order : 9999,
+        };
+      })
+      .sort((a, b) => a.sort - b.sort || a.it.item_label.localeCompare(b.it.item_label, "ko", { numeric: true }));
+
+    const unconfirmed = rows.filter((r) => !r.it.review_confirmed);
+    const submitted = rows.filter((r) => r.primary).length;
+    const mismatch = unconfirmed.filter((r) => r.primary && r.match === false).length;
+    const matchedPending = unconfirmed.filter((r) => r.primary && r.match === true).length;
+    totalUnconfirmed += unconfirmed.length;
+    totalMismatch += mismatch;
+    return { exam, rows, unconfirmed: unconfirmed.length, submitted, mismatch, matchedPending };
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h1 className="text-lg font-semibold">검토현황</h1>
+          <p className="text-sm text-slate-500">
+            시험 {exams.length}개 · 미확정 {totalUnconfirmed}문항
+            {totalMismatch > 0 && <span className="text-red-600"> · AI와 다른 제출 {totalMismatch}문항</span>}
+          </p>
+          <p className="text-xs text-slate-400 mt-1">
+            과외선생님 답이 정답표와 같으면 자동 확정되고, 시험의 모든 문항이 확정되면 시험이 자동으로 열립니다.
+            &ldquo;이 정답으로 확정&rdquo;은 입력칸의 값을 정답표에 그대로 저장합니다(여러 정답은 | 로 구분).
+          </p>
+        </div>
+        <Link href={showConfirmed ? "/admin/review-status" : "/admin/review-status?all=1"} className="text-sm link-accent">
+          {showConfirmed ? "미확정 문항만 보기" : "확정된 문항도 보기"}
+        </Link>
+      </div>
+
+      {examBlocks.map(({ exam, rows, unconfirmed, submitted, mismatch, matchedPending }) => {
+        const visible = showConfirmed ? rows : rows.filter((r) => !r.it.review_confirmed);
+        return (
+          <div key={exam.id} className="card space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="font-medium">
+                  <Link href={`/exams/${encodeURIComponent(exam.code)}`} className="hover:underline">
+                    {exam.name}
+                  </Link>{" "}
+                  <span className="text-slate-400 text-sm font-normal">({exam.code})</span>{" "}
+                  <span
+                    className={
+                      "badge " + (exam.status === "검수대기" ? "bg-amber-100 text-amber-700" : exam.status === "열림" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600")
+                    }
+                  >
+                    {exam.status}
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  확정 {rows.length - unconfirmed}/{rows.length} · 과외 제출 {submitted}/{rows.length}
+                  {mismatch > 0 && <span className="text-red-600"> · AI와 다름 {mismatch}</span>}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <ConfirmMatchedButton examId={exam.id} count={matchedPending} />
+                {exam.status === "검수대기" && <ApproveReviewButton code={exam.code} />}
+              </div>
+            </div>
+
+            {visible.length === 0 ? (
+              <p className="text-sm text-slate-500">모든 문항이 확정됐습니다.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b border-slate-200">
+                      <th className="py-1.5 pr-2 font-medium">번호</th>
+                      <th className="py-1.5 pr-2 font-medium">정답표</th>
+                      <th className="py-1.5 pr-2 font-medium">AI 확신</th>
+                      <th className="py-1.5 pr-2 font-medium">과외 제출</th>
+                      <th className="py-1.5 pr-2 font-medium">사후검증</th>
+                      <th className="py-1.5 pr-2 font-medium">상태</th>
+                      <th className="py-1.5 font-medium">확정</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((r) => (
+                      <tr key={r.it.id} className={"border-b border-slate-100 align-top " + (r.it.review_confirmed ? "opacity-60" : "")}>
+                        <td className="py-2 pr-2 whitespace-nowrap font-medium">{r.it.item_label}</td>
+                        <td className="py-2 pr-2 whitespace-nowrap">
+                          {r.key?.correct_answers ?? <span className="text-red-600">없음</span>}
+                          {r.key?.type && <span className="text-xs text-slate-400 ml-1">{r.key.type}</span>}
+                        </td>
+                        <td className="py-2 pr-2 whitespace-nowrap">
+                          <span className={r.conf === "low" || r.conf === "fail" ? "text-red-600" : "text-slate-600"}>
+                            {r.conf ? CONF_LABEL[r.conf] ?? r.conf : "—"}
+                          </span>
+                        </td>
+                        <td className="py-2 pr-2">
+                          {r.primary ? (
+                            <div>
+                              <span className="font-medium">{r.primary.answer_display}</span>
+                              <div className="text-xs text-slate-500">
+                                {emailById.get(r.primary.tutor_id) ?? "과외선생님"}
+                                {r.primary.image_path && (
+                                  <>
+                                    {" · "}
+                                    <a href={`/admin/tutor-disputes/photo/${r.primary.id}`} target="_blank" rel="noreferrer" className="link-accent">
+                                      사진
+                                    </a>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-2 whitespace-nowrap text-xs">
+                          <span className={r.verifyLabel === "검증 불일치" ? "text-red-600" : "text-slate-600"}>{r.verifyLabel}</span>
+                        </td>
+                        <td className="py-2 pr-2 whitespace-nowrap">
+                          <span className={"badge " + r.state.cls}>{r.state.label}</span>
+                        </td>
+                        <td className="py-2">
+                          {r.it.review_confirmed ? (
+                            <span className="text-xs text-slate-400">—</span>
+                          ) : (
+                            <ConfirmItemControl itemId={r.it.id} initialAnswer={r.initial} showKeepAi={!!r.primary && r.match === false} />
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
