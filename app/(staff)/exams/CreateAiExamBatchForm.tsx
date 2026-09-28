@@ -288,7 +288,7 @@ function BatchAiJobPanel({ codes }: { codes: string[] }) {
 
   return (
     <div className="card border-sky-300 bg-sky-50">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-medium text-sky-900">AI 자동 처리 진행 상황 ({codes.length}개)</h2>
         {anyActive && <span className="text-xs text-sky-700">이 화면을 열어 두는 동안 자동으로 진행됩니다</span>}
       </div>
@@ -300,7 +300,7 @@ function BatchAiJobPanel({ codes }: { codes: string[] }) {
           const job = jobs[code];
           const label = job ? STAGE_LABEL[job.stage] ?? job.stage : "확인 중…";
           return (
-            <div key={code} className="flex items-center justify-between text-sm border-t border-sky-100 pt-1 first:border-t-0 first:pt-0">
+            <div key={code} className="flex flex-wrap items-center justify-between text-sm border-t border-sky-100 pt-1 first:border-t-0 first:pt-0 gap-2">
               <Link className="underline" href={`/exams/${encodeURIComponent(code)}`}>
                 {code}
               </Link>

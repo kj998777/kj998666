@@ -68,7 +68,7 @@ function ExamLeafRow({ x, showTermKind }: { x: ExamRow; showTermKind?: boolean }
       ? `${x.folder_term ? `${x.folder_term}학기` : ""} ${x.folder_kind ?? ""}`.trim()
       : null;
   return (
-    <li className="py-2 flex items-center justify-between gap-2 pl-2">
+    <li className="py-2 flex flex-wrap items-center justify-between gap-2 pl-2">
       <Link href={`/exams/${encodeURIComponent(x.code)}`} className="hover:underline min-w-0">
         <span className="font-medium">{x.name}</span> <span className="text-slate-400 text-sm">({x.code})</span>
       </Link>
@@ -99,7 +99,7 @@ function Folder({
     <div className="border-b border-slate-100 last:border-0">
       <button
         type="button"
-        className="w-full flex items-center justify-between gap-2 py-2 text-left hover:bg-slate-50 rounded px-1"
+        className="w-full flex flex-wrap items-center justify-between gap-2 py-2 text-left hover:bg-slate-50 rounded px-1"
         onClick={() => setOpen((v) => !v)}
       >
         <span className="flex items-center gap-2">
