@@ -416,3 +416,78 @@ export async function getLocateSummary(client: Client, examIds: string[]): Promi
     jobs: ((jobs as any[]) ?? []).map((j) => ({ examId: j.exam_id, stage: j.stage, message: j.message, updatedAt: j.updated_at })),
   };
 }
+
+// ---------------------------------------------------------------------------
+// 2026-09-29: "디지털 시험지를 원본으로 적용"한 시험의 옛 좌표 바로잡기
+//
+// 이 날 전에는 원본으로 적용해도 문항 좌표가 스캔본 기준으로 남아 있어, 과외선생님 화면에 엉뚱한 곳·다른 번호 문제가
+// 잘려 나왔다(lib/ai/relocate.ts 참고). 이제는 적용할 때 새 PDF에서 잰 자리를 저장하지만, 그 전에 적용한 시험은
+// 옛 좌표가 그대로다. 그런 시험(적용 시각이 CUTOFF 전 — 예전에는 다시 올려도 uploaded_at이 처음 시각에 멈춰 있었으므로
+// 모두 해당)의 검토 대기 문항 좌표를 지우고, 새 PDF에서 AI로 다시 찾게 한다.
+// ---------------------------------------------------------------------------
+const DIGITIZED_FIX_CUTOFF = "2026-09-29T01:00:00Z"; // 이 수정이 배포되는 시각(한국 29일 오전 10시) 무렵
+
+async function staleDigitizedExamIds(client: Client): Promise<string[]> {
+  const { data: metas, error } = await fetchAllPages((f: number, t: number) =>
+    client
+      .from("exam_pdf_meta")
+      .select("exam_id, uploaded_at")
+      .eq("replaced_with_digitized", true)
+      .lt("uploaded_at", DIGITIZED_FIX_CUTOFF)
+      .order("exam_id")
+      .range(f, t)
+  );
+  if (error) return [];
+  const ids = ((metas as any[]) ?? []).map((m) => m.exam_id);
+  if (!ids.length) return [];
+  const pending = new Set<string>();
+  for (let i = 0; i < ids.length; i += 150) {
+    const { data } = (await client.from("exams").select("id").in("id", ids.slice(i, i + 150)).eq("status", "검수대기")) as any;
+    for (const e of (data as any[]) ?? []) pending.add(e.id);
+  }
+  return ids.filter((id: string) => pending.has(id));
+}
+
+/** 바로잡을 대상: 옛 좌표가 남은 검수대기 시험 수와 그 안의 좌표 있는 검토 대기 문항 수 */
+export async function countStaleDigitized(client: Client): Promise<{ exams: number; items: number }> {
+  const ids = await staleDigitizedExamIds(client);
+  let items = 0;
+  const withItems: string[] = [];
+  for (let i = 0; i < ids.length; i += 150) {
+    const { data } = (await client
+      .from("item_explanations")
+      .select("exam_id")
+      .in("exam_id", ids.slice(i, i + 150))
+      .eq("tutor_reviewed", false)
+      .eq("review_confirmed", false)
+      .not("source_page", "is", null)) as any;
+    for (const r of (data as any[]) ?? []) {
+      items++;
+      withItems.push(r.exam_id);
+    }
+  }
+  return { exams: new Set(withItems).size, items };
+}
+
+/** 옛 좌표를 지우고 AI 영역 찾기를 다시 건다. 처리한 시험·문항 수를 돌려준다. */
+export async function resetStaleDigitized(client: Client): Promise<{ exams: number; items: number }> {
+  const ids = await staleDigitizedExamIds(client);
+  let exams = 0;
+  let items = 0;
+  for (const examId of ids) {
+    const { data, error } = (await (client.from("item_explanations") as any)
+      .update({ source_page: null, bbox_x0: null, bbox_y0: null, bbox_x1: null, bbox_y1: null })
+      .eq("exam_id", examId)
+      .eq("tutor_reviewed", false)
+      .eq("review_confirmed", false)
+      .not("source_page", "is", null)
+      .select("id")) as any;
+    if (error) continue;
+    const n = ((data as any[]) ?? []).length;
+    if (!n) continue;
+    exams++;
+    items += n;
+    await enqueueLocateJobIfMissing(client, examId);
+  }
+  return { exams, items };
+}

@@ -86,6 +86,7 @@ export async function finalizePdfUpload(
       pages,
       is_scanned: isDigitized ? false : meta.isScanned,
       uploaded_by: meta.uploadedBy,
+      uploaded_at: new Date().toISOString(), // 2026-09-29: 다시 올릴 때도 시각을 갱신(전에는 처음 올린 시각에 멈춰 있었음)
       replaced_with_digitized: isDigitized,
     },
     { onConflict: "exam_id" }
