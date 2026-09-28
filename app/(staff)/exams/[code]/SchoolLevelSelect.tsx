@@ -12,7 +12,7 @@ export default function SchoolLevelSelect({ code, level }: { code: string; level
   const [msg, setMsg] = useState("");
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <select
         className="input py-1 text-sm w-auto"
         value={value}

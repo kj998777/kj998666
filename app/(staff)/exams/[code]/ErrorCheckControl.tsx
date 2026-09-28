@@ -136,7 +136,7 @@ export default function ErrorCheckControl({
       {check && !active && (check.stage === "rx_done" || check.stage === "rx_error") && (
         <div className="text-xs space-y-1">
           <p className={check.stage === "rx_error" ? "text-red-600" : "text-slate-600"}>{check.message}</p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {!suspected && (
               <button
                 className="text-slate-500 hover:underline"

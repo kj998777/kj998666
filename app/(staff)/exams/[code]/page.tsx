@@ -113,19 +113,19 @@ export default async function ExamDetailPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-lg font-semibold">
-            {exam.name} <span className="text-slate-400 text-sm font-normal">({exam.code})</span>
+            {exam.name} <span className="text-slate-400 text-sm font-normal whitespace-nowrap">({exam.code})</span>
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            학생 제출 화면: <code className="bg-slate-100 px-1 rounded">{studentPath}</code>{" "}
+            학생 제출 화면: <code className="bg-slate-100 px-1 rounded break-all">{studentPath}</code>{" "}
             <Link href={`/exams/${encodeURIComponent(exam.code)}/results`} className="underline">
               채점 결과 보기
             </Link>
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span
             className={
               "badge " +
@@ -272,7 +272,7 @@ export default async function ExamDetailPage({
               </label>
             )}
           </div>
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
             <label htmlFor="exclude">뺄 쪽 번호(원본 기준, 쉼표로 구분)</label>
             <input id="exclude" name="exclude" type="text" placeholder="예: 8,9" className="input w-40" />
           </div>
@@ -294,14 +294,15 @@ export default async function ExamDetailPage({
       )}
 
       <div className="card">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-wrap items-center justify-between mb-3 gap-2">
           <h2 className="font-medium">정답 ({(keys ?? []).length}문항, 총 {totalPoints}점)</h2>
         </div>
 
         {(keys ?? []).length === 0 ? (
           <p className="text-sm text-slate-500 mb-4">아직 등록된 정답이 없습니다.</p>
         ) : (
-          <table className="w-full text-sm mb-4">
+          <div className="table-wrap mb-4">
+          <table className="w-full min-w-[34rem] sm:min-w-0 text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-200">
                 <th className="py-1 pr-2">번호</th>
@@ -317,6 +318,7 @@ export default async function ExamDetailPage({
               ))}
             </tbody>
           </table>
+          </div>
         )}
 
         {canEdit && <AddAnswerKeyForm code={exam.code} nextSortOrder={(keys ?? []).length} />}

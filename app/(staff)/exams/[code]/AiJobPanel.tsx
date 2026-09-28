@@ -36,7 +36,7 @@ export default function AiJobPanel({ code, initial }: { code: string; initial: J
 
   return (
     <div className="card border-sky-300 bg-sky-50">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-medium text-sky-900">AI 자동 처리 — {label}</h2>
         {active && <span className="text-xs text-sky-700">{pending ? "확인 중…" : "자동 진행 중"}</span>}
       </div>
