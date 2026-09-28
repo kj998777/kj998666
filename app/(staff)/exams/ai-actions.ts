@@ -1,36 +1,28 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
-import { saveExamPdf } from "@/lib/ai/pdf";
-import { countPdfPages } from "@/lib/ai/pdfMeta";
+import { finalizePdfUpload } from "@/lib/ai/pdf";
 import { startExamAiJob, cancelExamAiJob, tickExamJob } from "@/lib/ai/pipeline";
+import { startDigitizeJob } from "@/lib/ai/digitize";
 import { getJob, isActiveStage, setJob } from "@/lib/ai/job";
 import type { SchoolLevel } from "@/lib/supabase/types";
 
 // AI 자동 처리(시험지 업로드 → 문항 추출 → 풀이 → 검수) 관련 서버 액션들.
 // 비용이 드는 작업이라 전부 admin 전용으로 막는다(화면에서도 admin에게만 버튼을 보여줌 — 이중 방어).
+//
+// #2(2026-09-28): PDF 원본 바이트는 이제 서버 액션이 아니라 브라우저가 Supabase Storage에 곧바로
+// 올린다(lib/supabase/uploadPdf.ts) — Vercel 서버리스 함수의 요청 본문 크기 제한(약 4.5MB, Next.js
+// 설정으로는 못 늘림)을 우회해 20MB까지 지원하기 위함. 그래서 아래 액션들은 더 이상 FormData로 PDF
+// 바이트를 직접 받지 않고, "이미 Storage에 올라온 파일"의 뒷정리(쪽수 세기·exam_pdf_meta 기록·AI
+// 자동 처리/디지털화 시작)만 한다 — 새 시험을 만드는 흐름은 createExamRow(행만 먼저 생성) →
+// (브라우저가 Storage에 직접 업로드) → finalizeAiExamUpload(뒷정리) 세 단계로 나뉜다.
 
 async function getExamByCode(code: string) {
   const supabase = await createClient();
   const { data } = (await supabase.from("exams").select("*").eq("code", code).single()) as any;
   return data;
-}
-
-async function readPdf(formData: FormData): Promise<Buffer | { err: string }> {
-  const file = formData.get("pdf");
-  if (!(file instanceof File) || file.size === 0) return { err: "시험지 PDF 파일을 선택해 주세요." };
-  if (file.type && file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-    return { err: "PDF 파일만 올릴 수 있습니다." };
-  }
-  // Vercel 서버리스 함수는 무료 플랜 기준 요청 본문이 약 4.5MB로 제한돼 있어(Next.js 설정으로는
-// 못 늘림), 시험지 PDF도 그 안쪽으로 넉넉히 잡아 둔다. 스캔본이라 용량이 크면 화질을 낮춰 다시
-// 만들어 올려야 한다 — 기존 Apps Script는 이 제한이 없었던 부분이라 사용자에게 안내가 필요함.
-if (file.size > 4 * 1024 * 1024) return { err: "PDF 용량이 너무 큽니다(4MB 이하로 줄여서 올려 주세요 — 서버 업로드 용량 제한)." };
-  const buf = Buffer.from(await file.arrayBuffer());
-  return buf;
 }
 
 function schoolLevelField(formData: FormData): SchoolLevel | null {
@@ -51,93 +43,89 @@ function folderFields(formData: FormData) {
   };
 }
 
-type CreateAiExamResult = { ok: true; code: string; aiErr?: string } | { ok: false; msg: string };
+type CreateExamRowResult = { ok: true; id: string; code: string } | { ok: false; msg: string };
 
 /**
-* 새 시험을 만들면서 곧바로 시험지 PDF를 올리고 AI 자동 처리를 시작하는 실제 로직.
-* `createAiExam`(시험 1개짜리 폼, 성공 시 상세 화면으로 이동)과 `createAiExamBatchItem`
-* (여러 개 한꺼번에 올리기, 성공해도 이동하지 않고 결과만 돌려줌)이 이 함수를 공유한다.
+* 새 시험 "행"만 먼저 만든다(PDF는 아직 없음). 예전에는 이 함수가 PDF 바이트까지 같이 FormData로
+* 받아 저장했지만, #2(2026-09-28)부터는 PDF를 브라우저가 Supabase Storage에 곧바로 올리는 구조로
+* 바뀌어서(위 파일 상단 설명 참고), 이 함수가 돌려준 id 앞으로 브라우저가 먼저 PDF를 올린 뒤
+* finalizeAiExamUpload를 불러 마무리하는 순서로 나뉘었다. `CreateAiExamForm`(시험 1개짜리 폼)과
+* `CreateAiExamBatchForm`(여러 개 한꺼번에, 파일마다 이 함수를 순서대로 호출)이 함께 쓴다.
 */
-async function createAiExamCore(formData: FormData): Promise<CreateAiExamResult> {
+export async function createExamRow(formData: FormData): Promise<CreateExamRowResult> {
   const { userId } = await requireRole("admin");
 
-const code = String(formData.get("code") ?? "").trim();
+  const code = String(formData.get("code") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   if (!code) return { ok: false, msg: "시험 코드를 입력해 주세요." };
   if (!name) return { ok: false, msg: "시험 이름을 입력해 주세요." };
 
-const pdf = await readPdf(formData);
-  if (!Buffer.isBuffer(pdf)) return { ok: false, msg: pdf.err };
-
-const supabase = await createClient();
+  const supabase = await createClient();
   const { data: exam, error } = (await supabase
-                                 .from("exams")
-                                 .insert({ code, name, status: "닫힘", created_by: userId, school_level: schoolLevelField(formData), ...folderFields(formData) } as any)
-                                 .select("id, code")
-                                 .single()) as any;
+    .from("exams")
+    .insert({ code, name, status: "닫힘", created_by: userId, school_level: schoolLevelField(formData), ...folderFields(formData) } as any)
+    .select("id, code")
+    .single()) as any;
   if (error) {
     const msg = error.code === "23505" ? "이미 사용 중인 시험 코드입니다." : "만들지 못했습니다: " + error.message;
     return { ok: false, msg };
   }
-
-let aiErr = "";
-  try {
-    const pages = await countPdfPages(pdf);
-    await saveExamPdf(supabase, exam.id, pdf, { pages, isScanned: null, uploadedBy: userId });
-    const r = await startExamAiJob(supabase, exam.id);
-    if (!r.ok) aiErr = r.msg;
-  } catch (e: any) {
-    // 시험은 이미 만들어졌으니, PDF 업로드/시작 실패는 시험 상세 화면에서 다시 시도할 수 있게 안내만 한다.
-  aiErr = String(e?.message ?? e);
-  }
-
-return { ok: true, code: exam.code, aiErr: aiErr || undefined };
+  return { ok: true, id: exam.id, code: exam.code };
 }
 
-/** 새 시험을 만들면서 곧바로 시험지 PDF를 올리고 AI 자동 처리를 시작한다(시험 1개짜리 폼). */
-export async function createAiExam(formData: FormData) {
-  const r = await createAiExamCore(formData);
-  if (!r.ok) return r;
-
-// 주의: redirect()는 내부적으로 특수한 예외(NEXT_REDIRECT)를 던져서 동작하므로, 절대 try/catch
-// 안에서 부르면 안 된다(catch가 그 예외까지 잡아 버려 "오류"로 처리해 버림). 그래서 결과만 변수에
-// 담아 두고, redirect()는 try/catch를 완전히 빠져나온 뒤 한 곳에서만 부른다.
-revalidatePath("/exams");
-  const url = `/exams/${encodeURIComponent(r.code)}` + (r.aiErr ? `?aiErr=${encodeURIComponent(r.aiErr.slice(0, 200))}` : "");
-  redirect(url);
-}
+type FinalizeAiExamResult = { ok: true; aiErr?: string };
 
 /**
-* 여러 시험 PDF를 한꺼번에 올릴 때, 파일 하나(=시험 하나)를 처리한다. `createAiExam`과 달리
-* 성공해도 다른 화면으로 이동하지 않고 결과만 돌려준다 — 배치 업로드 화면이 파일마다 이 함수를
-* 순서대로 불러서 진행 상황을 표시한다.
+* createExamRow로 만든 시험에, 브라우저가 Storage로 방금 직접 올린 PDF를 연결하고 AI 자동 처리를
+* 시작한다(스캔본으로 표시했으면 디지털화도 같이 시작). `CreateAiExamForm`/`CreateAiExamBatchForm`이
+* PDF 업로드가 끝난 뒤 마지막 단계로 부른다. 시험 행은 이미 만들어져 있으므로, 이 단계에서 PDF
+* 저장이나 AI 시작이 실패해도 항상 ok:true를 돌려주고(시험 상세 화면으로 이동은 계속 가능),
+* 실패 사유는 aiErr로만 알려준다(상세 화면에서 다시 시도할 수 있음).
 */
-export async function createAiExamBatchItem(formData: FormData): Promise<CreateAiExamResult> {
-  const r = await createAiExamCore(formData);
-  if (r.ok) revalidatePath("/exams");
-  return r;
+export async function finalizeAiExamUpload(
+  code: string,
+  opts: { isScanned: boolean; startDigitize: boolean }
+): Promise<FinalizeAiExamResult> {
+  const { userId } = await requireRole("admin");
+  const exam = await getExamByCode(code);
+  if (!exam) return { ok: true, aiErr: "시험을 찾을 수 없습니다." };
+
+  const supabase = await createClient();
+  const errs: string[] = [];
+  try {
+    await finalizePdfUpload(supabase, exam.id, { isScanned: opts.isScanned, uploadedBy: userId });
+    const r = await startExamAiJob(supabase, exam.id);
+    if (!r.ok) errs.push(r.msg);
+    if (opts.startDigitize) {
+      const dr = await startDigitizeJob(supabase, exam.id);
+      if (!dr.ok) errs.push("디지털화 시작 실패: " + dr.msg);
+    }
+  } catch (e: any) {
+    errs.push(String(e?.message ?? e));
+  }
+  revalidatePath("/exams");
+  revalidatePath(`/exams/${code}`);
+  return { ok: true, aiErr: errs.length ? errs.join(" / ") : undefined };
 }
 
 /**
-* 이미 정답·해설이 있는 시험(마이그레이션된 시험, 또는 손으로 직접 입력한 시험)에
-* "원본 PDF 파일"만 연결한다 — AI 자동 처리(문항 추출·풀이)는 절대 시작하지 않는다.
-* QR·정오표가 포함된 시험지 PDF 다운로드 기능은 원본 PDF가 저장돼 있어야 동작하는데,
+* 이미 정답·해설이 있는 시험(마이그레이션된 시험, 또는 손으로 직접 입력한 시험)에, 브라우저가
+* Storage로 방금 직접 올린 "원본 PDF 파일"만 연결한다 — AI 자동 처리(문항 추출·풀이)는 절대
+* 시작하지 않는다. QR·정오표가 포함된 시험지 PDF 다운로드 기능은 원본 PDF가 저장돼 있어야 동작하는데,
 * 마이그레이션으로 옮긴 시험은 정답·해설 등 구조화된 데이터만 옮기고 원본 PDF 파일은
 * 옮기지 않아서 다운로드가 안 되는 문제(2026-09 버그 리포트)가 있었다 — 이 액션이 그 해결책.
-* editor 이상이면 쓸 수 있게 열어 둔다(AI 처리와 달리 비용이 들지 않는 단순 저장이라).
+* editor 이상이면 쓸 수 있게 열어 둔다(AI 처리와 달리 비용이 들지 않는 단순 저장이라 — 실제로
+* editor 계정이 이 통로로 Storage에 쓸 수 있으려면 RLS도 같이 넓혀야 했는데, 0015 마이그레이션에서
+* 처리했다: 예전에는 이 주석과 달리 정책이 admin 전용으로 남아 있어 editor 계정은 항상 실패했었다).
 */
-export async function attachExamPdfOnly(code: string, formData: FormData) {
+export async function finalizeAttachExamPdfOnly(code: string) {
   const { userId } = await requireRole("editor");
   const exam = await getExamByCode(code);
   if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
 
-const pdf = await readPdf(formData);
-  if (!Buffer.isBuffer(pdf)) return { ok: false, msg: pdf.err };
-
-const supabase = await createClient();
+  const supabase = await createClient();
   try {
-    const pages = await countPdfPages(pdf);
-    await saveExamPdf(supabase, exam.id, pdf, { pages, isScanned: null, uploadedBy: userId });
+    await finalizePdfUpload(supabase, exam.id, { isScanned: null, uploadedBy: userId });
   } catch (e: any) {
     return { ok: false, msg: "PDF 저장에 실패했습니다: " + String(e?.message ?? e) };
   }
@@ -145,25 +133,33 @@ const supabase = await createClient();
   return { ok: true, msg: "원본 PDF를 저장했습니다. 이제 QR·정오표 PDF를 다운로드할 수 있습니다." };
 }
 
-/** 이미 있는 시험에 시험지 PDF를 (다시) 올리고 AI 자동 처리를 시작한다. */
-export async function uploadPdfAndStartAi(code: string, formData: FormData) {
+/**
+* 이미 있는 시험에, 브라우저가 Storage로 방금 직접 올린 PDF를 연결하고 AI 자동 처리를 (다시)
+* 시작한다(스캔본으로 표시했으면 디지털화도 같이 시작).
+*/
+export async function finalizeUploadPdfAndStartAi(
+  code: string,
+  opts: { isScanned: boolean; startDigitize: boolean }
+): Promise<{ ok: boolean; msg?: string }> {
   const { userId } = await requireRole("admin");
   const exam = await getExamByCode(code);
   if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
 
-const pdf = await readPdf(formData);
-  if (!Buffer.isBuffer(pdf)) return { ok: false, msg: pdf.err };
-
-const supabase = await createClient();
+  const supabase = await createClient();
   try {
-    const pages = await countPdfPages(pdf);
-    await saveExamPdf(supabase, exam.id, pdf, { pages, isScanned: null, uploadedBy: userId });
+    await finalizePdfUpload(supabase, exam.id, { isScanned: opts.isScanned, uploadedBy: userId });
   } catch (e: any) {
     return { ok: false, msg: "PDF 저장에 실패했습니다: " + String(e?.message ?? e) };
   }
   const r = await startExamAiJob(supabase, exam.id);
+  const errs: string[] = [];
+  if (!r.ok) errs.push(r.msg);
+  if (opts.startDigitize) {
+    const dr = await startDigitizeJob(supabase, exam.id);
+    if (!dr.ok) errs.push("디지털화 시작 실패: " + dr.msg);
+  }
   revalidatePath(`/exams/${code}`);
-  return r;
+  return { ok: errs.length === 0, msg: errs.join(" / ") || undefined };
 }
 
 /** 이미 저장된 PDF로 AI 자동 처리를 (다시) 시작한다 — 오류로 멈췄을 때 재시도용. */

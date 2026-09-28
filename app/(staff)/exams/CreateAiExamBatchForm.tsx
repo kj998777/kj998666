@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { createAiExamBatchItem, pollAiJob, type JobPoll } from "./ai-actions";
+import { createExamRow, finalizeAiExamUpload, pollAiJob, type JobPoll } from "./ai-actions";
+import { pdfTooLarge, uploadPdfDirect } from "@/lib/supabase/uploadPdf";
 import { ACTIVE, STAGE_LABEL } from "./aiJobStage";
 
 type RowStatus = "대기" | "올리는 중…" | "완료" | "실패";
@@ -44,6 +45,7 @@ export default function CreateAiExamBatchForm() {
   const [rows, setRows] = useState<Row[]>([]);
   const [pending, start] = useTransition();
   const [running, setRunning] = useState(false);
+  const [isScanned, setIsScanned] = useState(false);
   const sharedRef = useRef<HTMLDivElement | null>(null);
 
   function readSharedFields(): FormData {
@@ -68,35 +70,49 @@ export default function CreateAiExamBatchForm() {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
 
+  // #2(2026-09-28): PDF 바이트는 이제 서버 액션이 아니라 브라우저가 Supabase Storage에 곧바로
+  // 올린다(lib/supabase/uploadPdf.ts) — Vercel 서버리스 함수의 요청 본문 크기 제한(약 4.5MB, Next.js
+  // 설정으로는 못 늘림)을 우회해 20MB까지 지원하기 위함(예전에는 이 제한 때문에 4MB로 막혀 있었고,
+  // 넘기면 응답이 undefined로 와서 화면이 "Application error"로 죽는 문제가 있었다 — 2026-09-28
+  // 원장님 신고로 발견). 시험 행을 먼저 만들고(createExamRow) → PDF를 직접 올리고(uploadPdfDirect)
+  // → 뒷정리(finalizeAiExamUpload) 세 단계로 나뉜다.
   async function submitRow(row: Row) {
     updateRow(row.key, { status: "올리는 중…", msg: undefined });
-    // 서버(ai-actions.ts의 readPdf)도 같은 검사를 하지만, 그건 요청이 서버까지 도착한 "뒤"에야
-    // 실행된다. Vercel 서버리스 함수 자체의 요청 본문 크기 제한(약 4.5MB)을 넘으면 서버 코드가
-    // 실행되기도 전에 플랫폼이 413으로 요청을 거부해 버려서, 아래 createAiExamBatchItem이 정상
-    // 응답 대신 undefined를 돌려주고 그걸 그대로 r.ok로 읽으려다 화면 전체가 "Application error"로
-    // 죽는 문제가 있었다(2026-09-28 원장님 신고로 발견). 그래서 여기서 먼저 걸러 아예 요청을 보내지
-    // 않고, 아래에서도 r이 없을 경우를 방어적으로 처리한다.
-    if (row.file.size > 4 * 1024 * 1024) {
-      updateRow(row.key, { status: "실패", msg: "PDF 용량이 너무 큽니다(4MB 이하로 줄여서 올려 주세요 — 서버 업로드 용량 제한)." });
+    if (pdfTooLarge(row.file)) {
+      updateRow(row.key, { status: "실패", msg: "PDF 용량이 너무 큽니다(20MB 이하로 줄여서 올려 주세요)." });
       return;
     }
     const fd = readSharedFields();
     fd.set("code", row.code);
     fd.set("name", row.name);
-    fd.set("pdf", row.file);
-    const r = await createAiExamBatchItem(fd);
-    if (r && r.ok) {
-      updateRow(row.key, { status: "완료", resultCode: r.code, msg: r.aiErr ? "AI 처리 시작 실패(상세 화면에서 다시 시도 가능): " + r.aiErr : undefined });
-    } else {
-      updateRow(row.key, { status: "실패", msg: r?.msg ?? "요청이 실패했습니다(파일이 너무 크거나 네트워크 문제일 수 있습니다)." });
+    const created = await createExamRow(fd);
+    if (!created.ok) {
+      updateRow(row.key, { status: "실패", msg: created.msg });
+      return;
     }
+    try {
+      await uploadPdfDirect(created.id, row.file);
+    } catch (e: any) {
+      updateRow(row.key, {
+        status: "실패",
+        resultCode: created.code,
+        msg: "PDF 업로드 실패(시험은 이미 만들어졌습니다 — 상세 화면에서 다시 올려 주세요): " + String(e?.message ?? e),
+      });
+      return;
+    }
+    const r = await finalizeAiExamUpload(created.code, { isScanned, startDigitize: isScanned });
+    updateRow(row.key, {
+      status: "완료",
+      resultCode: created.code,
+      msg: r.aiErr ? "AI 처리 시작 실패(상세 화면에서 다시 시도 가능): " + r.aiErr : undefined,
+    });
   }
 
   function runBatch() {
     setRunning(true);
     start(async () => {
-      // 한 번에 여러 PDF를 동시에 올리면 서버 쪽이 몰릴 수 있어(각 파일이 4MB까지 갈 수 있음),
-      // 파일마다 순서대로 하나씩 처리한다. 이미 완료/실패한 행은 건너뛴다(부분 재시도 지원).
+      // 한 번에 여러 PDF를 동시에 올리면 몰릴 수 있어, 파일마다 순서대로 하나씩 처리한다.
+      // 이미 완료/실패한 행은 건너뛴다(부분 재시도 지원).
       for (const row of rows) {
         if (row.status === "완료") continue;
         await submitRow(row);
@@ -162,7 +178,7 @@ export default function CreateAiExamBatchForm() {
       </div>
 
       <div>
-        <label className="label">시험지 PDF (여러 개 선택 가능)</label>
+        <label className="label">시험지 PDF (여러 개 선택 가능, 파일당 최대 20MB)</label>
         <input
           type="file"
           accept="application/pdf"
@@ -178,6 +194,15 @@ export default function CreateAiExamBatchForm() {
           파일마다 시험이 하나씩 따로 만들어집니다. 학교급·연도·학년·학기·구분은 선택한 파일 전체에 똑같이 적용되고, 코드·이름은 파일
           이름에서 자동으로 채워지니 아래에서 각 파일별로 고쳐 주세요(코드는 서로 겹치면 안 됩니다).
         </p>
+        <label className="flex items-center gap-1.5 text-sm mt-1">
+          <input
+            type="checkbox"
+            checked={isScanned}
+            disabled={running}
+            onChange={(e) => setIsScanned(e.target.checked)}
+          />
+          전부 스캔본입니다(디지털화 필요) — 업로드마다 자동으로 디지털화를 시작합니다
+        </label>
       </div>
 
       {rows.length > 0 && (
