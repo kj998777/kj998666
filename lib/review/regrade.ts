@@ -1,5 +1,6 @@
 import "server-only";
 import { isCorrect } from "@/lib/grading";
+import { fetchAllPages } from "@/lib/supabase/fetchAll";
 
 // 정답표(answer_key)가 바뀐 뒤 이미 들어온 제출을 새 정답으로 다시 채점한다.
 // 지금까지는 정답을 고쳐도 기존 채점 결과가 그대로 남았다(#3/#4에서 과외선생님 답 채택·수정 요청
@@ -13,7 +14,10 @@ type PerItem = { item_label: string; given: string; correct: boolean; points: nu
 export async function regradeExam(admin: Client, examId: string): Promise<number> {
   const [{ data: keys }, { data: results }] = await Promise.all([
     admin.from("answer_key").select("item_label, correct_answers, points").eq("exam_id", examId).order("sort_order").order("item_label"),
-    admin.from("grading_results").select("id, per_item, total_score").eq("exam_id", examId),
+    // 2026-09-29: 제출이 1000건을 넘어도 전부 다시 채점하도록 끝까지 나눠 읽는다(lib/supabase/fetchAll.ts)
+    fetchAllPages((f, t) =>
+      admin.from("grading_results").select("id, per_item, total_score").eq("exam_id", examId).order("id").range(f, t)
+    ),
   ]);
   const key = (keys as any[]) ?? [];
   if (!key.length) return 0;
