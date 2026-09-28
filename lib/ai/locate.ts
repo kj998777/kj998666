@@ -99,6 +99,48 @@ async function targetsOf(client: Client, examId: string): Promise<Target[]> {
 }
 
 /**
+ * 검토 대기(미검토·미확정)이면서 좌표가 없는 문항의 exam_id 목록(문항 하나당 한 줄).
+ * 2026-09-29: 전에는 문항 전체를 한 번에 읽어 앱에서 걸렀는데, Supabase는 한 번에 최대 1000줄만 돌려줘서
+ * 검토 대기 문항이 많으면 일부 시험이 통째로 빠져 영역 찾기가 아예 안 걸릴 수 있었다. 조건을 DB에서 걸고
+ * 1000줄씩 나눠 읽는다(시험 id도 100개씩 나눠 주소 길이 초과를 막음).
+ */
+async function missingItemExamIds(client: Client, examIds: string[]): Promise<string[]> {
+  const out: string[] = [];
+  const PAGE = 1000;
+  for (let i = 0; i < examIds.length; i += 100) {
+    const chunk = examIds.slice(i, i + 100);
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = (await client
+        .from("item_explanations")
+        .select("id, exam_id")
+        .in("exam_id", chunk)
+        .is("bbox_x0", null)
+        .eq("tutor_reviewed", false)
+        .eq("review_confirmed", false)
+        .order("id")
+        .range(from, from + PAGE - 1)) as any;
+      if (error) throw new Error(error.message);
+      const rows = (data as any[]) ?? [];
+      for (const r of rows) out.push(r.exam_id);
+      if (rows.length < PAGE) break;
+    }
+  }
+  return out;
+}
+
+/** 검토 대기 시험들에서 좌표 없는 검토 문항 수(화면 표시용). */
+export async function countMissingLocateItems(client: Client): Promise<number> {
+  const { data: exams } = (await client.from("exams").select("id").eq("status", "검수대기")) as any;
+  const ids: string[] = ((exams as any[]) ?? []).map((e) => e.id);
+  if (!ids.length) return 0;
+  try {
+    return (await missingItemExamIds(client, ids)).length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * 검토 대기 시험 중 좌표 없는 문항이 있는 시험마다 작업을 만든다(이미 진행 중이거나 끝난 작업은 그대로,
  * 오류로 멈춘 작업은 다시 시작). 만든(다시 시작한) 시험 수를 돌려준다. 0024 전이면 0.
  */
@@ -107,14 +149,8 @@ export async function enqueueMissingLocateJobs(client: Client): Promise<{ queued
   const examIds: string[] = ((exams as any[]) ?? []).map((e) => e.id);
   if (!examIds.length) return { queued: 0, missingItems: 0 };
 
-  const { data: items } = (await client
-    .from("item_explanations")
-    .select("exam_id, bbox_x0, tutor_reviewed, review_confirmed")
-    .in("exam_id", examIds)) as any;
   const missingBy = new Map<string, number>();
-  for (const r of (items as any[]) ?? []) {
-    if (r.bbox_x0 == null && !r.tutor_reviewed && !r.review_confirmed) missingBy.set(r.exam_id, (missingBy.get(r.exam_id) ?? 0) + 1);
-  }
+  for (const id of await missingItemExamIds(client, examIds)) missingBy.set(id, (missingBy.get(id) ?? 0) + 1);
   const need = Array.from(missingBy.keys());
   const missingItems = Array.from(missingBy.values()).reduce((a, b) => a + b, 0);
   if (!need.length) return { queued: 0, missingItems: 0 };
@@ -128,7 +164,9 @@ export async function enqueueMissingLocateJobs(client: Client): Promise<{ queued
     const st = stageOf.get(examId);
     if (st === "submit" || st === "wait") continue; // 진행 중
     // done인데 아직 좌표 없는 문항이 남았다면(AI가 일부를 못 찾음) 한 번 더 시도, error도 다시 시도
-    const row = { exam_id: examId, stage: "submit", batch_id: null, message: "영역 찾기 대기 중", updated_at: new Date().toISOString() };
+    const now = new Date().toISOString();
+    // created_at = 이번 시도를 시작한 시각(AI 설정 화면의 "시작" 칸). 다시 시도하면 새로 찍는다.
+    const row = { exam_id: examId, stage: "submit", batch_id: null, attempts: 0, message: "영역 찾기 대기 중", created_at: now, updated_at: now };
     const { error: upErr } = await (client.from(TABLE) as any).upsert(row, { onConflict: "exam_id" });
     if (!upErr) queued++;
   }
@@ -141,7 +179,7 @@ export async function enqueueLocateJobIfMissing(client: Client, examId: string):
     const targets = await targetsOf(client, examId);
     if (!targets.length) return;
     await (client.from(TABLE) as any).upsert(
-      { exam_id: examId, stage: "submit", batch_id: null, message: "영역 찾기 대기 중", updated_at: new Date().toISOString() },
+      { exam_id: examId, stage: "submit", batch_id: null, attempts: 0, message: "영역 찾기 대기 중", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
       { onConflict: "exam_id" }
     );
   } catch {
@@ -365,11 +403,7 @@ export async function getLocateSummary(client: Client, examIds: string[]): Promi
   if (error) return { available: false, missingItems: 0, jobs: [] };
   let missingItems = 0;
   if (examIds.length) {
-    const { data: items } = (await client
-      .from("item_explanations")
-      .select("exam_id, bbox_x0, tutor_reviewed, review_confirmed")
-      .in("exam_id", examIds)) as any;
-    missingItems = ((items as any[]) ?? []).filter((r) => r.bbox_x0 == null && !r.tutor_reviewed && !r.review_confirmed).length;
+    missingItems = (await missingItemExamIds(client, examIds).catch(() => [])).length;
   }
   return {
     available: true,
