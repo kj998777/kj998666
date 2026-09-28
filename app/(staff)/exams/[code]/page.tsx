@@ -16,6 +16,7 @@ import { getItemCheck } from "@/lib/ai/errorcheck";
 import DigitizeControl from "./DigitizeControl";
 import { getDigitizeJob } from "@/lib/ai/digitize";
 import SchoolLevelSelect from "./SchoolLevelSelect";
+import JejuToggle from "./JejuToggle";
 import FolderSelect from "./FolderSelect";
 import ItemExplanationRow from "./ItemExplanationRow";
 import TutorDownloadCostInput from "./TutorDownloadCostInput";
@@ -144,7 +145,12 @@ export default async function ExamDetailPage({
         </div>
       </div>
 
-      {canEdit && <SchoolLevelSelect code={exam.code} level={exam.school_level ?? null} />}
+      {canEdit && (
+        <div className="flex flex-wrap items-center gap-4">
+          <SchoolLevelSelect code={exam.code} level={exam.school_level ?? null} />
+          <JejuToggle code={exam.code} jeju={!!exam.is_jeju} />
+        </div>
+      )}
 
       {canEdit && (
         <FolderSelect
