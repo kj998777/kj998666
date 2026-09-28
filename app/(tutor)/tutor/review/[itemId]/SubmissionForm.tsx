@@ -81,6 +81,10 @@ export default function SubmissionForm({
           setNextMsg("지금은 검토할 문항이 없습니다. 나중에 다시 확인해 주세요.");
           return;
         }
+        if ("error" in next) {
+          setNextMsg(next.error);
+          return;
+        }
         router.push(`/tutor/review/${next.itemExplanationId}?kind=${next.kind}`);
       } catch (e: any) {
         setNextMsg(e?.message ?? "문항을 배정받지 못했습니다.");
