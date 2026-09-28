@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
       .eq("id", data.user.id)
       .maybeSingle();
     if ((profile as any)?.role === "tutor") next = "/tutor/dashboard";
+    else if ((profile as any)?.role === "대기") next = "/pending";
   }
 
   return NextResponse.redirect(`${origin}${next}`);
