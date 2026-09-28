@@ -16,6 +16,8 @@
 //   - >= → ≥, <= → ≤
 //   - 분수·소수 수치 동치(3/4 = 0.75 = 6/8), 절대오차 1e-9 이내
 //   - 정답 여러 개는 "|" 로 구분, 하나라도 맞으면 정답
+//   - (2026-09-29 추가) 객관식에서 답을 여러 개 고르는 문항은 순서를 따지지 않음: 정답 "3,5"(③⑤)에 "5,3"도 정답.
+//     객관식이고 양쪽이 모두 선택지 번호(1~9)로만 이뤄졌을 때만 적용한다.
 
 const CIRCLED: Record<string, string> = {
   "①": "1",
@@ -61,14 +63,16 @@ export function toNumber(s: string): number | null {
  * given(학생 답)이 keyCell(정답, "|"로 여러 개 구분 가능)과 동치인지 판정.
  * 빈 답은 항상 오답 처리.
  */
-export function isCorrect(given: unknown, keyCell: unknown): boolean {
+export function isCorrect(given: unknown, keyCell: unknown, type?: string): boolean {
   const g = normalizeAnswer(given);
   if (g === "") return false;
   const accepted = String(keyCell ?? "").split("|");
+  const sortChars = (x: string) => x.split("").sort().join("");
   for (const raw of accepted) {
     const a = normalizeAnswer(raw);
     if (a === "") continue;
     if (g === a) return true;
+    if (type === "객관식" && /^[1-9]{2,}$/.test(g) && /^[1-9]{2,}$/.test(a) && sortChars(g) === sortChars(a)) return true;
     const gn = toNumber(g);
     const an = toNumber(a);
     if (gn !== null && an !== null && Math.abs(gn - an) < 1e-9) return true;
@@ -107,7 +111,7 @@ export function gradeSubmission(key: AnswerKeyItem[], answers: unknown[]): Gradi
   let total = 0;
   const perItem: PerItemResult[] = key.map((k, i) => {
     const given = String(answers[i] ?? "").slice(0, 200);
-    const correct = isCorrect(given, k.correct_answers);
+    const correct = isCorrect(given, k.correct_answers, k.type);
     if (correct) total += k.points;
     return { item_label: k.item_label, given, correct, points: correct ? k.points : 0 };
   });
