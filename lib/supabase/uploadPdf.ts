@@ -20,12 +20,22 @@ export function pdfTooLarge(file: File | Blob): boolean {
   return file.size > PDF_MAX_BYTES;
 }
 
-/** 시험 id 앞으로 PDF를 Storage에 직접 올린다(이미 있으면 덮어씀 — upsert). */
-export async function uploadPdfDirect(examId: string, file: File | Blob): Promise<void> {
+/**
+ * 시험 id 앞으로 PDF를 Storage에 직접 올린다. 올린 경로를 돌려준다.
+ *
+ * 버그 수정(2026-09-28, "디지털화 원본 적용 후에도 PDF 다운로드가 예전 시험지로 나옴"): 예전에는 항상
+ * 같은 경로(`<examId>.pdf`)에 덮어썼는데, Storage는 파일을 기본 1시간 캐시 헤더와 함께 내려주고 서버 쪽
+ * fetch도 URL 단위로 캐시될 수 있어, 덮어쓴 직후 같은 URL로 받으면 예전 파일이 나올 수 있었다. 그래서
+ * 올릴 때마다 새 경로(`<examId>/<시각>.pdf`)를 쓴다 — 서버의 finalizePdfUpload(lib/ai/pdf.ts)가 가장
+ * 최근 파일을 골라 exam_pdf_meta.storage_path로 가리키고, 이전 버전은 지운다.
+ */
+export async function uploadPdfDirect(examId: string, file: File | Blob): Promise<string> {
   const supabase = createClient();
-  const { error } = await supabase.storage.from("exam-pdfs").upload(`${examId}.pdf`, file, {
+  const path = `${examId}/${Date.now()}.pdf`;
+  const { error } = await supabase.storage.from("exam-pdfs").upload(path, file, {
     contentType: "application/pdf",
-    upsert: true,
+    upsert: false,
   });
   if (error) throw new Error("PDF를 올리지 못했습니다: " + error.message);
+  return path;
 }

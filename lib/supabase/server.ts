@@ -12,6 +12,11 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // lib/supabase/admin.ts와 같은 이유: Next.js가 서버 쪽 fetch를 URL 단위로 캐시하는 경우가 있어
+      // (같은 경로의 Storage 파일을 덮어쓴 직후 예전 내용이 내려오는 등) 항상 새로 조회하게 한다.
+      global: {
+        fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, { ...init, cache: "no-store" }),
+      },
       cookies: {
         get(name: string) {
           return cookieStore.get(name)?.value;
