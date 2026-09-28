@@ -43,13 +43,27 @@ const TABLES = [
   "ai_usage",
 ];
 
+// id 열이 없는 표의 기본키(마이그레이션 기준)
+const KEY_COLS: Record<string, string[]> = {
+  exam_pdf_meta: ["exam_id"],
+  item_checks: ["exam_id", "item_label"],
+  tutor_stats: ["tutor_id"],
+  tutor_links: ["tutor_id"],
+  tutor_review_skips: ["tutor_id", "item_explanation_id"],
+  exam_jobs: ["exam_id"],
+  digitize_jobs: ["exam_id"],
+  item_locate_jobs: ["exam_id"],
+};
+
 async function dumpTable(client: Client, table: string): Promise<{ rows: any[]; error?: string }> {
   const rows: any[] = [];
-  // 페이지로 나눠 읽을 때 순서가 흔들리지 않게 가능하면 id 순으로(없는 테이블은 순서 없이)
+  // 페이지로 나눠 읽을 때 순서가 흔들리지 않게 기본키 순으로 읽는다. id 열이 없는 표는 KEY_COLS의 기본키로
+  // (2026-09-29: 전에는 id 없는 표를 순서 없이 나눠 읽어, 1000줄이 넘으면 줄이 겹치거나 빠질 수 있었다).
+  const keyCols = KEY_COLS[table] ?? ["id"];
   let ordered = true;
   for (let from = 0; ; from += PAGE) {
     let q = client.from(table).select("*").range(from, from + PAGE - 1);
-    if (ordered) q = q.order("id", { ascending: true });
+    if (ordered) for (const c of keyCols) q = q.order(c, { ascending: true });
     let { data, error } = await q;
     if (error && ordered && from === 0) {
       ordered = false;
