@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { tickExamJob } from "@/lib/ai/pipeline";
 import { isActiveStage } from "@/lib/ai/job";
+import { tickLocateJobs } from "@/lib/ai/locate";
 
 // 외부 무료 크론 서비스(cron-job.org 등)가 주기적으로 이 엔드포인트를 호출해서, 브라우저 탭을
 // 열어두지 않아도 AI 시험 자동처리(exam_jobs)가 계속 한 걸음씩 진행되게 한다.
@@ -56,7 +57,15 @@ async function handle(request: Request) {
   }
 
   const stillActive = results.filter((r) => isActiveStage(r.stage as any)).length;
-  return NextResponse.json({ ok: true, checked: jobs?.length ?? 0, ticked: results.length, stillActive });
+
+  // 문항 잘라 보기 영역 다시 찾기(lib/ai/locate.ts, 0024) — 남은 시간 안에서만. 0024 전이면 아무것도 안 함.
+  let located = 0;
+  try {
+    located = await tickLocateJobs(admin, started + TIME_BUDGET_MS);
+  } catch {
+    /* 다음 크론 주기에 다시 */
+  }
+  return NextResponse.json({ ok: true, checked: jobs?.length ?? 0, ticked: results.length, stillActive, located });
 }
 
 export async function GET(request: Request) {
