@@ -155,7 +155,7 @@ export default function ExamFolderTree({ exams }: { exams: ExamRow[] }) {
           onClick={() => setTab("folder")}
           className={"badge " + (tab === "folder" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600")}
         >
-          연도·학년별
+          연도·학교급·학년별
         </button>
         <button
           type="button"
@@ -171,7 +171,7 @@ export default function ExamFolderTree({ exams }: { exams: ExamRow[] }) {
           {years.length === 0 && unclassified.length === 0 && <p className="text-sm text-slate-500">해당하는 시험이 없습니다.</p>}
           {years.map((y, idx) => (
             <Folder key={y.year} id={y.year} label={`${y.year}년`} exams={y.exams} defaultOpen={idx === 0}>
-              <GradeGroups exams={y.exams} />
+              <NestedGroups exams={y.exams} levels={FOLDER_LEVELS} />
             </Folder>
           ))}
           {unclassified.length > 0 && (
@@ -205,28 +205,55 @@ export default function ExamFolderTree({ exams }: { exams: ExamRow[] }) {
   );
 }
 
-function GradeGroups({ exams }: { exams: ExamRow[] }) {
+// 폴더 순서(2026-09-28 원장님 요청): 연도 → 중학교/고등학교 → 학년 → 학기 → 중간/기말 → 시험.
+// 각 단계는 값이 없으면 "… 미지정" 폴더로 모은다.
+type FolderLevel = { key: (e: ExamRow) => string; order: string[] };
+
+const FOLDER_LEVELS: FolderLevel[] = [
+  {
+    key: (e) => (e.school_level ? LEVEL_LABEL[e.school_level] ?? e.school_level : "학교급 미지정"),
+    order: ["초등학교", "중학교", "고등학교", "학교급 미지정"],
+  },
+  { key: (e) => (e.folder_grade ? `${e.folder_grade}학년` : "학년 미지정"), order: ["1학년", "2학년", "3학년", "학년 미지정"] },
+  { key: (e) => (e.folder_term ? `${e.folder_term}학기` : "학기 미지정"), order: ["1학기", "2학기", "학기 미지정"] },
+  { key: (e) => e.folder_kind ?? "구분 미지정", order: ["중간", "기말", "기타", "구분 미지정"] },
+];
+
+function NestedGroups({ exams, levels }: { exams: ExamRow[]; levels: FolderLevel[] }) {
+  const [level, ...rest] = levels;
   const groups = useMemo(() => {
+    if (!level) return [];
     const map = new Map<string, ExamRow[]>();
     for (const e of exams) {
-      const key = e.folder_grade ? `${e.folder_grade}학년` : "학년 미지정";
-      const list = map.get(key) ?? [];
+      const k = level.key(e);
+      const list = map.get(k) ?? [];
       list.push(e);
-      map.set(key, list);
+      map.set(k, list);
     }
-    const order = ["1학년", "2학년", "3학년", "학년 미지정"];
-    return Array.from(map.entries()).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]));
-  }, [exams]);
+    const rank = (k: string) => {
+      const i = level.order.indexOf(k);
+      return i === -1 ? level.order.length - 1 : i;
+    };
+    return Array.from(map.entries()).sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0], "ko"));
+  }, [exams, level]);
+
+  if (!level) {
+    return (
+      <ul className="divide-y divide-slate-100">
+        {[...exams]
+          .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+          .map((x) => (
+            <ExamLeafRow key={x.id} x={x} />
+          ))}
+      </ul>
+    );
+  }
 
   return (
     <div>
-      {groups.map(([grade, list]) => (
-        <Folder key={grade} id={grade} label={grade} exams={list} defaultOpen={false}>
-          <ul className="divide-y divide-slate-100">
-            {list.map((x) => (
-              <ExamLeafRow key={x.id} x={x} showTermKind />
-            ))}
-          </ul>
+      {groups.map(([label, list]) => (
+        <Folder key={label} id={label} label={label} exams={list} defaultOpen={groups.length === 1}>
+          <NestedGroups exams={list} levels={rest} />
         </Folder>
       ))}
     </div>
