@@ -21,7 +21,7 @@ export default async function TutorPurchasesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-lg font-semibold">구매한 기출문제</h1>
           <p className="text-sm text-slate-500">한 번 구매하면 몇 번이든 다시 받을 수 있습니다.</p>
@@ -34,6 +34,7 @@ export default async function TutorPurchasesPage() {
         {((purchases as any[]) ?? []).length === 0 ? (
           <p className="text-sm text-slate-500">아직 구매한 시험이 없습니다.</p>
         ) : (
+          <div className="table-wrap">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-200">
@@ -73,6 +74,7 @@ export default async function TutorPurchasesPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
