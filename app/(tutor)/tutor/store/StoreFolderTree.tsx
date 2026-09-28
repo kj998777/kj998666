@@ -1,0 +1,206 @@
+"use client";
+
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import PurchaseButton from "./PurchaseButton";
+
+// 기출 스토어 폴더 보기(2026-09-28 원장님 요청: "기출스토어도 폴더기능 도입").
+// 직원 시험 목록(app/(staff)/exams/ExamFolderTree.tsx)과 같은 순서로 나눈다:
+// 연도 → 중학교/고등학교 → 학년 → 학기 → 중간/기말 → 시험. 값이 없는 단계는 "… 미지정" 폴더로 모으고,
+// 연도가 없는 시험은 맨 아래 "폴더 미분류"에 둔다.
+
+export type StoreExam = {
+  id: string;
+  code: string;
+  name: string;
+  cost: number | null;
+  owned: boolean;
+  hasPdf: boolean;
+  school_level: string | null;
+  folder_year: string | null;
+  folder_grade: number | null;
+  folder_term: number | null;
+  folder_kind: string | null;
+};
+
+const LEVEL_LABEL: Record<string, string> = { 초: "초등학교", 중: "중학교", 고: "고등학교" };
+
+type Level = { key: (e: StoreExam) => string; order: string[] };
+
+const LEVELS: Level[] = [
+  {
+    key: (e) => (e.school_level ? LEVEL_LABEL[e.school_level] ?? e.school_level : "학교급 미지정"),
+    order: ["초등학교", "중학교", "고등학교", "학교급 미지정"],
+  },
+  { key: (e) => (e.folder_grade ? `${e.folder_grade}학년` : "학년 미지정"), order: ["1학년", "2학년", "3학년", "학년 미지정"] },
+  { key: (e) => (e.folder_term ? `${e.folder_term}학기` : "학기 미지정"), order: ["1학기", "2학기", "학기 미지정"] },
+  { key: (e) => e.folder_kind ?? "구분 미지정", order: ["중간", "기말", "기타", "구분 미지정"] },
+];
+
+function Counts({ exams }: { exams: StoreExam[] }) {
+  const owned = exams.filter((e) => e.owned).length;
+  return (
+    <span className="flex gap-1 text-xs shrink-0">
+      {owned > 0 && <span className="badge bg-emerald-100 text-emerald-700">구매함 {owned}</span>}
+    </span>
+  );
+}
+
+function Folder({
+  label,
+  exams,
+  defaultOpen,
+  children,
+}: {
+  label: string;
+  exams: StoreExam[];
+  defaultOpen: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-slate-100 last:border-0">
+      <button
+        type="button"
+        className="w-full flex items-center justify-between gap-2 py-2 text-left hover:bg-slate-50 rounded px-1"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="flex items-center gap-2">
+          <span className="text-slate-400 text-xs w-3 inline-block">{open ? "▾" : "▸"}</span>
+          <span className="font-medium text-sm">{label}</span>
+          <span className="text-xs text-slate-400">({exams.length})</span>
+        </span>
+        <Counts exams={exams} />
+      </button>
+      {open && <div className="pl-4">{children}</div>}
+    </div>
+  );
+}
+
+function ExamRow({ e }: { e: StoreExam }) {
+  return (
+    <li className="py-2 pl-2 flex flex-wrap items-center justify-between gap-2 text-sm">
+      <span className="min-w-0">
+        {e.name} <span className="text-slate-400">({e.code})</span>
+      </span>
+      <span className="flex items-center gap-2 shrink-0">
+        {e.owned ? (
+          <>
+            <span className="text-emerald-600">구매함</span>
+            {/* #4: 구매한 시험은 관리 화면(다운로드 / 제출 학생·보고서 / 수정 요청)으로 */}
+            <Link href={`/tutor/store/${encodeURIComponent(e.code)}`} className="btn-secondary py-1 px-3 inline-block">
+              관리하기
+            </Link>
+          </>
+        ) : e.hasPdf && e.cost != null ? (
+          <PurchaseButton examId={e.id} examCode={e.code} cost={e.cost} />
+        ) : (
+          <>
+            {e.cost != null && <span className="text-slate-500">{e.cost}P</span>}
+            <span className="text-xs text-slate-400">PDF 준비 중</span>
+          </>
+        )}
+      </span>
+    </li>
+  );
+}
+
+function Nested({ exams, levels }: { exams: StoreExam[]; levels: Level[] }) {
+  const [level, ...rest] = levels;
+  const groups = useMemo(() => {
+    if (!level) return [];
+    const map = new Map<string, StoreExam[]>();
+    for (const e of exams) {
+      const k = level.key(e);
+      const list = map.get(k) ?? [];
+      list.push(e);
+      map.set(k, list);
+    }
+    const rank = (k: string) => {
+      const i = level.order.indexOf(k);
+      return i === -1 ? level.order.length - 1 : i;
+    };
+    return Array.from(map.entries()).sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0], "ko"));
+  }, [exams, level]);
+
+  if (!level) {
+    return (
+      <ul className="divide-y divide-slate-100">
+        {[...exams]
+          .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+          .map((e) => (
+            <ExamRow key={e.id} e={e} />
+          ))}
+      </ul>
+    );
+  }
+
+  return (
+    <div>
+      {groups.map(([label, list]) => (
+        <Folder key={label} label={label} exams={list} defaultOpen={groups.length === 1}>
+          <Nested exams={list} levels={rest} />
+        </Folder>
+      ))}
+    </div>
+  );
+}
+
+export default function StoreFolderTree({ exams }: { exams: StoreExam[] }) {
+  const [view, setView] = useState<"folder" | "list">("folder");
+
+  const { years, unclassified } = useMemo(() => {
+    const byYear = new Map<string, StoreExam[]>();
+    const unclassified: StoreExam[] = [];
+    for (const e of exams) {
+      if (!e.folder_year) {
+        unclassified.push(e);
+        continue;
+      }
+      const list = byYear.get(e.folder_year) ?? [];
+      list.push(e);
+      byYear.set(e.folder_year, list);
+    }
+    const years = Array.from(byYear.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+    return { years, unclassified };
+  }, [exams]);
+
+  return (
+    <div>
+      <div className="flex gap-1 text-sm mb-3">
+        <button
+          type="button"
+          onClick={() => setView("folder")}
+          className={"badge " + (view === "folder" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600")}
+        >
+          폴더로 보기
+        </button>
+        <button
+          type="button"
+          onClick={() => setView("list")}
+          className={"badge " + (view === "list" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600")}
+        >
+          전체 목록
+        </button>
+      </div>
+
+      {view === "list" ? (
+        <Nested exams={exams} levels={[]} />
+      ) : (
+        <div>
+          {years.map(([year, list], idx) => (
+            <Folder key={year} label={`${year}년`} exams={list} defaultOpen={idx === 0}>
+              <Nested exams={list} levels={LEVELS} />
+            </Folder>
+          ))}
+          {unclassified.length > 0 && (
+            <div className="pt-2">
+              <p className="text-xs text-slate-400 mb-1 px-1">폴더 미분류</p>
+              <Nested exams={unclassified} levels={[]} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

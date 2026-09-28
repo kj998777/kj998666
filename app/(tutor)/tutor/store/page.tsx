@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireTutor } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import PurchaseButton from "./PurchaseButton";
+import StoreFolderTree, { type StoreExam } from "./StoreFolderTree";
 
 // exams_select_tutor_store RLS 정책 덕분에 여기서 select("*")를 해도 "지금 판매 중"이거나
 // "이미 구매한" 시험만 자동으로 걸러져서 내려온다 — 앱 코드에서 따로 필터링할 필요 없음.
@@ -19,7 +19,7 @@ export default async function TutorStorePage() {
     // status가 '닫힘'으로 남아 있으므로 이 필터로도 계속 보이고, 재다운로드도 그대로 된다.
     supabase
       .from("exams")
-      .select("id, code, name, tutor_download_cost")
+      .select("id, code, name, tutor_download_cost, school_level, folder_year, folder_grade, folder_term, folder_kind")
       .neq("status", "검수대기")
       .order("name"),
     supabase.from("tutor_exam_purchases").select("exam_id").eq("tutor_id", session.userId),
@@ -37,6 +37,20 @@ export default async function TutorStorePage() {
     ? await (createAdminClient() as any).from("exam_pdf_meta").select("exam_id").in("exam_id", listedIds)
     : { data: [] };
   const hasPdf = new Set(((metaRows as any[]) ?? []).map((m) => m.exam_id));
+
+  const storeExams: StoreExam[] = ((exams as any[]) ?? []).map((e) => ({
+    id: e.id,
+    code: e.code,
+    name: e.name,
+    cost: e.tutor_download_cost ?? null,
+    owned: ownedExamIds.has(e.id),
+    hasPdf: hasPdf.has(e.id),
+    school_level: e.school_level ?? null,
+    folder_year: e.folder_year ?? null,
+    folder_grade: e.folder_grade ?? null,
+    folder_term: e.folder_term ?? null,
+    folder_kind: e.folder_kind ?? null,
+  }));
 
   return (
     <div className="space-y-4">
@@ -57,42 +71,7 @@ export default async function TutorStorePage() {
         {((exams as any[]) ?? []).length === 0 ? (
           <p className="text-sm text-slate-500">지금 받을 수 있는 기출문제가 없습니다.</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-500 border-b border-slate-200">
-                <th className="py-1 pr-2">시험</th>
-                <th className="py-1 pr-2 text-right">필요 포인트</th>
-                <th className="py-1 pr-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {(exams as any[]).map((e) => {
-                const owned = ownedExamIds.has(e.id);
-                return (
-                  <tr key={e.id} className="border-b border-slate-100">
-                    <td className="py-1 pr-2">
-                      {e.name} <span className="text-slate-400">({e.code})</span>
-                    </td>
-                    <td className="py-1 pr-2 text-right">
-                      {owned ? <span className="text-emerald-600">구매함</span> : `${e.tutor_download_cost}P`}
-                    </td>
-                    <td className="py-1 pr-2">
-                      {/* #4: 구매한 시험은 바로 다운로드 대신 관리 화면(다운로드 / 제출 학생·보고서 / 수정 요청)으로 */}
-                      {owned ? (
-                        <Link href={`/tutor/store/${encodeURIComponent(e.code)}`} className="btn-secondary py-1 px-3 inline-block">
-                          관리하기
-                        </Link>
-                      ) : hasPdf.has(e.id) ? (
-                        <PurchaseButton examId={e.id} examCode={e.code} cost={e.tutor_download_cost} />
-                      ) : (
-                        <span className="text-xs text-slate-400">PDF 준비 중</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <StoreFolderTree exams={storeExams} />
         )}
       </div>
 
