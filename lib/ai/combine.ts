@@ -4,7 +4,7 @@
 
 import { isCorrect } from "@/lib/grading";
 import type { Difficulty } from "@/lib/supabase/types";
-import { cleanText, fixSafe, mcDigitOf, plainFix, shortAnswerOf } from "./normalize";
+import { cleanText, mcDigitOf, plainFix, shortAnswerOf, studentFixes } from "./normalize";
 import type { QuestionMeta } from "./prompts";
 
 export type AiSolution = {
@@ -191,8 +191,10 @@ export function autoCombine(
 
   const ef = sx.exam_fix || s.exam_fix || s2?.exam_fix;
   if (ef && typeof ef === "object") {
-    const iss = fixSafe(ef.issue, 300);
-    const fx = fixSafe(ef.fix, 500);
+    // 학생용 정오표: 답 관련 표현을 빼고, "오류 없음"류는 정정으로 치지 않는다(studentFixes)
+    const safe = studentFixes([{ issue: String(ef.issue ?? ""), fix: String(ef.fix ?? "") }])[0];
+    const iss = safe?.issue ?? "";
+    const fx = safe?.fix ?? "";
     if (iss || fx) row.fix = { issue: iss, fix: fx };
     const nows = (x: string) => x.replace(/\s+/g, "");
     if (nows(plainFix(ef.issue, 300)) !== nows(iss) || nows(plainFix(ef.fix, 500)) !== nows(fx)) {

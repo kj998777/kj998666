@@ -4,6 +4,7 @@ import path from "path";
 import { PDFDocument, degrees } from "pdf-lib";
 import { getExamPdfBuffer, getExamPdfMeta } from "./pdf";
 import { trailingAnswerPages } from "./answerPages";
+import { studentFixes } from "./normalize";
 import { renderCoverPng, renderFixSheetPngs, renderStampPng, renderWatermarkPng } from "./canvasStamp";
 
 // 시험지 PDF에 표지·정오표(정정 페이지)·QR 안내 쪽을 붙여 학생에게 나눠 줄 최종 PDF를 만든다.
@@ -80,7 +81,8 @@ export async function buildStampedExamPdf(client: Client, examId: string, opts: 
   for (const p of copied) out.addPage(p);
 
   // 3) 정정 페이지(정오표) — 로고·QR 쪽 바로 앞. 원본 시험지 쪽은 건드리지 않는다
-  const fixes = opts.fixes.filter((f) => f.issue || f.fix);
+  //    학생이 보는 자료이므로 답 관련 표현·"오류 없음"류 항목은 거른다(예전에 저장된 정정도 여기서 걸러짐).
+  const fixes = studentFixes(opts.fixes);
   if (opts.addFixPage && fixes.length) {
     const sheetPngs = await renderFixSheetPngs(fixes, PW, PH);
     for (const png of sheetPngs) {

@@ -216,3 +216,38 @@ export function fixSafe(v: unknown, max = 300): string {
   }
   return lines.join("\n").replace(/[ \t]{2,}/g, " ").trim().slice(0, max);
 }
+
+// ---------------------------------------------------------------------------
+// 학생용 정오표 거르기(2026-09-28 원장님 요청): 정오표는 "학생들이 보고 문제를 푸는" 자료다.
+//   ① 정답·풀이를 알려 주는 표현은 빼고(fixSafe — 예: "없음(선지 ⑤ -6 이 정답)" → "없음"),
+//   ② "오류 없음", "정정 사항 없음", "문제 자체는 성립"처럼 정정할 게 없다는 항목은 아예 싣지 않는다.
+// AI가 새로 만드는 정정(lib/ai/combine.ts)과, 이미 DB에 저장된 예전 정정을 PDF로 찍을 때(lib/ai/pdfStamp.ts)
+// 둘 다 이 함수를 거친다.
+// ---------------------------------------------------------------------------
+
+const NO_ERROR_RE =
+  /^(?:\[?(?:오류|정정|이유|내용)\]?\s*[:：]?\s*)?(?:없음|없다|없습니다|해당\s*(?:사항\s*)?없음|정정(?:할)?\s*(?:사항|것|내용)?\s*(?:이|은|는)?\s*없(?:음|습니다|다)|이상\s*(?:이\s*)?없(?:음|습니다|다)|오류\s*(?:가|는)?\s*없(?:음|습니다|다)|(?:문제|문항)\s*(?:자체)?\s*(?:는|가|에는?)?\s*(?:이상\s*없\S*|성립\S*|문제\s*없\S*)|-|—|x|none|n\/a)[.。!\s]*$/i;
+
+/** 정정할 것이 없다는 뜻의 문구인지(괄호 속 덧말은 무시). 빈 문자열도 true. */
+export function isNoErrorText(v: unknown): boolean {
+  const t = plainFix(v, 2000)
+    .replace(/[(（\[［][^)）\]］]*[)）\]］]/g, (m) => (/^[\[［](?:오류|정정)[\]］]$/.test(m) ? m : ""))
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!t) return true;
+  return NO_ERROR_RE.test(t);
+}
+
+/** 학생에게 보일 정오표 항목만 남긴다(답 관련 표현 제거 + 정정할 게 없는 항목 제외). */
+export function studentFixes<T extends { issue: string; fix: string }>(fixes: T[]): T[] {
+  const out: T[] = [];
+  for (const f of fixes) {
+    let issue = fixSafe(f.issue, 300);
+    let fix = fixSafe(f.fix, 500);
+    if (isNoErrorText(issue)) issue = "";
+    if (isNoErrorText(fix)) fix = "";
+    if (!issue && !fix) continue;
+    out.push({ ...f, issue, fix });
+  }
+  return out;
+}

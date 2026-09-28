@@ -23,6 +23,7 @@ import { Job, JobState, getJob, isActiveStage, setJob } from "./job";
 import { getExamPdfBuffer } from "./pdf";
 import { openExamIfAllConfirmed } from "@/lib/review/confirm";
 import { clearLowBalanceAlert, getAiCreds, recordLowBalanceAlert, recordUsage } from "./settings";
+import { enqueueLocateJobIfMissing } from "./locate";
 
 // Client 타입을 any로 두는 이유는 lib/ai/settings.ts 상단 주석 참고(createServerClient와
 // supabase-js의 SupabaseClient 타입이 대입되지 않는 실제 빌드 실패를 겪었음).
@@ -475,6 +476,8 @@ async function finishExam(
     if (error) throw error;
   }
   await (client.from("exams") as any).update({ status: "검수대기" }).eq("id", examId);
+  // AI가 일부 문항의 영역(bbox)을 빼먹었으면 과외선생님 화면에 쪽 전체가 보이므로, 영역만 다시 찾는 작업을 걸어 둔다.
+  await enqueueLocateJobIfMissing(client, examId);
 
   state.flags = flags;
   state.err = 0;
