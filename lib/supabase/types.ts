@@ -313,6 +313,7 @@ export type Database = {
           is_scanned: boolean | null;
           uploaded_at: string;
           uploaded_by: string | null;
+          replaced_with_digitized: boolean;
         };
         Insert: {
           exam_id: string;
@@ -320,8 +321,14 @@ export type Database = {
           pages?: number | null;
           is_scanned?: boolean | null;
           uploaded_by?: string | null;
+          replaced_with_digitized?: boolean;
         };
-        Update: { storage_path?: string; pages?: number | null; is_scanned?: boolean | null };
+        Update: {
+          storage_path?: string;
+          pages?: number | null;
+          is_scanned?: boolean | null;
+          replaced_with_digitized?: boolean;
+        };
         Relationships: [];
       };
       exam_jobs: {
