@@ -16,7 +16,7 @@ export default function CreditPanel({ initial }: { initial: CreditInfo }) {
   return (
     <div className="space-y-4">
       {info.low && (
-        <div className="rounded border border-red-300 bg-red-50 text-red-700 text-sm p-3 flex items-start justify-between gap-3">
+        <div className="rounded border border-red-300 bg-red-50 text-red-700 text-sm p-3 flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="font-medium">{info.low.kind === "credit" ? "크레딧 부족" : "사용 한도 도달"}</p>
             <p>{info.low.message}</p>

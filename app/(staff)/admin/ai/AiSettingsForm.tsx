@@ -52,7 +52,7 @@ export default function AiSettingsForm({ initial }: { initial: AiSettingsPublic 
           </select>
         </div>
         {msg && <p className={"text-sm " + (msg.ok ? "text-emerald-600" : "text-red-600")}>{msg.text}</p>}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button type="submit" className="btn-primary" disabled={pending}>
             {pending ? "확인하는 중…" : "저장"}
           </button>

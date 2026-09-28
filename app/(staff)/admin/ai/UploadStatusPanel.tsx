@@ -135,6 +135,7 @@ function JobList({
   if (rows.length === 0) return <p className="text-sm text-slate-500">지금 처리 중인 시험이 없습니다.</p>;
 
   return (
+    <div className="table-wrap">
     <table className="w-full text-sm">
       <thead>
         <tr className="text-left text-slate-400 border-b border-slate-200">
@@ -200,6 +201,7 @@ function JobList({
         </tfoot>
       )}
     </table>
+    </div>
   );
 }
 
@@ -222,7 +224,7 @@ export default function UploadStatusPanel({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-medium">업로드·처리 현황</h2>
         <button
           className="btn-secondary py-1 px-3 text-xs"
