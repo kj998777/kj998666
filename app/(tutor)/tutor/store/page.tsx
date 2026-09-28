@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireTutor } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchAllIn, fetchAllPages } from "@/lib/supabase/fetchAll";
 import StoreFolderTree, { type StoreExam } from "./StoreFolderTree";
 
 // exams_select_tutor_store RLS 정책 덕분에 여기서 select("*")를 해도 "지금 판매 중"이거나
@@ -17,15 +18,22 @@ export default async function TutorStorePage() {
     // 여기서 명시적으로 빼야 검토대기 시험이 구매 버튼과 함께 잘못 섞여 나오지 않는다. 예전에
     // 구매했다가 관리자가 나중에 판매를 중단한(tutor_download_cost를 다시 null로 바꾼) 시험은
     // status가 '닫힘'으로 남아 있으므로 이 필터로도 계속 보이고, 재다운로드도 그대로 된다.
-    supabase
-      .from("exams")
-      .select("id, code, name, tutor_download_cost, school_level, folder_year, folder_grade, folder_term, folder_kind")
-      .neq("status", "검수대기")
-      .order("name"),
+    // 2026-09-29: 1000개가 넘어도 빠지지 않게 끝까지 나눠 읽는다(lib/supabase/fetchAll.ts)
+    fetchAllPages((a, b) =>
+      supabase
+        .from("exams")
+        .select("id, code, name, tutor_download_cost, school_level, folder_year, folder_grade, folder_term, folder_kind")
+        .neq("status", "검수대기")
+        .order("name")
+        .order("id")
+        .range(a, b)
+    ),
     supabase.from("tutor_exam_purchases").select("exam_id").eq("tutor_id", session.userId),
     // #111: 검토대기(AI 처리/검토 진행 중)인 시험 — exams_select_tutor_in_review RLS로 이름/코드만
     // 노출된다. 아직 못 사는 시험이라는 걸 명확히 하기 위해 판매 목록과 별도 구역에 보여준다.
-    supabase.from("exams").select("id, code, name").eq("status", "검수대기").order("name"),
+    fetchAllPages((a, b) =>
+      supabase.from("exams").select("id, code, name").eq("status", "검수대기").order("name").order("id").range(a, b)
+    ),
   ]);
 
   const ownedExamIds = new Set(((purchases as any[]) ?? []).map((p) => p.exam_id));
@@ -33,9 +41,12 @@ export default async function TutorStorePage() {
   // 원본 PDF가 아직 없는 시험(예전 시스템에서 옮겨 온 시험 등)은 사도 받을 게 없으므로 "PDF 준비 중"으로만
   // 보여 주고 구매 버튼을 막는다. 과외선생님은 exam_pdf_meta RLS를 통과하지 못하므로 서비스롤로 "있는지"만 본다.
   const listedIds = ((exams as any[]) ?? []).map((e) => e.id);
-  const { data: metaRows } = listedIds.length
-    ? await (createAdminClient() as any).from("exam_pdf_meta").select("exam_id").in("exam_id", listedIds)
-    : { data: [] };
+  // 2026-09-29: 시험이 수백 개면 id를 한 번에 넣은 요청 주소가 너무 길어 실패할 수 있고(그러면 모든 시험이
+  // "PDF 준비 중"으로 보임), 1000줄 제한도 있어 조각으로 나눠 읽는다.
+  const adminDb = createAdminClient() as any;
+  const { data: metaRows } = await fetchAllIn(listedIds, (ids, a, b) =>
+    adminDb.from("exam_pdf_meta").select("exam_id").in("exam_id", ids).order("exam_id").range(a, b)
+  );
   const hasPdf = new Set(((metaRows as any[]) ?? []).map((m) => m.exam_id));
 
   const storeExams: StoreExam[] = ((exams as any[]) ?? []).map((e) => ({
