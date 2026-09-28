@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { cancelDigitizeAction, pollDigitizeAction, startDigitizeAction, type DigitizePoll } from "./digitize-actions";
+import { useRouter } from "next/navigation";
+import {
+  applyDigitizedPdfAsOriginal,
+  cancelDigitizeAction,
+  pollDigitizeAction,
+  startDigitizeAction,
+  type DigitizePoll,
+} from "./digitize-actions";
+import { uploadPdfDirect } from "@/lib/supabase/uploadPdf";
 
 const ACTIVE = new Set(["dg_upload", "dg_submit", "dg_wait"]);
 
@@ -15,19 +23,26 @@ const STAGE_LABEL: Record<string, string> = {
 
 export default function DigitizeControl({
   code,
+  examId,
   examName,
   initial,
   isScanned,
+  appliedAsOriginal,
 }: {
   code: string;
+  examId: string;
   examName: string;
   initial: DigitizePoll;
   isScanned: boolean | null;
+  appliedAsOriginal?: boolean;
 }) {
+  const router = useRouter();
   const [job, setJob] = useState<DigitizePoll>(initial);
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [applyBusy, setApplyBusy] = useState(false);
+  const [applyMsg, setApplyMsg] = useState("");
   const [pdfMsg, setPdfMsg] = useState("");
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -47,6 +62,35 @@ export default function DigitizeControl({
       setPdfMsg("실패: " + (e && e.message ? e.message : String(e)));
     } finally {
       setPdfBusy(false);
+    }
+  }
+
+  // #2(2026-09-28): 다운로드 후 수동 재업로드를 거치지 않고, 브라우저에서 만든 디지털 시험지 PDF를
+  // 곧바로 이 시험의 "원본" 자리에 덮어쓴다(원클릭 적용). 조판(buildDigitizedPdf) 자체는 브라우저
+  // 캔버스·pdf.js에 의존하는 순수 브라우저 코드라 서버에서는 만들 수 없으므로, 여기서 만든 결과를
+  // 브라우저가 그대로 Storage에 올린 뒤 서버 액션(applyDigitizedPdfAsOriginal)으로 뒷정리만 한다.
+  async function onApplyAsOriginal() {
+    setApplyBusy(true);
+    setApplyMsg("시작하는 중…");
+    try {
+      const { buildDigitizedPdf } = await import("./buildDigitizedPdf");
+      const built = await buildDigitizedPdf(code, examName, (m) => setApplyMsg(m));
+      setApplyMsg("새 원본 PDF를 올리는 중…");
+      const blob = new Blob([built.bytes as any], { type: "application/pdf" });
+      await uploadPdfDirect(examId, blob);
+      setApplyMsg("정리하는 중…");
+      const r = await applyDigitizedPdfAsOriginal(code);
+      if (!r.ok) throw new Error(r.msg ?? "적용하지 못했습니다.");
+      setApplyMsg(
+        `적용했습니다 (${built.pages}쪽 · 문항 ${built.items}개 · 그림 ${built.figs}개${
+          built.figErrors ? ` · 그림 오류 ${built.figErrors}곳` : ""
+        }). 이제 이 디지털 시험지가 원본 PDF입니다 — 원본과 대조해 확인해 주세요.`
+      );
+      router.refresh();
+    } catch (e: any) {
+      setApplyMsg("실패: " + (e && e.message ? e.message : String(e)));
+    } finally {
+      setApplyBusy(false);
     }
   }
 
@@ -76,10 +120,16 @@ export default function DigitizeControl({
       <h2 className="font-medium">스캔 시험지 디지털화</h2>
       <p className="text-sm text-slate-500">
         스캔본(그림) 시험지의 글자·수식·그림 위치를 AI가 쪽별로 옮겨 적고, 학원 양식(2단 편집)으로
-        다시 조판한 PDF로 내려받습니다(문제 쪽만 — 표지·정답·해설·마킹 쪽은 넣지 않습니다). 옮겨 적은
-        내용은 AI가 읽은 것이라 원본과 다를 수 있으니, 내려받은 뒤 원본과 대조하고 나눠 주세요.
+        다시 조판한 PDF를 만듭니다(문제 쪽만 — 표지·정답·해설·마킹 쪽은 넣지 않습니다). 완료되면
+        내려받아 대조해도 되고, "원본으로 적용" 버튼으로 이 시험의 원본 PDF를 바로 바꿔치기할 수도
+        있습니다. 옮겨 적은 내용은 AI가 읽은 것이라 원본과 다를 수 있으니 꼭 대조해 주세요.
         {isScanned === false && " (업로드된 PDF는 이미 글자 정보가 있어 보여 꼭 필요하지는 않을 수 있습니다.)"}
       </p>
+      {appliedAsOriginal && (
+        <p className="text-xs text-emerald-600">
+          현재 이 시험의 원본 PDF는 디지털화 결과가 적용된(다시 조판된) 버전입니다.
+        </p>
+      )}
 
       {!job && (
         <button
@@ -150,7 +200,12 @@ export default function DigitizeControl({
               </button>
             )}
             {job.stage === "dg_done" && (
-              <button className="btn-secondary text-sm px-2 py-1" disabled={pdfBusy} onClick={onDownloadPdf}>
+              <button className="btn-primary text-sm px-2 py-1" disabled={applyBusy || pdfBusy} onClick={onApplyAsOriginal}>
+                {applyBusy ? "적용하는 중…" : "디지털 시험지를 원본으로 적용"}
+              </button>
+            )}
+            {job.stage === "dg_done" && (
+              <button className="btn-secondary text-sm px-2 py-1" disabled={pdfBusy || applyBusy} onClick={onDownloadPdf}>
                 디지털 시험지 PDF 다운로드
               </button>
             )}
@@ -160,6 +215,7 @@ export default function DigitizeControl({
               </a>
             )}
           </div>
+          {applyMsg && <p className={applyMsg.indexOf("실패") === 0 ? "text-red-600" : "text-slate-500"}>{applyMsg}</p>}
           {pdfMsg && <p className={pdfMsg.indexOf("실패") === 0 ? "text-red-600" : "text-slate-500"}>{pdfMsg}</p>}
         </div>
       )}

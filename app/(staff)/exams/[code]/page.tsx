@@ -215,7 +215,7 @@ export default async function ExamDetailPage({
             (예: 예전 시스템에서 옮겨온 시험). 이미 정답·해설이 있는 시험이면 이 폼으로 원본 PDF 파일만
             연결하세요 — AI가 다시 처리하지 않고 그대로 저장만 합니다.
           </p>
-          <AttachPdfForm code={exam.code} />
+          <AttachPdfForm code={exam.code} examId={exam.id} />
         </div>
       )}
 
@@ -227,7 +227,7 @@ export default async function ExamDetailPage({
               ? "이미 저장된 시험지 PDF가 있습니다. 새 PDF를 올리면 그 파일로 다시 처리합니다."
               : "시험지 PDF를 올리면 AI가 정답·해설을 자동으로 만듭니다."}
           </p>
-          <UploadPdfForm code={exam.code} />
+          <UploadPdfForm code={exam.code} examId={exam.id} />
         </div>
       )}
 
@@ -261,7 +261,14 @@ export default async function ExamDetailPage({
       )}
 
       {isAdmin && pdfMeta && (
-        <DigitizeControl code={exam.code} examName={exam.name} initial={digitizePoll} isScanned={pdfMeta.is_scanned ?? null} />
+        <DigitizeControl
+          code={exam.code}
+          examId={exam.id}
+          examName={exam.name}
+          initial={digitizePoll}
+          isScanned={pdfMeta.is_scanned ?? null}
+          appliedAsOriginal={pdfMeta.replaced_with_digitized ?? false}
+        />
       )}
 
       <div className="card">
