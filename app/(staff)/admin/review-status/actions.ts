@@ -255,3 +255,20 @@ export async function fixDigitizedLocations(): Promise<Result & { exams?: number
       : "바로잡을 시험이 없습니다.",
   };
 }
+
+/** 2026-09-29: 영역 찾기 "완료" 문항까지 위치를 전부 다시 찾기(스캔·디지털 조판 시험만 — 글자 PDF는 화면이 직접 찾음). */
+export async function recheckAllLocations(): Promise<Result & { exams?: number; items?: number }> {
+  await requireRole("admin");
+  const admin = createAdminClient();
+  const { resetForRecheck } = await import("@/lib/ai/locate");
+  const r = await resetForRecheck(admin);
+  revalidatePath("/admin/review-status");
+  revalidatePath("/admin/ai");
+  return {
+    ok: true,
+    ...r,
+    msg: r.exams
+      ? `시험 ${r.exams}개(문항 ${r.items}개)의 위치를 지우고 다시 찾기 시작했습니다. 이번에는 앞뒤 문항 자리로 경계를 맞춥니다. 보통 수 분 걸립니다.`
+      : "다시 찾을 시험이 없습니다.",
+  };
+}
