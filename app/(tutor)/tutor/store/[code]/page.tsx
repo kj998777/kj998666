@@ -1,0 +1,56 @@
+import { notFound } from "next/navigation";
+import { requireTutor } from "@/lib/auth/requireTutor";
+import { getPurchasedExam } from "@/lib/tutor/purchased";
+import { ensureTutorLinkToken, tutorSubmitPath } from "@/lib/tutor/link";
+import TutorExamTabs from "./TutorExamTabs";
+import CopyLink from "./results/CopyLink";
+
+export const dynamic = "force-dynamic";
+
+// #4: 구매한 시험 관리 — 첫 탭(기출문제 다운로드). 스토어·구매 내역의 "관리하기" 버튼이 여기로 온다.
+export default async function TutorExamHubPage({ params }: { params: { code: string } }) {
+  const session = await requireTutor();
+  const code = decodeURIComponent(params.code);
+  const exam = await getPurchasedExam(session.userId, code);
+  if (!exam) notFound();
+
+  let submitPath: string | null = null;
+  try {
+    submitPath = tutorSubmitPath(exam.code, await ensureTutorLinkToken(session.userId));
+  } catch {
+    submitPath = null;
+  }
+  const base = `/tutor/store/${encodeURIComponent(exam.code)}`;
+
+  return (
+    <div className="space-y-4">
+      <TutorExamTabs code={exam.code} name={exam.name} active="download" />
+
+      <div className="card space-y-2">
+        <h2 className="font-medium">기출문제 PDF</h2>
+        <p className="text-sm text-slate-500">
+          시험지 앞에는 메딕수학 표지가, 맨 뒤에는 메딕수학 로고와 <strong>선생님 전용 답안 제출 QR</strong>이
+          붙습니다. 학생이 이 QR로 답을 내면 &ldquo;제출 학생·보고서&rdquo; 탭에서 결과를 보고 보고서를 만들 수
+          있습니다. 시험지 오류 정정(정오표)이 있으면 QR 쪽 앞에 함께 들어갑니다.
+        </p>
+        <a href={`${base}/download`} className="btn-primary inline-block">
+          PDF 받기
+        </a>
+      </div>
+
+      <div className="card space-y-2">
+        <h2 className="font-medium">선생님 전용 제출 링크</h2>
+        {submitPath ? (
+          <>
+            <p className="text-sm text-slate-500">
+              QR 대신 링크로 나눠줄 때 쓰세요. 이 링크로 제출한 학생만 선생님 화면에 보입니다(학원 학생 제출은 보이지 않음).
+            </p>
+            <CopyLink path={submitPath} />
+          </>
+        ) : (
+          <p className="text-sm text-red-600">제출 링크를 준비하지 못했습니다. 잠시 후 다시 열어 주세요.</p>
+        )}
+      </div>
+    </div>
+  );
+}
