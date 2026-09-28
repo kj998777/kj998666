@@ -10,6 +10,7 @@ import { getSessionAndRole, type SessionAndRole } from "./requireRole";
 export async function requireTutor(): Promise<SessionAndRole> {
   const session = await getSessionAndRole();
   if (!session) redirect("/login");
+  if (session.role === "대기") redirect("/pending");
   if (session.role !== "tutor") redirect("/login");
   return session;
 }

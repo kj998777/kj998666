@@ -48,7 +48,14 @@ export async function getSessionAndRole(): Promise<SessionAndRole | null> {
 export async function requireRole(minRole: Role): Promise<SessionAndRole> {
   const session = await getSessionAndRole();
   if (!session) redirect("/login");
-  if (!passesRole(session.role, minRole)) redirect("/dashboard?denied=1");
+  if (!passesRole(session.role, minRole)) {
+    // RANK에 없는 role(tutor, 대기)이 실수로 직원 화면 URL에 직접 들어오면, 실패 시 돌려보내는
+    // 곳(/dashboard)도 이 계층 검사(requireRole('viewer'))를 다시 통과해야 하는 화면이라
+    // 무한 리다이렉트에 빠지는 함정이 있었다 — 역할별로 자기 자신의 홈으로 보낸다.
+    if (session.role === "tutor") redirect("/tutor/dashboard");
+    if (session.role === "대기") redirect("/pending");
+    redirect("/dashboard?denied=1");
+  }
   return session;
 }
 
