@@ -9,7 +9,16 @@ import type { ReportData, ReportStudent } from "./buildReportPdf";
 // (KaTeX·html2pdf.js를 CDN에서 불러와 브라우저에서 직접 그리므로, 이 버튼을 눌러야 그 도구들을
 // 내려받기 시작한다 — 결과 화면을 열 때마다 미리 불러오지 않음).
 
-export default function ReportPanel({ code, examName }: { code: string; examName: string }) {
+export default function ReportPanel({
+  code,
+  examName,
+  dataUrl,
+}: {
+  code: string;
+  examName: string;
+  // #4: 과외선생님 화면은 본인 링크 제출만 담는 별도 데이터 경로를 쓴다.
+  dataUrl?: string;
+}) {
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
@@ -22,7 +31,7 @@ export default function ReportPanel({ code, examName }: { code: string; examName
     setLoading(true);
     setMsg("");
     try {
-      const res = await fetch(`/exams/${encodeURIComponent(code)}/results/report-data`, { credentials: "same-origin" });
+      const res = await fetch(dataUrl ?? `/exams/${encodeURIComponent(code)}/results/report-data`, { credentials: "same-origin" });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.msg || "데이터를 불러오지 못했습니다.");
       setData(body as ReportData);
