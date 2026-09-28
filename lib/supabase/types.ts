@@ -163,6 +163,12 @@ export type Database = {
           claimed_by: string | null;
           claim_expires_at: string | null;
           source_page: number | null;
+          review_confirmed: boolean;
+          review_confirmed_at: string | null;
+          review_confirmed_by: string | null;
+          review_confirm_source: "auto_match" | "admin" | "legacy" | "ai_confident" | null;
+          ai_answer_display: string | null;
+          ai_solution: string | null;
         };
         Insert: {
           exam_id: string;
