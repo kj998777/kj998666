@@ -64,6 +64,8 @@ export async function GET(request: Request, { params }: { params: { code: string
       cover: true,
       addFixPage: true,
       excludePages: [],
+      // #7: 뒤에 붙은 정답·해설·OMR 쪽은 빼고 문제만(과외선생님 배포용이라 항상)
+      autoTrimAnswerPages: true,
       examName: exam.name,
       examCode: exam.code,
       submitUrl,
