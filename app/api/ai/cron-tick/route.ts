@@ -3,12 +3,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { tickExamJob } from "@/lib/ai/pipeline";
 import { isActiveStage } from "@/lib/ai/job";
 import { tickLocateJobs } from "@/lib/ai/locate";
+import { runBackupIfDue } from "@/lib/ops/backup";
 
 // 외부 무료 크론 서비스(cron-job.org 등)가 주기적으로 이 엔드포인트를 호출해서, 브라우저 탭을
 // 열어두지 않아도 AI 시험 자동처리(exam_jobs)가 계속 한 걸음씩 진행되게 한다.
 // 기존에는 app/(staff)/exams/ai-actions.ts의 pollAiJob()을 AiJobPanel.tsx가 4초마다 호출하는
 // 방식뿐이어서, 그 화면을 담당 선생님이 계속 열어두고 있어야만 처리가 이어졌다(탭을 닫으면 멈춤).
 export const dynamic = "force-dynamic";
+// 백업(주 1회)까지 한 번에 돌 수 있게 넉넉히(Vercel Hobby 최대 60초)
+export const maxDuration = 60;
 
 // Vercel Hobby 플랜의 서버리스 함수 실행 제한(기본 10초, 최대 60초)을 고려해, 한 번의 크론 호출
 // 안에서 여러 시험을 순회하되 일정 시간이 지나면 더 진행하지 않고 다음 크론 주기로 넘긴다.
@@ -65,7 +68,16 @@ async function handle(request: Request) {
   } catch {
     /* 다음 크론 주기에 다시 */
   }
-  return NextResponse.json({ ok: true, checked: jobs?.length ?? 0, ticked: results.length, stillActive, located });
+  // 정기 백업(lib/ops/backup.ts, 0025) — 마지막 백업이 7일 넘었을 때만. 0025 전이면 아무것도 안 함.
+  let backup: string | null = null;
+  if (Date.now() - started < 30_000) {
+    try {
+      backup = await runBackupIfDue(admin);
+    } catch {
+      /* 다음 크론 주기에 다시 */
+    }
+  }
+  return NextResponse.json({ ok: true, checked: jobs?.length ?? 0, ticked: results.length, stillActive, located, backup });
 }
 
 export async function GET(request: Request) {
