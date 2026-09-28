@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { buildStampedExamPdf, type Correction } from "@/lib/ai/pdfStamp";
 import { ensureTutorLinkToken, tutorSubmitPath } from "@/lib/tutor/link";
 import { contentDispositionAttachment } from "@/lib/http/contentDisposition";
+import { personLabel } from "@/lib/profile/label";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,20 @@ export async function GET(request: Request, { params }: { params: { code: string
     fix: c.fix ?? "",
   }));
 
+  // 받은 사람 표시(2026-09-28 원장님 요청 3): 모든 쪽 아래에 "30기 홍길동 선생님 전용 · 날짜"를 옅게.
+  // 외부 유출을 막고, 유출되더라도 누가 받은 파일인지 알 수 있게 한다. 이름·기수(0021)가 없으면 이메일.
+  const { data: me } = (await admin
+    .from("profiles")
+    .select("*")
+    .eq("id", auth.session.userId)
+    .maybeSingle()) as any;
+  const who = personLabel({ display_name: me?.display_name, cohort: me?.cohort, email: me?.email ?? auth.session.email });
+  const today = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" })
+    .format(new Date())
+    .replace(/\s/g, "")
+    .replace(/\.$/, "");
+  const watermark = `메딕차트 · ${who} 선생님 전용 · ${today} · 무단 배포 금지`;
+
   let bytes: Uint8Array;
   try {
     bytes = await buildStampedExamPdf(admin, exam.id, {
@@ -70,6 +85,7 @@ export async function GET(request: Request, { params }: { params: { code: string
       examCode: exam.code,
       submitUrl,
       fixes,
+      watermark,
     });
   } catch (e: any) {
     return Response.json({ ok: false, msg: e?.message || "PDF를 만들지 못했습니다." }, { status: 404 });
