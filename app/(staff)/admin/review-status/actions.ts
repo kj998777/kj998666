@@ -218,30 +218,22 @@ export async function rejectEditRequest(requestId: string): Promise<Result> {
 // 작업 테이블(item_locate_jobs)은 서비스롤로만 쓰므로 관리자 확인 뒤 admin 클라이언트로 진행한다.
 // ---------------------------------------------------------------------------
 
-/** 검토 대기 시험 중 좌표 없는 문항이 있는 시험마다 영역 찾기를 시작하고, 곧바로 한 번 진행시킨다. */
+/**
+ * 검토 대기 시험 중 좌표 없는 문항이 있는 시험마다 영역 찾기 작업을 걸어 둔다(곧바로 끝남). 실제 진행은 화면이
+ * locate-tick 라우트를 부르거나 크론이 돌 때 이루어진다 — 버튼이 수십 초씩 붙잡혀 있지 않도록(2026-09-29).
+ */
 export async function startLocateItems(): Promise<Result & { queued?: number }> {
   await requireRole("admin");
   const admin = createAdminClient();
-  const { enqueueMissingLocateJobs, tickLocateJobs } = await import("@/lib/ai/locate");
+  const { enqueueMissingLocateJobs } = await import("@/lib/ai/locate");
   const { queued, missingItems } = await enqueueMissingLocateJobs(admin);
   if (!missingItems) return { ok: true, msg: "좌표가 없는 검토 대기 문항이 없습니다.", queued: 0 };
-  await tickLocateJobs(admin, Date.now() + 25_000);
   revalidatePath("/admin/review-status");
   return {
     ok: true,
     queued,
     msg: queued
-      ? `시험 ${queued}개의 문항 영역 찾기를 시작했습니다. 보통 몇 분 걸리고, 이 화면을 닫아도 계속 진행됩니다.`
+      ? `시험 ${queued}개의 문항 영역 찾기를 시작했습니다. AI 일괄 처리라 보통 수 분(붐비면 1시간 가까이) 걸리고, 이 화면을 닫아도 계속 진행됩니다.`
       : "이미 진행 중입니다. 잠시 뒤 새로고침해 주세요.",
   };
-}
-
-/** 진행 중인 영역 찾기 작업을 한 걸음 진행(화면이 열려 있는 동안 주기적으로 호출). */
-export async function pollLocateItems(): Promise<Result> {
-  await requireRole("admin");
-  const admin = createAdminClient();
-  const { tickLocateJobs } = await import("@/lib/ai/locate");
-  await tickLocateJobs(admin, Date.now() + 20_000);
-  revalidatePath("/admin/review-status");
-  return { ok: true };
 }
