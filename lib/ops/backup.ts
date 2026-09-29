@@ -42,6 +42,10 @@ const TABLES = [
   "item_locate_jobs",
   "ai_usage",
   "bug_reports", // 0026 과외선생님 버그 신고(0026 전이면 요약에 오류로만 표시)
+  "student_numbers", // 0036 학번(관리자 전용) — 백업 파일도 관리자만 받는다
+  "tutor_gold_attempts", // 0037 정답 아는 문항 풀이 기록
+  "tutor_judgments", // 0037 정답률(맞음/틀림) 기록
+  "student_keys", // 0039 학생 합치기·숨기기·상담 메모
 ];
 
 // id 열이 없는 표의 기본키(마이그레이션 기준)
@@ -54,6 +58,8 @@ const KEY_COLS: Record<string, string[]> = {
   exam_jobs: ["exam_id"],
   digitize_jobs: ["exam_id"],
   item_locate_jobs: ["exam_id"],
+  student_numbers: ["user_id"],
+  student_keys: ["key"],
 };
 
 async function dumpTable(client: Client, table: string): Promise<{ rows: any[]; error?: string }> {
