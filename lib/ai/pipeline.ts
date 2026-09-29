@@ -22,6 +22,7 @@ import { assignPoints } from "./points";
 import { Job, JobState, claimJobLease, getJob, isActiveStage, setJob } from "./job";
 import { getExamPdfBuffer } from "./pdf";
 import { openExamIfAllConfirmed } from "@/lib/review/confirm";
+import { detectJejuSchool } from "@/lib/jejuSchools";
 import { clearLowBalanceAlert, getAiCreds, recordLowBalanceAlert, recordUsage } from "./settings";
 import { enqueueLocateJobIfMissing } from "./locate";
 
@@ -476,6 +477,24 @@ async function finishExam(
     if (error) throw error;
   }
   await (client.from("exams") as any).update({ status: "검수대기" }).eq("id", examId);
+  // 2026-09-29: 검수대기로 넘어갈 때 제주 학교 여부를 한 번 더 확인한다(만들 때 표시가 빠진 시험이 있었음 — 검토 배정 순서에 영향).
+  // 제주로 켜기만 하고 끄지는 않는다(원장님이 직접 바꾼 표시 보존). 실패해도 처리는 계속.
+  try {
+    const { data: ex } = (await (client.from("exams") as any)
+      .select("name, is_jeju, school_level")
+      .eq("id", examId)
+      .maybeSingle()) as any;
+    if (ex && !ex.is_jeju) {
+      const d = detectJejuSchool(ex.name ?? "");
+      if (d.jeju) {
+        const patch: Record<string, unknown> = { is_jeju: true };
+        if (!ex.school_level && d.level) patch.school_level = d.level;
+        await (client.from("exams") as any).update(patch).eq("id", examId);
+      }
+    }
+  } catch {
+    /* 무시 */
+  }
   // AI가 일부 문항의 영역(bbox)을 빼먹었으면 과외선생님 화면에 쪽 전체가 보이므로, 영역만 다시 찾는 작업을 걸어 둔다.
   await enqueueLocateJobIfMissing(client, examId);
 
