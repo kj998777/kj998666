@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { tickExamJob } from "@/lib/ai/pipeline";
 import { isActiveStage } from "@/lib/ai/job";
 import { tickLocateJobs } from "@/lib/ai/locate";
+import { tickQrScans } from "@/lib/ai/qrMask";
 import { runBackupIfDue } from "@/lib/ops/backup";
 
 // 외부 무료 크론 서비스(cron-job.org 등)가 주기적으로 이 엔드포인트를 호출해서, 브라우저 탭을
@@ -68,6 +69,13 @@ async function handle(request: Request) {
   } catch {
     /* 다음 크론 주기에 다시 */
   }
+  // 원본 속 QR 찾기(lib/ai/qrMask.ts, 0031) — 남은 시간 안에서만. 0031 전이면 아무것도 안 함.
+  let qrScanned = 0;
+  try {
+    qrScanned = await tickQrScans(admin, started + TIME_BUDGET_MS);
+  } catch {
+    /* 다음 크론 주기에 다시 */
+  }
   // 정기 백업(lib/ops/backup.ts, 0025) — 마지막 백업이 7일 넘었을 때만. 0025 전이면 아무것도 안 함.
   let backup: string | null = null;
   if (Date.now() - started < 30_000) {
@@ -77,7 +85,7 @@ async function handle(request: Request) {
       /* 다음 크론 주기에 다시 */
     }
   }
-  return NextResponse.json({ ok: true, checked: jobs?.length ?? 0, ticked: results.length, stillActive, located, backup });
+  return NextResponse.json({ ok: true, checked: jobs?.length ?? 0, ticked: results.length, stillActive, located, qrScanned, backup });
 }
 
 export async function GET(request: Request) {
