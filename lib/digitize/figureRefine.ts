@@ -8,6 +8,9 @@
 //  3. AI 영역 안에 그림다운 덩어리가 있으면 그대로 쓰되, 그 덩어리가 영역 밖으로 삐져나가면 영역을 넓혀 잘리지 않게 한다.
 //  4. 없으면(글자만 잡혔으면) 같은 단 근처(위아래로 쪽 높이의 25%)에서 AI 영역에 가장 가까운 그림 덩어리를 찾아 그 자리로 옮긴다.
 //  5. 그래도 못 찾으면 AI 영역 그대로 두고 "확인 필요"로 알린다.
+// 2026-09-29 원장님 제보 2(그림 자리에 시험지 머리말·여러 문제가 통째로 잘려 나옴): 머리말 표 테두리·단 구분선처럼 쪽을 가로지르는
+// 긴 직선이 여러 문제를 한 덩어리로 이어 붙여 "거대한 그림"이 되던 문제 → 긴 직선은 먼저 지우고 살피고, 너무 큰 덩어리는 그림으로
+// 치지 않으며, AI 영역에서 크게(쪽의 12% 넘게) 벗어나게 넓히지는 않는다(그럴 땐 AI 영역을 믿는다).
 // 브라우저(캔버스)와 테스트(가짜 픽셀 배열) 모두에서 쓰도록 픽셀 배열만 받는 순수 함수로 짰다.
 
 export type Box = { x0: number; y0: number; x1: number; y1: number }; // 1000×1000 좌표
@@ -17,6 +20,55 @@ export type RefineResult = { box: Box; status: "ok" | "expanded" | "moved" | "su
 type Comp = { x0: number; y0: number; x1: number; y1: number; n: number; frame: boolean };
 
 const WORK_W = 700; // 이 너비로 줄여서 살핀다(속도)
+const MAX_GROW = 120; // AI 영역을 넓힐 때 한 변에서 최대(1000 좌표, 쪽의 12%)
+
+/**
+ * 쪽을 가로지르는 긴 직선(가로는 쪽 너비 50% 이상, 세로는 쪽 높이 40% 이상)을 지운다 — 머리말 표·단 구분선·쪽 테두리.
+ * 사진·스캔은 살짝 기울어 있어 한 줄로 곧게 이어지지 않으므로, 위아래(또는 좌우) ±K칸을 한 줄로 보고 찾는다.
+ */
+function eraseLongLines(ink: Uint8Array, W: number, H: number) {
+  const K = Math.max(3, Math.round(W / 110)); // 700 너비에서 6칸(쪽의 약 1%)
+  const erase = new Uint8Array(W * H);
+  // 가로선: 열마다 세로 누적합으로 "y±K 안에 잉크가 있나"를 빠르게 본다
+  const colPre = new Int32Array((H + 1) * W);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) colPre[(y + 1) * W + x] = colPre[y * W + x] + (ink[y * W + x] ? 1 : 0);
+  const minH = Math.round(W * 0.5);
+  for (let y = 0; y < H; y++) {
+    const a = Math.max(0, y - K);
+    const b = Math.min(H, y + K + 1);
+    let x = 0;
+    while (x < W) {
+      if (colPre[b * W + x] - colPre[a * W + x] === 0) {
+        x++;
+        continue;
+      }
+      let e = x;
+      while (e < W && colPre[b * W + e] - colPre[a * W + e] > 0) e++;
+      if (e - x >= minH) for (let yy = a; yy < b; yy++) for (let k = x; k < e; k++) erase[yy * W + k] = 1;
+      x = e;
+    }
+  }
+  // 세로선: 행마다 가로 누적합
+  const rowPre = new Int32Array(H * (W + 1));
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) rowPre[y * (W + 1) + x + 1] = rowPre[y * (W + 1) + x] + (ink[y * W + x] ? 1 : 0);
+  const minV = Math.round(H * 0.4);
+  for (let x = 0; x < W; x++) {
+    const a = Math.max(0, x - K);
+    const b = Math.min(W, x + K + 1);
+    let y = 0;
+    while (y < H) {
+      if (rowPre[y * (W + 1) + b] - rowPre[y * (W + 1) + a] === 0) {
+        y++;
+        continue;
+      }
+      let e = y;
+      while (e < H && rowPre[e * (W + 1) + b] - rowPre[e * (W + 1) + a] > 0) e++;
+      if (e - y >= minV) for (let yy = y; yy < e; yy++) for (let k = a; k < b; k++) erase[yy * W + k] = 1;
+      y = e;
+    }
+  }
+  for (let i = 0; i < ink.length; i++) if (erase[i]) ink[i] = 0;
+}
 
 /**
  * gray: 쪽 전체의 밝기(0~255) 배열(가로 w × 세로 h). figure: AI가 준 그림 영역(1000 좌표).
@@ -48,6 +100,7 @@ export function refineFigureBox(gray: Uint8ClampedArray | Uint8Array, w: number,
       ink[y * W + x] = dark ? 1 : 0;
     }
   }
+  eraseLongLines(ink, W, H);
   const comps = components(ink, W, H);
   const toK = (c: { x0: number; y0: number; x1: number; y1: number }): Box => ({
     x0: (c.x0 / W) * 1000,
@@ -63,7 +116,9 @@ export function refineFigureBox(gray: Uint8ClampedArray | Uint8Array, w: number,
     const b = toK(c);
     const bw = b.x1 - b.x0;
     const bh = b.y1 - b.y0;
-    const figureLike = bw >= 80 && bh >= 50 && bw <= 980 && bh <= 900;
+    // 쪽의 35%를 넘게 차지하거나 세로로 60%를 넘는 덩어리는 그림이 아니라 쪽 틀·여러 문제가 이어 붙은 것
+    const tooBig = bw * bh > 350000 || bh > 600;
+    const figureLike = bw >= 80 && bh >= 50 && bw <= 980 && !tooBig;
     const frame = c.frame; // 속이 빈 네모 틀(<보기>·조건 상자 테두리)
     if (figureLike && !frame) figs.push(b);
     else if (figureLike && frame) frames.push(b);
@@ -87,6 +142,9 @@ export function refineFigureBox(gray: Uint8ClampedArray | Uint8Array, w: number,
     // 새 영역이 AI 영역 안에 거의 다 들어가고 AI 영역이 지나치게 크지 않으면 AI 영역을 그대로 쓴다
     const inside = out.x0 >= fb.x0 - 8 && out.y0 >= fb.y0 - 8 && out.x1 <= fb.x1 + 8 && out.y1 <= fb.y1 + 8;
     if (inside && area(fb) <= 1.6 * area(out)) return { box: fb, status: "ok" };
+    // AI 영역에서 크게 벗어나게 넓혀야 하면(다른 문제·머리말까지 딸려 올 위험) 넓히지 않고 AI 영역을 믿는다
+    const M = MAX_GROW;
+    if (out.x0 < fb.x0 - M || out.y0 < fb.y0 - M || out.x1 > fb.x1 + M || out.y1 > fb.y1 + M) return { box: fb, status: "ok" };
     return { box: out, status: "expanded" };
   }
   // 4. 근처에서 가장 가까운 그림 덩어리로 옮기기(같은 단: 가로 중심이 AI 영역 가로 범위 ±15% 안, 세로 ±25%)

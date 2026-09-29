@@ -23,6 +23,20 @@ export function scanBackupPathOf(examId: string): string {
   return `${examId}/scan.pdf`;
 }
 
+// 2026-09-29: 스캔본을 바꿀 수 있게 되면서(다른 시험지를 넣었을 때) 같은 경로에 덮어쓰면 Storage 캐시 때문에 예전 파일이
+// 내려올 수 있어(uploadPdf.ts 주석 참고) 새로 넣을 때마다 `<examId>/scan-<시각>.pdf`로 저장한다. 예전 이름(scan.pdf)도 읽는다.
+const SCAN_RE = /^scan(-\d+)?\.pdf$/;
+
+/** 보관 중인 스캔본 파일들(가장 최근 것이 앞). */
+async function listScanPaths(client: Client, examId: string): Promise<string[]> {
+  const { data } = await client.storage.from(BUCKET).list(examId, { limit: 1000 });
+  return ((data as any[]) ?? [])
+    .map((o) => String(o?.name ?? ""))
+    .filter((n) => SCAN_RE.test(n))
+    .sort((a, b) => (Number(b.slice(5, -4)) || 0) - (Number(a.slice(5, -4)) || 0))
+    .map((n) => `${examId}/${n}`);
+}
+
 /** 원본으로 적용하기 직전에 부른다: 지금 원본이 스캔본이면 scan.pdf로 복사해 둔다(이미 적용된 시험이면 그대로 둠). */
 export async function backupScanBeforeDigitizedApply(client: Client, examId: string): Promise<boolean> {
   const meta = await getExamPdfMeta(client, examId);
@@ -31,7 +45,7 @@ export async function backupScanBeforeDigitizedApply(client: Client, examId: str
   if (error || !data) throw new Error("스캔본을 따로 보관하지 못했습니다: " + (error?.message || "?"));
   const { error: upErr } = await client.storage
     .from(BUCKET)
-    .upload(scanBackupPathOf(examId), Buffer.from(await data.arrayBuffer()), { contentType: "application/pdf", upsert: true });
+    .upload(`${examId}/scan-${Date.now()}.pdf`, Buffer.from(await data.arrayBuffer()), { contentType: "application/pdf", upsert: true });
   if (upErr) throw new Error("스캔본을 따로 보관하지 못했습니다: " + upErr.message);
   return true;
 }
@@ -41,14 +55,13 @@ export async function hasScanPdf(client: Client, examId: string): Promise<boolea
   const meta = await getExamPdfMeta(client, examId);
   if (!meta) return false;
   if (!meta.replaced_with_digitized) return true;
-  const { data } = await client.storage.from(BUCKET).list(examId, { limit: 100, search: "scan.pdf" });
-  return ((data as any[]) ?? []).some((o) => o?.name === "scan.pdf");
+  return (await listScanPaths(client, examId)).length > 0;
 }
 
 /**
  * 2026-09-29: 예전에 '원본으로 적용'하면서 스캔본이 지워진 시험에 스캔 PDF만 다시 넣는다(디지털화는 다시 안 함).
- * 브라우저가 `<examId>/scan-upload-<시각>.pdf`로 올린 파일을 scan.pdf로 옮긴다. 그림 자리는 스캔본 쪽 좌표라
- * 디지털화된 쪽 번호보다 쪽수가 적으면(다른 파일) 거절한다.
+ * 브라우저가 `<examId>/scan-upload-<시각>.pdf`로 올린 파일을 scan.pdf로 옮긴다(이미 있으면 바꾼다). 그림 자리는 스캔본 쪽 좌표라
+ * 디지털화된 쪽 번호보다 쪽수가 적거나 디지털화 때 쪽수와 다르면(다른 파일) 거절한다.
  */
 export async function restoreScanPdf(client: Client, examId: string, uploadedPath: string): Promise<{ pages: number; digitizedPages: number }> {
   const meta = await getExamPdfMeta(client, examId);
@@ -78,11 +91,26 @@ export async function restoreScanPdf(client: Client, examId: string, uploadedPat
     await cleanup();
     throw new Error(`올린 PDF는 ${pages}쪽인데 디지털화는 ${maxPage}쪽까지 있습니다. 처음 디지털화했던 스캔 PDF를 올려 주세요.`);
   }
+  // 디지털화할 때 AI가 읽은 스캔본 쪽수(digitize_jobs.state.totalPages)와 달라도 다른 파일이다(2026-09-29: 다른 시험지를 넣은 일이 있었음)
+  const { data: job } = (await client.from("digitize_jobs").select("state").eq("exam_id", examId).maybeSingle()) as any;
+  const total = Number(job?.state?.totalPages);
+  if (Number.isFinite(total) && total > 0 && total !== pages) {
+    await cleanup();
+    throw new Error(`처음 디지털화한 스캔본은 ${total}쪽인데 올린 PDF는 ${pages}쪽입니다. 같은 시험지 스캔 PDF인지 확인해 주세요.`);
+  }
+  const prev = await listScanPaths(client, examId);
   const { error: upErr } = await client.storage
     .from(BUCKET)
-    .upload(scanBackupPathOf(examId), buf, { contentType: "application/pdf", upsert: true });
+    .upload(`${examId}/scan-${Date.now()}.pdf`, buf, { contentType: "application/pdf", upsert: true });
   if (upErr) throw new Error("스캔본을 저장하지 못했습니다: " + upErr.message);
   await cleanup();
+  if (prev.length) {
+    try {
+      await client.storage.from(BUCKET).remove(prev); // 예전(잘못 넣은) 스캔본 정리
+    } catch {
+      /* 무시 */
+    }
+  }
   return { pages, digitizedPages: pageNos.length };
 }
 
@@ -90,7 +118,8 @@ export async function restoreScanPdf(client: Client, examId: string, uploadedPat
 export async function getScanPdfBuffer(client: Client, examId: string): Promise<Buffer | null> {
   const meta = await getExamPdfMeta(client, examId);
   if (!meta) return null;
-  const path = meta.replaced_with_digitized ? scanBackupPathOf(examId) : meta.storage_path;
+  const path = meta.replaced_with_digitized ? (await listScanPaths(client, examId))[0] : meta.storage_path;
+  if (!path) return null;
   const { data, error } = await client.storage.from(BUCKET).download(path);
   if (error || !data) return null;
   return Buffer.from(await data.arrayBuffer());
@@ -175,7 +204,7 @@ export async function finalizePdfUpload(
   );
   if (metaErr) throw metaErr;
   // 새 시험지를 다시 올린 경우 따로 보관하던 예전 스캔본(scan.pdf)은 더 이상 맞지 않으므로 함께 지운다
-  if (!isDigitized) older.push(scanBackupPathOf(examId));
+  if (!isDigitized) older.push(scanBackupPathOf(examId), ...(await listScanPaths(client, examId)));
   // 이전 버전 정리(관리자만 삭제 권한이 있음 — 편집자가 올린 경우 등 실패해도 무시).
   if (older.length) {
     try {

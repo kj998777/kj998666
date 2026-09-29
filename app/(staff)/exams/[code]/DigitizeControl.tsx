@@ -238,8 +238,9 @@ export default function DigitizeControl({
           </div>
           {job.stage === "dg_done" && scanMissing && <ScanRestoreBox code={code} examId={examId} />}
           {job.stage === "dg_done" && !scanMissing && (
-            <div>
+            <div className="space-y-1">
               <FigureFixPanel code={code} />
+              {appliedAsOriginal && <ScanRestoreBox code={code} examId={examId} mode="replace" />}
             </div>
           )}
           {applyMsg && <p className={applyMsg.indexOf("실패") === 0 ? "text-red-600" : "text-slate-500"}>{applyMsg}</p>}
