@@ -5,52 +5,10 @@ import { compressImage, MAX_UPLOAD_BYTES } from "@/lib/image/compress";
 import { actionErrorMessage } from "@/lib/actionError";
 import { useRouter } from "next/navigation";
 import { submitPrimaryReview, submitVerification, releaseReviewClaim, claimNextReviewItem } from "../actions";
+import { MathPreview, MathToolbar } from "@/app/_components/MathTools";
 
-// 정답·풀이 칸에서 키보드로 치기 힘든 수학 기호를 버튼 클릭으로 커서 위치에 끼워 넣는다.
-// (특수기호를 아예 못 적어 "3의 세제곱근" 처럼 풀어 써야 했던 불편을 없앤다.)
-const MATH_SYMBOLS = [
-  "√", "²", "³", "±", "×", "÷", "≤", "≥", "≠", "≈",
-  "∵", "∴", "π", "°", "∞", "∠", "△", "∑", "∫", "→",
-];
-
-function insertAtCursor(
-  el: HTMLInputElement | HTMLTextAreaElement | null,
-  current: string,
-  set: (v: string) => void,
-  symbol: string
-) {
-  if (!el) {
-    set(current + symbol);
-    return;
-  }
-  const start = el.selectionStart ?? current.length;
-  const end = el.selectionEnd ?? current.length;
-  set(current.slice(0, start) + symbol + current.slice(end));
-  // 값이 바뀌면 커서가 리셋되므로, 리렌더 다음 프레임에 원하는 위치로 다시 옮겨 준다.
-  requestAnimationFrame(() => {
-    el.focus();
-    const pos = start + symbol.length;
-    el.setSelectionRange(pos, pos);
-  });
-}
-
-function SymbolToolbar({ onPick }: { onPick: (symbol: string) => void }) {
-  return (
-    <div className="flex flex-wrap gap-1 mt-1">
-      {MATH_SYMBOLS.map((s) => (
-        <button
-          key={s}
-          type="button"
-          className="w-8 h-8 flex items-center justify-center rounded border border-slate-200 text-sm hover:bg-slate-50"
-          onClick={() => onPick(s)}
-        >
-          {s}
-        </button>
-      ))}
-    </div>
-  );
-}
-
+// 정답·풀이 칸의 수식 도구(2026-09-29): 관리자 화면과 같은 MathToolbar(분수·루트·경우 나누기 같은 수식 틀과 기호)와
+// MathPreview(적은 수식이 해설·PDF에 보일 모양)를 쓴다. 예전의 기호 버튼(√, π, ² …)을 대신한다.
 // 새 문항(primary)과 사후 검증(verify) 제출을 같은 폼으로 처리한다 — 화면도, 입력 방식도 완전히
 // 동일해야 검증자가 "이건 검증용이구나"를 눈치채지 못한다(블라인드 검증의 핵심).
 const MIN_SOLUTION_CHARS = 10; // actions.ts와 같은 값
@@ -180,22 +138,24 @@ export default function SubmissionForm({
           className="input"
           value={answerDisplay}
           onChange={(e) => setAnswerDisplay(e.target.value)}
-          placeholder="예: 3 또는 12.5 또는 3/4"
+          placeholder="예: 3 또는 12.5 또는 3/4 (분수·루트는 아래 버튼)"
         />
-        <SymbolToolbar onPick={(s) => insertAtCursor(answerRef.current, answerDisplay, setAnswerDisplay, s)} />
+        <MathToolbar target={answerRef} value={answerDisplay} onChange={setAnswerDisplay} circled />
+        <MathPreview text={answerDisplay} className="mt-1" />
       </div>
       <div>
         <label className="label">
           풀이 <span className="font-normal text-rose-600">(글 또는 사진 중 하나는 꼭 필요)</span>
         </label>
+        <MathToolbar target={solutionRef} value={solution} onChange={setSolution} />
         <textarea
           ref={solutionRef}
-          className="input min-h-32"
+          className="input min-h-32 mt-1"
           value={solution}
           onChange={(e) => setSolution(e.target.value)}
-          placeholder="풀이 과정을 적어 주세요."
+          placeholder="풀이 과정을 적어 주세요. 위 버튼으로 분수·루트·경우 나누기 같은 수식을 넣을 수 있습니다."
         />
-        <SymbolToolbar onPick={(s) => insertAtCursor(solutionRef.current, solution, setSolution, s)} />
+        <MathPreview text={solution} className="mt-2" />
       </div>
       <div>
         <label className="label">풀이 사진</label>
