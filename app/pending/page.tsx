@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 // #6: 자율 가입(회원가입) 계정의 기본 역할 '대기'가 도착하는 화면. 관리자가 계정 관리 화면에서
 // 알맞은 권한으로 바꿔줄 때까지는 아무 것도 할 수 없고, 이 안내와 로그아웃 버튼만 볼 수 있다.
 // admin/editor/viewer/tutor 계정이 실수로 여기 들어오면 각자의 홈으로 돌려보낸다.
-// 2026-09-29 원장님 요청: 가입 때 적은 이메일·과·기수(학번)·이름을 원장님 카카오톡으로 보내 달라는 안내 + 복사 버튼,
+// 2026-09-29 원장님 요청: 가입 때 적은 이메일·과·기수(학번)·이름 + 학생증/도서관 출입증 캡처를 원장님 카카오톡으로 보내 달라는 안내 + 복사 버튼,
 // 원장님 카카오톡 오픈채팅(링크·링크로 만든 QR, 계정 관리에서 설정 — 0033 site_contact)을 함께 보여 준다.
 export default async function PendingPage() {
   const session = await getSessionAndRole();
@@ -35,6 +35,7 @@ export default async function PendingPage() {
     ...(dept ? [`과: ${dept}`] : []),
     ...(prof?.cohort ? [`${cohortLabel}: ${prof.cohort}`] : []),
     ...(prof?.display_name ? [`이름: ${prof.display_name}`] : []),
+    "(학생증 또는 도서관 출입증 캡처 함께 보냅니다)",
   ];
   const message = lines.join("\n");
 
@@ -57,8 +58,8 @@ export default async function PendingPage() {
         <div className="text-center space-y-2">
           <h1 className="text-lg font-semibold">대기중인 계정입니다</h1>
           <p className="text-sm text-slate-500">
-            아직 이 계정에는 사용 권한이 지정되지 않았습니다. 승인을 받으려면 아래 가입 정보를 <b>원장님 카카오톡 오픈채팅</b>으로
-            보내 주세요.
+            아직 이 계정에는 사용 권한이 지정되지 않았습니다. 승인을 받으려면 아래 가입 정보와 <b>학생증 또는 도서관 출입증 캡처</b>를
+            <b>원장님 카카오톡 오픈채팅</b>으로 보내 주세요.
           </p>
         </div>
 
@@ -73,7 +74,12 @@ export default async function PendingPage() {
         </div>
 
         <div className="rounded-lg border border-yellow-300 bg-[#FEE500]/30 p-3 space-y-3">
-          <p className="text-sm font-medium text-slate-900">② 원장님 오픈채팅에 들어가서 붙여 넣어 보내 주세요</p>
+          <p className="text-sm font-medium text-slate-900">② 원장님 오픈채팅에 들어가서 붙여 넣고, 학생증 캡처도 함께 보내 주세요</p>
+          <p className="text-xs text-slate-600">
+            {/* 2026-09-29 원장님 요청: 재학생 확인용 */}
+            📎 <b>학생증</b> 또는 <b>도서관 출입증</b>(모바일 학생증 화면도 됨)을 캡처해 사진으로 같이 보내 주세요. 이름·학교(과)·학번이 보이면
+            되고, 그 밖의 번호는 가려도 괜찮습니다.
+          </p>
           {hasContact ? (
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
               {qr && (
