@@ -104,7 +104,9 @@ function shortLevel(name: string, alias: string): "고" | "중" | null {
 
 /** 시험 이름에서 제주 학교 여부와 학교급(알 수 있으면)을 알아낸다. */
 export function detectJejuSchool(examName: string): { jeju: boolean; level: "고" | "중" | null } {
-  const name = String(examName ?? "").replace(/\s+/g, "");
+  // 분해형(NFD) 한글이면 글자 비교가 안 되므로 표준형(NFC)으로 바꿔서 본다(2026-09-29 — 맥 파일 이름으로 만든 시험)
+  examName = String(examName ?? "").normalize("NFC");
+  const name = examName.replace(/\s+/g, "");
   // 긴 이름부터 비교해야 "제주여고"가 "제주고"로 잘못 걸리지 않는다(둘 다 제주 학교라 결과는 같지만 학교급 판단용).
   const all: [string, "고" | "중"][] = [
     ...JEJU_HIGH_ALIASES.map((a) => [a, "고"] as [string, "고"]),
