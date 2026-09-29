@@ -96,6 +96,11 @@ export default async function DashboardPage({
       title: "반 관리",
       desc: "학생이 제출 화면에서 고를 학교급·학년·반 목록을 관리합니다. 과외선생님 학생 제출은 \"과외 반\"에 모여 있습니다.",
     },
+    {
+      href: "/students",
+      title: "학생 분석",
+      desc: "학생별 시험 점수 추이, 영역·단원별 정답률, 우선 복습할 단원과 다시 풀 문항을 보고 학부모 상담용 누적 보고서 PDF를 받습니다.",
+    },
   ];
   if (isAdmin) {
     cards.push(
