@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { compressImage } from "@/lib/image/compress";
 import { useRouter } from "next/navigation";
 import { submitPrimaryReview, submitVerification, releaseReviewClaim, claimNextReviewItem } from "../actions";
 
@@ -124,7 +125,9 @@ export default function SubmissionForm({
     });
   }
 
-  function handleImageChange(file: File | null) {
+  async function handleImageChange(raw: File | null) {
+    // 큰 휴대폰 사진은 서버 한도(약 4.5MB)를 넘겨 제출이 실패했으므로 올리기 전에 줄인다(lib/image/compress.ts)
+    const file = raw ? await compressImage(raw) : null;
     setImage(file);
     setImagePreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
