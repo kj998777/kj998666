@@ -208,7 +208,7 @@ export default function LoginPage() {
           {mode === "signup" && (
             <div>
               <span className="label">과</span>
-              <div className="grid grid-cols-4 gap-1" role="radiogroup" aria-label="과">
+              <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${DEPARTMENTS.length}, minmax(0, 1fr))` }} role="radiogroup" aria-label="과">
                 {DEPARTMENTS.map((d) => (
                   <button
                     key={d}
