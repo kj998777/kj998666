@@ -325,3 +325,38 @@ export async function adminSolveItem(
   refresh(exam?.code);
   return { ok: true, regraded, examOpened };
 }
+
+// ---------------------------------------------------------------------------
+// 2026-09-29 원장님 요청: 관리자도 문항 화면에서 풀이 사진을 올린다. 과외선생님 사진과 같은 비공개 버킷
+// (tutor-review-photos, 0005)의 admin/<문항 id>/ 아래에 저장하고, 보기는 관리자 전용 라우트로만 한다.
+// ---------------------------------------------------------------------------
+const ADMIN_PHOTO_BUCKET = "tutor-review-photos";
+const ADMIN_PHOTO_MAX = 4 * 1024 * 1024; // 브라우저에서 줄여서 보내므로 넉넉함(서버 요청 한도 약 4.5MB)
+
+export async function adminUploadItemPhoto(itemId: string, form: FormData): Promise<Result> {
+  await requireRole("admin");
+  if (!/^[0-9a-f-]{36}$/i.test(itemId)) return { ok: false, msg: "문항을 찾을 수 없습니다." };
+  const file = form.get("photo");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, msg: "사진을 골라 주세요." };
+  if (!file.type.startsWith("image/")) return { ok: false, msg: "이미지 파일만 올릴 수 있습니다." };
+  if (file.size > ADMIN_PHOTO_MAX) return { ok: false, msg: "사진 용량이 너무 큽니다(4MB 이하)." };
+  const ext = (file.type.split("/")[1] || "jpg").replace(/[^a-z0-9]/gi, "").slice(0, 5) || "jpg";
+  const path = `admin/${itemId}/${Date.now()}.${ext}`;
+  const admin = createAdminClient();
+  const { error } = await admin.storage
+    .from(ADMIN_PHOTO_BUCKET)
+    .upload(path, Buffer.from(await file.arrayBuffer()), { contentType: file.type, upsert: false });
+  if (error) return { ok: false, msg: "사진을 올리지 못했습니다: " + error.message };
+  revalidatePath(`/admin/review-status/item/${itemId}`);
+  return { ok: true };
+}
+
+export async function adminDeleteItemPhoto(itemId: string, name: string): Promise<Result> {
+  await requireRole("admin");
+  if (!/^[0-9a-f-]{36}$/i.test(itemId) || !/^[0-9]+\.[a-z0-9]{1,5}$/i.test(name)) return { ok: false, msg: "잘못된 요청입니다." };
+  const admin = createAdminClient();
+  const { error } = await admin.storage.from(ADMIN_PHOTO_BUCKET).remove([`admin/${itemId}/${name}`]);
+  if (error) return { ok: false, msg: "지우지 못했습니다: " + error.message };
+  revalidatePath(`/admin/review-status/item/${itemId}`);
+  return { ok: true };
+}
