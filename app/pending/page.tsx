@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import SignOutButton from "../(staff)/SignOutButton";
 import RefreshButton from "./RefreshButton";
 import CopyButton from "./CopyButton";
+import PendingMessage from "./PendingMessage";
 
 export const dynamic = "force-dynamic";
 
@@ -28,16 +29,19 @@ export default async function PendingPage() {
     prof = r.error ? ((await admin.from("profiles").select("display_name, cohort").eq("id", session.userId).maybeSingle()) as any).data : r.data;
   }
   const dept: string = prof?.department ?? "";
-  const cohortLabel = dept && dept !== "의대" ? "학번" : "기수";
-  const lines = [
+  // 의대는 기수, 나머지 과는 가입 때 적은 학번("21학번" 등) — 아래 학번(학생증 번호 전체)과 헷갈리지 않게 "입학 학번"으로
+  const cohortLabel = dept && dept !== "의대" ? "입학 학번" : "기수";
+  const head = [
     "[메딕차트 가입 승인 요청]",
     `이메일: ${session.email}`,
     ...(dept ? [`과: ${dept}`] : []),
     ...(prof?.cohort ? [`${cohortLabel}: ${prof.cohort}`] : []),
     ...(prof?.display_name ? [`이름: ${prof.display_name}`] : []),
-    "(학생증 또는 도서관 출입증 캡처 함께 보냅니다)",
   ];
-  const message = lines.join("\n");
+  const tail = ["(학생증 또는 도서관 출입증 캡처 함께 보냅니다)"];
+  // 가입 때 학번 칸에 번호 전체(8자리 이상)를 적었다면 미리 채워 둔다
+  const cohortDigits = String(prof?.cohort ?? "").replace(/\s+/g, "");
+  const initialStudentNo = /^[0-9A-Za-z]{8,20}$/.test(cohortDigits) && /\d{6}/.test(cohortDigits) ? cohortDigits : "";
 
   // 원장님 카카오톡(0033 전이면 없음)
   const supabase = await createClient();
@@ -58,23 +62,15 @@ export default async function PendingPage() {
         <div className="text-center space-y-2">
           <h1 className="text-lg font-semibold">대기중인 계정입니다</h1>
           <p className="text-sm text-slate-500">
-            아직 이 계정에는 사용 권한이 지정되지 않았습니다. 승인을 받으려면 아래 가입 정보와 <b>학생증 또는 도서관 출입증 캡처</b>를
+            아직 이 계정에는 사용 권한이 지정되지 않았습니다. 승인을 받으려면 아래 가입 정보(<b>학번</b> 포함)와 <b>학생증 또는 도서관 출입증 캡처</b>를
             <b>원장님 카카오톡 오픈채팅</b>으로 보내 주세요.
           </p>
         </div>
 
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-medium text-amber-900">① 이 내용을 복사해서</p>
-            <CopyButton text={message} label="내용 복사" targetId="pending-msg" />
-          </div>
-          <pre id="pending-msg" className="whitespace-pre-wrap break-all rounded bg-white px-3 py-2 text-sm text-slate-800 border border-amber-200 font-sans">
-            {message}
-          </pre>
-        </div>
+        <PendingMessage head={head} tail={tail} initialStudentNo={initialStudentNo} />
 
         <div className="rounded-lg border border-yellow-300 bg-[#FEE500]/30 p-3 space-y-3">
-          <p className="text-sm font-medium text-slate-900">② 원장님 오픈채팅에 들어가서 붙여 넣고, 학생증 캡처도 함께 보내 주세요</p>
+          <p className="text-sm font-medium text-slate-900">③ 원장님 오픈채팅에 들어가서 붙여 넣고, 학생증 캡처도 함께 보내 주세요</p>
           <p className="text-xs text-slate-600">
             {/* 2026-09-29 원장님 요청: 재학생 확인용 */}
             📎 <b>학생증</b> 또는 <b>도서관 출입증</b>(모바일 학생증 화면도 됨)을 캡처해 사진으로 같이 보내 주세요. 이름·학교(과)·학번이 보이면
