@@ -147,3 +147,24 @@ export async function revokeUser(userId: string) {
   revalidatePath("/admin/users");
   return { ok: true };
 }
+
+/** 2026-09-29: 대기 화면에 띄울 원장님 카카오톡 연락처 저장(0033 site_contact, 관리자만). */
+export async function saveKakaoContact(input: { kakao_id: string; kakao_url: string; kakao_qr: string; note: string }) {
+  await requireRole("admin");
+  const kakao_id = String(input?.kakao_id ?? "").trim().slice(0, 60);
+  let kakao_url = String(input?.kakao_url ?? "").trim();
+  const kakao_qr = String(input?.kakao_qr ?? "");
+  const note = String(input?.note ?? "").trim().slice(0, 300);
+  if (kakao_url && !/^https?:\/\//i.test(kakao_url)) kakao_url = "https://" + kakao_url;
+  if (kakao_url.length > 300) return { ok: false, msg: "링크가 너무 깁니다." };
+  if (kakao_qr && !/^data:image\/(png|jpeg|webp);base64,/.test(kakao_qr)) return { ok: false, msg: "QR 그림 형식이 올바르지 않습니다." };
+  if (kakao_qr.length > 400000) return { ok: false, msg: "QR 그림이 너무 큽니다. 화면 캡처를 잘라서 다시 올려 주세요." };
+  const supabase = await createClient();
+  const { error } = await (supabase.from("site_contact") as any)
+    .update({ kakao_id: kakao_id || null, kakao_url: kakao_url || null, kakao_qr: kakao_qr || null, note: note || null, updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (error) return { ok: false, msg: "저장하지 못했습니다: " + error.message };
+  revalidatePath("/admin/users");
+  revalidatePath("/pending");
+  return { ok: true };
+}

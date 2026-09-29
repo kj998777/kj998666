@@ -5,7 +5,7 @@ import { adjustTutorPoints, changeRole, revokeUser } from "./actions";
 import type { Role } from "@/lib/supabase/types";
 import { personLabel } from "@/lib/profile/label";
 
-type Profile = { id: string; email: string; role: Role; created_at: string; display_name?: string | null; cohort?: string | null };
+type Profile = { id: string; email: string; role: Role; created_at: string; display_name?: string | null; cohort?: string | null; department?: string | null };
 type TutorStats = { points_balance: number; reviews_submitted: number; reviews_flagged: number };
 
 export default function UserRow({
@@ -35,7 +35,7 @@ export default function UserRow({
     <tr className="border-b border-slate-100">
       <td className="py-2 pr-2">
         {(profile.display_name || profile.cohort) && (
-          <div className="font-medium text-slate-900">{personLabel({ display_name: profile.display_name, cohort: profile.cohort })}</div>
+          <div className="font-medium text-slate-900">{personLabel({ display_name: profile.display_name, cohort: profile.cohort, department: profile.department })}</div>
         )}
         <span className={profile.display_name || profile.cohort ? "text-slate-500" : ""}>{profile.email}</span>{" "}
         {isMe && <span className="text-slate-400">(나)</span>}
