@@ -76,7 +76,7 @@ export default async function AdminUsersPage() {
           <h2 className="font-medium mb-1 text-amber-900">대기중인 계정 ({pendingProfiles.length}명)</h2>
           <p className="text-sm text-amber-800 mb-3">
             직접 회원가입한 계정입니다. 알맞은 권한을 지정해 줄 때까지는 아무 화면도 볼 수 없습니다.
-            카카오톡으로 받은 <b>학번(학생증 번호, 예: 2025114055)</b>을 붙여 넣고 &ldquo;학번 저장하고 과외선생님으로
+            카카오톡으로 받은 <b>학번(학생증 번호, 예: 2025XXXXXX)</b>을 붙여 넣고 &ldquo;학번 저장하고 과외선생님으로
             승인&rdquo;을 누르면 됩니다(환영 포인트 3P가 함께 들어갑니다). 학번은 관리자만 볼 수 있고, 이미 다른 계정에 등록된
             학번이면 승인되지 않습니다.
           </p>

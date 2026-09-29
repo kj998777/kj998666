@@ -187,7 +187,7 @@ function studentNoError(r: any, error?: any): string {
       return `이 학번은 이미 다른 계정(${who ? who + " · " : ""}${r.other_email ?? "알 수 없음"})에 등록돼 있어 승인할 수 없습니다.`;
     }
     case "format":
-      return "학번 형식이 올바르지 않습니다(숫자·영문 4~20자, 예: 2025114055).";
+      return "학번 형식이 올바르지 않습니다(숫자·영문 4~20자, 예: 2025XXXXXX).";
     case "empty":
       return "학번을 붙여 넣어 주세요.";
     case "no_user":
