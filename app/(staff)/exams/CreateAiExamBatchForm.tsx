@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import PdfDropInput from "./PdfDropInput";
-import { createExamRow, finalizeAiExamUpload, pollAiJob, type JobPoll } from "./ai-actions";
+import { createExamRow, finalizeAiExamUpload, type JobPoll } from "./ai-actions";
+import { pollJob } from "@/lib/jobPoll";
 import { pdfTooLarge, uploadPdfDirect } from "@/lib/supabase/uploadPdf";
 import { ACTIVE, STAGE_LABEL } from "./aiJobStage";
 
@@ -254,17 +255,29 @@ export default function CreateAiExamBatchForm() {
 /** 배치로 만든 시험들의 AI 자동 처리 진행 상황을 한 화면에서 같이 보여준다(AiJobPanel의 여러-개 버전). */
 function BatchAiJobPanel({ codes }: { codes: string[] }) {
   const [jobs, setJobs] = useState<Record<string, JobPoll>>({});
-  const [, start] = useTransition();
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    // 2026-09-29 최적화: fetch로 확인(화면 이동을 막지 않음), 앞선 확인이 끝나기 전에는 새로 부르지 않음
+    let busy = false;
     async function tick() {
-      const entries = await Promise.all(codes.map(async (c) => [c, await pollAiJob(c)] as const));
-      if (!cancelled) setJobs(Object.fromEntries(entries));
+      if (busy) return;
+      busy = true;
+      try {
+        const entries = await Promise.all(codes.map(async (c) => [c, await pollJob<JobPoll>(c, "ai")] as const));
+        if (cancelled) return;
+        setJobs((prev) => {
+          const next = { ...prev };
+          for (const [c, r] of entries) if (r.ok) next[c] = r.data;
+          return next;
+        });
+      } finally {
+        busy = false;
+      }
     }
     tick();
-    timer.current = setInterval(() => start(tick), 4000);
+    timer.current = setInterval(tick, 5000);
     return () => {
       cancelled = true;
       if (timer.current) clearInterval(timer.current);
