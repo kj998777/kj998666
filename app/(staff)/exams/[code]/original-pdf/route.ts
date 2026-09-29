@@ -38,7 +38,7 @@ export async function GET(request: Request, { params }: { params: { code: string
   if (!bytes) {
     const meta = await getExamPdfMeta(supabase, exam.id).catch(() => null);
     const msg = meta?.replaced_with_digitized
-      ? "이 시험은 예전에 '원본으로 적용'하면서 스캔본이 지워져 그림을 다시 오릴 수 없습니다. 스캔 PDF를 다시 올리고 디지털화를 다시 시작해 주세요."
+      ? "이 시험은 예전에 '원본으로 적용'하면서 스캔본이 지워졌습니다. 디지털화 칸의 '스캔본 다시 올리기'로 처음 올렸던 스캔 PDF를 넣어 주세요(디지털화는 다시 안 해도 됩니다)."
       : "시험지 PDF를 불러오지 못했습니다.";
     return Response.json({ ok: false, msg }, { status: meta?.replaced_with_digitized ? 409 : 400 });
   }

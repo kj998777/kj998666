@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { cancelDigitizeJob, startDigitizeJob, tickDigitizeJob } from "@/lib/ai/digitize";
-import { backupScanBeforeDigitizedApply, finalizePdfUpload } from "@/lib/ai/pdf";
+import { backupScanBeforeDigitizedApply, finalizePdfUpload, restoreScanPdf } from "@/lib/ai/pdf";
 import { applyNewPdfLocations } from "@/lib/ai/relocate";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -145,4 +145,23 @@ export async function saveDigitizedFigures(
     const { error: upErr } = await (supabase.from("digitized_pages") as any).update({ data: { ...data, items } }).eq("id", row.id);
     if (upErr) return { ok: false, msg: "저장하지 못했습니다: " + upErr.message };
     return { ok: true };
+}
+
+/**
+ * 2026-09-29: '원본으로 적용'하면서 스캔본이 지워진 예전 시험에 스캔 PDF만 다시 넣는다. 디지털화 결과(문항·그림 자리)는 그대로 두고,
+ * 그림 다시 오리기·그림 자리 직접 고치기가 다시 되게 한다. 브라우저가 uploadScanRestoreDirect로 올린 경로를 받는다.
+ */
+export async function restoreScanPdfAction(code: string, uploadedPath: string) {
+    await requireRole("admin");
+    const exam = await getExamByCode(code);
+    if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
+    const path = String(uploadedPath || "");
+    if (!new RegExp(`^${exam.id}/scan-upload-\\d+\\.pdf$`).test(path)) return { ok: false, msg: "올린 파일 경로가 올바르지 않습니다." };
+    try {
+        const r = await restoreScanPdf(createAdminClient(), exam.id, path);
+        revalidatePath(`/exams/${code}`);
+        return { ok: true, pages: r.pages };
+    } catch (e: any) {
+        return { ok: false, msg: String(e?.message ?? e) };
+    }
 }
