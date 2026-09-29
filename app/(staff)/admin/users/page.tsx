@@ -31,6 +31,14 @@ export default async function AdminUsersPage() {
   const staffProfiles = (profiles ?? []).filter((p: any) => p.role !== "tutor" && p.role !== "대기");
   const tutorProfiles = (profiles ?? []).filter((p: any) => p.role === "tutor");
 
+  // 2026-09-29: 학번(0036)이 저장된 계정 목록 — 번호는 읽지 않고 누구에게 있는지만(번호는 "보기"를 눌러야 불러옴).
+  let studentNoIds: Set<string> | null = null;
+  {
+    const { data: sn, error: snErr } = (await (supabase.from("student_numbers") as any).select("user_id")) as { data: any[] | null; error: any };
+    if (!snErr) studentNoIds = new Set((sn ?? []).map((r: any) => r.user_id));
+  }
+  const hasNo = (id: string) => (studentNoIds ? studentNoIds.has(id) : undefined);
+
   let tutorStatsById: Record<string, { points_balance: number; reviews_submitted: number; reviews_flagged: number }> = {};
   if (tutorProfiles.length > 0) {
     const { data: stats } = await supabase
@@ -68,7 +76,9 @@ export default async function AdminUsersPage() {
           <h2 className="font-medium mb-1 text-amber-900">대기중인 계정 ({pendingProfiles.length}명)</h2>
           <p className="text-sm text-amber-800 mb-3">
             직접 회원가입한 계정입니다. 알맞은 권한을 지정해 줄 때까지는 아무 화면도 볼 수 없습니다.
-            후배라면 &ldquo;과외선생님으로 승인&rdquo;을 누르면 됩니다(환영 포인트 3P가 함께 들어갑니다).
+            카카오톡으로 받은 <b>학번(학생증 번호, 예: 2025114055)</b>을 붙여 넣고 &ldquo;학번 저장하고 과외선생님으로
+            승인&rdquo;을 누르면 됩니다(환영 포인트 3P가 함께 들어갑니다). 학번은 관리자만 볼 수 있고, 이미 다른 계정에 등록된
+            학번이면 승인되지 않습니다.
           </p>
           <div className="table-wrap">
           <table className="w-full min-w-[30rem] sm:min-w-0 text-sm">
@@ -82,7 +92,7 @@ export default async function AdminUsersPage() {
             </thead>
             <tbody>
               {pendingProfiles.map((p: any) => (
-                <UserRow key={p.id} profile={p} isMe={p.id === session.userId} approveAsTutor />
+                <UserRow key={p.id} profile={p} isMe={p.id === session.userId} approveAsTutor hasStudentNo={hasNo(p.id)} />
               ))}
             </tbody>
           </table>
@@ -107,7 +117,7 @@ export default async function AdminUsersPage() {
           </thead>
           <tbody>
             {staffProfiles.map((p: any) => (
-              <UserRow key={p.id} profile={p} isMe={p.id === session.userId} />
+              <UserRow key={p.id} profile={p} isMe={p.id === session.userId} hasStudentNo={hasNo(p.id)} />
             ))}
           </tbody>
         </table>
@@ -131,7 +141,7 @@ export default async function AdminUsersPage() {
             </thead>
             <tbody>
               {tutorProfiles.map((p: any) => (
-                <UserRow key={p.id} profile={p} isMe={p.id === session.userId} tutorStats={tutorStatsById[p.id]} />
+                <UserRow key={p.id} profile={p} isMe={p.id === session.userId} tutorStats={tutorStatsById[p.id]} hasStudentNo={hasNo(p.id)} />
               ))}
             </tbody>
           </table>

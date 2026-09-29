@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { adjustTutorPoints, changeRole, revokeUser } from "./actions";
+import { adjustTutorPoints, approveWithStudentNo, changeRole, revealStudentNo, revokeUser, setStudentNo } from "./actions";
 import type { Role } from "@/lib/supabase/types";
 import { personLabel } from "@/lib/profile/label";
 
@@ -20,15 +20,41 @@ export default function UserRow({
   isMe,
   tutorStats,
   approveAsTutor,
+  hasStudentNo,
 }: {
   profile: Profile;
   isMe: boolean;
   tutorStats?: TutorStats;
   // 대기 계정 목록: "과외선생님으로 승인" 버튼을 함께 보여 준다(2026-09-28)
   approveAsTutor?: boolean;
+  // 2026-09-29: 학번(0036)이 저장돼 있는지(숫자 자체는 페이지에 싣지 않음 — "보기"를 눌러야 불러옴). undefined = 0036 전
+  hasStudentNo?: boolean;
 }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
+  const [okMsg, setOkMsg] = useState("");
+  const isPendingRow = profile.role === "대기";
+  // 대기 계정 승인용 학번 입력(카카오톡으로 받은 학번을 붙여 넣음)
+  const [studentNo, setStudentNoInput] = useState("");
+
+  /** 대기 계정을 승인: 학번을 붙여 넣었으면 저장과 승인을 한 번에, 이미 저장된 학번이 있고 비워 뒀으면 그대로 승인. */
+  const approve = (role: Role, sel?: HTMLSelectElement) => {
+    setErr("");
+    setOkMsg("");
+    const no = studentNo.trim();
+    if (!no && !hasStudentNo) {
+      setErr("학번을 먼저 붙여 넣어 주세요(카카오톡으로 받은 학생증 번호).");
+      if (sel) sel.value = profile.role;
+      return;
+    }
+    start(async () => {
+      const r: any = no ? await approveWithStudentNo(profile.id, no, role) : await changeRole(profile.id, role);
+      if (!r.ok) {
+        setErr(r.msg ?? "실패했습니다.");
+        if (sel) sel.value = profile.role;
+      }
+    });
+  };
 
   // #115: 관리자가 이 과외선생님 계정의 포인트를 임의로 지급/차감(테스트용). tutorStats가 있는
   // (=role이 tutor인) 행에서만 노출한다.
@@ -52,6 +78,28 @@ export default function UserRow({
         )}
         <span className={profile.display_name || profile.cohort ? "text-slate-500" : ""}>{profile.email}</span>{" "}
         {isMe && <span className="text-slate-400">(나)</span>}
+        {isPendingRow && !isMe && (
+          <div className="mt-1.5">
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              className="input py-1 px-2 w-48 text-sm"
+              placeholder={hasStudentNo ? "저장된 학번 있음(바꿀 때만 입력)" : "학번 붙여넣기 (예: 2025114055)"}
+              value={studentNo}
+              disabled={pending}
+              onChange={(e) => {
+                setStudentNoInput(e.target.value);
+                setErr("");
+              }}
+              aria-label="학번(학생증 번호)"
+            />
+            <div className="text-[11px] text-amber-800 mt-0.5">학번은 관리자만 보며, 이미 다른 계정에 있는 학번이면 승인되지 않습니다.</div>
+          </div>
+        )}
+        {!isPendingRow && !isMe && profile.role !== "admin" && hasStudentNo !== undefined && (
+          <StudentNoControl userId={profile.id} initiallySaved={!!hasStudentNo} />
+        )}
         {tutorStats && (
           <>
             <div className="text-xs text-slate-400 mt-0.5">
@@ -120,6 +168,10 @@ export default function UserRow({
           onChange={(e) => {
             setErr("");
             const role = e.target.value as Role;
+            if (isPendingRow && role !== "대기" && role !== "admin") {
+              approve(role, e.target);
+              return;
+            }
             start(async () => {
               const r = await changeRole(profile.id, role);
               if (!r.ok) setErr(r.msg ?? "실패했습니다.");
@@ -132,7 +184,8 @@ export default function UserRow({
           <option value="admin">관리자</option>
           <option value="tutor">과외선생님</option>
         </select>
-        {err && <div className="text-xs text-red-600 mt-1">{err}</div>}
+        {err && <div className="text-xs text-red-600 mt-1 max-w-[16rem]">{err}</div>}
+        {okMsg && <div className="text-xs text-emerald-600 mt-1">{okMsg}</div>}
       </td>
       <td className="py-2 pr-2 text-slate-500">
         {new Date(profile.created_at).toLocaleDateString("ko-KR")}
@@ -141,16 +194,11 @@ export default function UserRow({
         {approveAsTutor && !isMe && (
           <button
             className="btn-primary py-1 px-3 mr-2"
-            disabled={pending}
-            onClick={() => {
-              setErr("");
-              start(async () => {
-                const r = await changeRole(profile.id, "tutor");
-                if (!r.ok) setErr(r.msg ?? "실패했습니다.");
-              });
-            }}
+            disabled={pending || (!studentNo.trim() && !hasStudentNo)}
+            title={!studentNo.trim() && !hasStudentNo ? "왼쪽에 학번을 먼저 붙여 넣어 주세요" : undefined}
+            onClick={() => approve("tutor")}
           >
-            과외선생님으로 승인
+            학번 저장하고 과외선생님으로 승인
           </button>
         )}
         {!isMe && (
@@ -171,5 +219,95 @@ export default function UserRow({
         )}
       </td>
     </tr>
+  );
+}
+
+/** 승인된 계정의 학번: 평소에는 "저장됨/없음"만 보이고, 누를 때만 불러와서 보여 주고 고칠 수 있다(관리자 전용). */
+function StudentNoControl({ userId, initiallySaved }: { userId: string; initiallySaved: boolean }) {
+  const [saved, setSaved] = useState(initiallySaved);
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, start] = useTransition();
+
+  if (!open) {
+    return (
+      <div className="text-xs text-slate-400 mt-0.5">
+        학번 {saved ? "저장됨" : "없음"} ·{" "}
+        <button
+          type="button"
+          className="text-sky-700 hover:underline"
+          disabled={busy}
+          onClick={() =>
+            start(async () => {
+              setMsg(null);
+              if (!saved) {
+                setValue("");
+                setOpen(true);
+                return;
+              }
+              const r = await revealStudentNo(userId);
+              if (!r.ok) {
+                setMsg({ ok: false, text: r.msg });
+                return;
+              }
+              setValue(r.studentNo ?? "");
+              setOpen(true);
+            })
+          }
+        >
+          {saved ? "보기·고치기" : "입력"}
+        </button>
+        {msg && <span className={msg.ok ? " text-emerald-600" : " text-red-600"}> {msg.text}</span>}
+      </div>
+    );
+  }
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1 text-xs">
+      <input
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        className="input py-0.5 px-1 w-36 text-xs font-mono"
+        placeholder="학번 (비우면 지움)"
+        value={value}
+        disabled={busy}
+        onChange={(e) => setValue(e.target.value)}
+        aria-label="학번(학생증 번호)"
+      />
+      <button
+        type="button"
+        className="btn-secondary py-0.5 px-2 text-xs"
+        disabled={busy}
+        onClick={() =>
+          start(async () => {
+            const r = await setStudentNo(userId, value);
+            if (!r.ok) {
+              setMsg({ ok: false, text: r.msg });
+              return;
+            }
+            setSaved(!!value.trim());
+            setValue("");
+            setOpen(false);
+            setMsg({ ok: true, text: "저장했습니다" });
+          })
+        }
+      >
+        저장
+      </button>
+      <button
+        type="button"
+        className="text-slate-500 hover:underline"
+        disabled={busy}
+        onClick={() => {
+          setValue("");
+          setOpen(false);
+          setMsg(null);
+        }}
+      >
+        닫기
+      </button>
+      {msg && !msg.ok && <div className="w-full text-red-600">{msg.text}</div>}
+    </div>
   );
 }
