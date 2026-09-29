@@ -74,7 +74,7 @@ export default async function AdminUsersPage() {
           <table className="w-full min-w-[30rem] sm:min-w-0 text-sm">
             <thead>
               <tr className="text-left text-amber-700 border-b border-amber-200">
-                <th className="py-2 pr-2">기수·이름 / 이메일</th>
+                <th className="py-2 pr-2">과·기수(학번)·이름 / 이메일</th>
                 <th className="py-2 pr-2">권한</th>
                 <th className="py-2 pr-2">가입일</th>
                 <th className="py-2 pr-2"></th>
@@ -99,7 +99,7 @@ export default async function AdminUsersPage() {
         <table className="w-full min-w-[30rem] sm:min-w-0 text-sm">
           <thead>
             <tr className="text-left text-slate-500 border-b border-slate-200">
-              <th className="py-2 pr-2">기수·이름 / 이메일</th>
+              <th className="py-2 pr-2">과·기수(학번)·이름 / 이메일</th>
               <th className="py-2 pr-2">권한</th>
               <th className="py-2 pr-2">가입일</th>
               <th className="py-2 pr-2"></th>
@@ -123,7 +123,7 @@ export default async function AdminUsersPage() {
           <table className="w-full min-w-[30rem] sm:min-w-0 text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-200">
-                <th className="py-2 pr-2">기수·이름 / 이메일 / 활동</th>
+                <th className="py-2 pr-2">과·기수(학번)·이름 / 이메일 / 활동</th>
                 <th className="py-2 pr-2">권한</th>
                 <th className="py-2 pr-2">가입일</th>
                 <th className="py-2 pr-2"></th>

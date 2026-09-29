@@ -8,6 +8,13 @@ import { personLabel } from "@/lib/profile/label";
 type Profile = { id: string; email: string; role: Role; created_at: string; display_name?: string | null; cohort?: string | null; department?: string | null };
 type TutorStats = { points_balance: number; reviews_submitted: number; reviews_flagged: number };
 
+const DEPT_BADGE: Record<string, string> = {
+  의대: "bg-rose-100 text-rose-800",
+  수의대: "bg-emerald-100 text-emerald-800",
+  약대: "bg-sky-100 text-sky-800",
+  간호대: "bg-violet-100 text-violet-800",
+};
+
 export default function UserRow({
   profile,
   isMe,
@@ -34,8 +41,14 @@ export default function UserRow({
   return (
     <tr className="border-b border-slate-100">
       <td className="py-2 pr-2">
-        {(profile.display_name || profile.cohort) && (
-          <div className="font-medium text-slate-900">{personLabel({ display_name: profile.display_name, cohort: profile.cohort, department: profile.department })}</div>
+        {(profile.display_name || profile.cohort || profile.department) && (
+          <div className="font-medium text-slate-900 flex flex-wrap items-center gap-1.5">
+            {/* 2026-09-29: 과(0033)를 배지로 — 의대도 보이게(이름 표시 personLabel은 의대를 생략하므로 여기서는 과를 따로 붙임) */}
+            {profile.department && (
+              <span className={"badge text-xs " + (DEPT_BADGE[profile.department] ?? "bg-slate-100 text-slate-700")}>{profile.department}</span>
+            )}
+            {(profile.display_name || profile.cohort) && <span>{personLabel({ display_name: profile.display_name, cohort: profile.cohort })}</span>}
+          </div>
         )}
         <span className={profile.display_name || profile.cohort ? "text-slate-500" : ""}>{profile.email}</span>{" "}
         {isMe && <span className="text-slate-400">(나)</span>}
