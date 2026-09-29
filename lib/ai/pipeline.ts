@@ -23,6 +23,7 @@ import { Job, JobState, claimJobLease, getJob, isActiveStage, setJob } from "./j
 import { getExamPdfBuffer } from "./pdf";
 import { openExamIfAllConfirmed } from "@/lib/review/confirm";
 import { detectJejuSchool } from "@/lib/jejuSchools";
+import { enqueueQrScan } from "./qrMask";
 import { clearLowBalanceAlert, getAiCreds, recordLowBalanceAlert, recordUsage } from "./settings";
 import { enqueueLocateJobIfMissing } from "./locate";
 
@@ -495,6 +496,8 @@ async function finishExam(
   } catch {
     /* 무시 */
   }
+  // 2026-09-29: 원본 쪽 안의 QR 위치도 찾아 둔다(학생·과외용 PDF에서 흰 칸으로 가림 — lib/ai/qrMask.ts). 실패해도 계속.
+  await enqueueQrScan(client, examId).catch(() => false);
   // AI가 일부 문항의 영역(bbox)을 빼먹었으면 과외선생님 화면에 쪽 전체가 보이므로, 영역만 다시 찾는 작업을 걸어 둔다.
   await enqueueLocateJobIfMissing(client, examId);
 
