@@ -52,6 +52,8 @@ function SymbolToolbar({ onPick }: { onPick: (symbol: string) => void }) {
 
 // 새 문항(primary)과 사후 검증(verify) 제출을 같은 폼으로 처리한다 — 화면도, 입력 방식도 완전히
 // 동일해야 검증자가 "이건 검증용이구나"를 눈치채지 못한다(블라인드 검증의 핵심).
+const MIN_SOLUTION_CHARS = 10; // actions.ts와 같은 값
+
 export default function SubmissionForm({
   itemExplanationId,
   kind,
@@ -66,6 +68,8 @@ export default function SubmissionForm({
   const solutionRef = useRef<HTMLTextAreaElement | null>(null);
   const [image, setImage] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  // 풀이 필수(2026-09-29): 풀이 글 MIN_SOLUTION_CHARS자 이상 또는 풀이 사진 — 서버(actions.ts)에서도 같은 검사
+  const needSolution = solution.trim().length < MIN_SOLUTION_CHARS && !image;
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
   const [result, setResult] = useState<{ pointsEarned: number; isMatch?: boolean } | null>(null);
@@ -173,7 +177,9 @@ export default function SubmissionForm({
         <SymbolToolbar onPick={(s) => insertAtCursor(answerRef.current, answerDisplay, setAnswerDisplay, s)} />
       </div>
       <div>
-        <label className="label">풀이 (선택)</label>
+        <label className="label">
+          풀이 <span className="font-normal text-rose-600">(글 또는 사진 중 하나는 꼭 필요)</span>
+        </label>
         <textarea
           ref={solutionRef}
           className="input min-h-32"
@@ -184,7 +190,7 @@ export default function SubmissionForm({
         <SymbolToolbar onPick={(s) => insertAtCursor(solutionRef.current, solution, setSolution, s)} />
       </div>
       <div>
-        <label className="label">풀이 사진 (선택)</label>
+        <label className="label">풀이 사진</label>
         <p className="text-xs text-slate-500 mb-1">
           손으로 쓴 풀이를 사진으로 찍거나, 앨범에 있는 사진·화면 캡처를 골라 올려도 됩니다. 자동으로 정리·디지털화되지
           않고, 올린 사진 그대로 저장됩니다.
@@ -229,10 +235,15 @@ export default function SubmissionForm({
         )}
       </div>
       {err && <p className="text-sm text-red-600">{err}</p>}
+      {needSolution && (
+        <p className="text-sm text-amber-700">
+          풀이를 {MIN_SOLUTION_CHARS}자 이상 적거나 풀이 사진을 올려야 제출할 수 있어요.
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <button
           className="btn-primary"
-          disabled={pending || !answerDisplay.trim()}
+          disabled={pending || !answerDisplay.trim() || needSolution}
           onClick={() =>
             start(async () => {
               setErr("");
