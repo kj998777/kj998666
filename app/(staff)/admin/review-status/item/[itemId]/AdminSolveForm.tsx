@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { adminSolveItem } from "../../actions";
+import { MathPreview, MathToolbar } from "@/app/_components/MathTools";
 
 export default function AdminSolveForm({
   itemId,
@@ -21,6 +22,8 @@ export default function AdminSolveForm({
   const [key, setKey] = useState(initialKey);
   const [display, setDisplay] = useState(initialDisplay);
   const [solution, setSolution] = useState(initialSolution);
+  const displayRef = useRef<HTMLInputElement | null>(null);
+  const solutionRef = useRef<HTMLTextAreaElement | null>(null);
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -57,25 +60,31 @@ export default function AdminSolveForm({
           </label>
           <input
             id="adm-display"
+            ref={displayRef}
             className="input"
             value={display}
             onChange={(e) => setDisplay(e.target.value)}
             placeholder="비워 두면 정답표 값과 같게"
           />
           <p className="text-xs text-slate-400 mt-1">{"해설·보고서에 보이는 정답(예: ③, 12, $\\frac{3}{4}$)."}</p>
+          <MathToolbar target={displayRef} value={display} onChange={setDisplay} circled />
+          <MathPreview text={display} className="mt-1" />
         </div>
       </div>
       <div>
         <label className="label" htmlFor="adm-sol">
           풀이
         </label>
+        <MathToolbar target={solutionRef} value={solution} onChange={setSolution} />
         <textarea
           id="adm-sol"
-          className="input min-h-[220px] font-mono text-sm"
+          ref={solutionRef}
+          className="input min-h-[220px] font-mono text-sm mt-1"
           value={solution}
           onChange={(e) => setSolution(e.target.value)}
-          placeholder="풀이를 적어 주세요. 수식은 $...$ 로 감싸면 PDF·보고서에서 수식으로 보입니다."
+          placeholder="풀이를 적어 주세요. 위 버튼으로 분수·루트·경우 나누기 같은 수식을 넣을 수 있고, 수식은 $...$ 로 감싸면 PDF·보고서에서 수식으로 보입니다."
         />
+        <MathPreview text={solution} className="mt-2" />
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <button className="btn-primary" disabled={pending} onClick={() => save(false)}>

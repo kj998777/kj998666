@@ -153,11 +153,9 @@ function loadPdfJs(): Promise<any> {
 // 조판 CSS (예전 Teacher.html의 .dg* 규칙 그대로) — 한 번만 <style>로 넣는다
 // ---------------------------------------------------------------------
 
-let stylesInjected = false;
-function injectDigitizeStyles(): void {
-  if (stylesInjected) return;
-  stylesInjected = true;
-  const css = `
+// 2026-09-29: 쪽 이미지를 브라우저가 직접 그리게(rasterizeNative) 바꾸면서, 같은 CSS를 그 그림(SVG) 안에도 넣어야 해서
+// 모듈 상수로 뺐다. .dgtall = 여러 줄 수식(cases 등) 위아래 여백 — 윗줄·아랫줄 글자를 침범하지 않게.
+const DG_CSS = `
 .dgpg{position:relative;width:794px;height:1123px;background:#fff;color:#111827;overflow:hidden;font-family:'Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR','Noto Sans CJK KR',sans-serif;font-size:13.5px;line-height:1.8}
 .dgpg *{box-sizing:border-box}
 .dgt{position:absolute;left:44px;width:706px;text-align:center}
@@ -172,7 +170,7 @@ function injectDigitizeStyles(): void {
 .dgc0,.dgc1{position:absolute;top:0;width:338px}
 .dgc0{left:0}.dgc1{left:368px}
 .dgsep{position:absolute;left:353px;top:0;bottom:0;width:1px;background:#9ca3af}
-.dgq{padding-bottom:32px}
+.dgq{padding-bottom:40px}
 .dgx{padding-bottom:22px;font-weight:700}
 .dgln{margin-top:7px}
 .dgln.dgsub{margin-top:14px}
@@ -192,10 +190,17 @@ function injectDigitizeStyles(): void {
 .dgc .dgo b{font-weight:400}
 #dg-measure{position:absolute;left:0;top:0;width:338px;visibility:hidden;font-family:'Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR','Noto Sans CJK KR',sans-serif;font-size:13.5px;line-height:1.8;color:#111827}
 #dg-measure *{box-sizing:border-box}
+.dgtall{display:inline-block;padding:9px 0;line-height:1.5;text-indent:0}
+.dgslot{overflow:hidden}
 `;
+
+let stylesInjected = false;
+function injectDigitizeStyles(): void {
+  if (stylesInjected) return;
+  stylesInjected = true;
   const style = document.createElement("style");
   style.id = "dg-pdf-inline-styles";
-  style.textContent = css;
+  style.textContent = DG_CSS;
   document.head.appendChild(style);
 }
 
@@ -247,8 +252,12 @@ function dgTex(katex: any, t: string | null | undefined): string {
   for (let i = 0; i < parts.length; i++) {
     const isTrailingUnpaired = unpaired && i === parts.length - 1;
     if (i % 2 === 1 && !isTrailingUnpaired) {
+      // 여러 줄 수식(\begin{cases}·행렬·\\ 줄바꿈): 행 간격을 넓히고 위아래 여백을 둬서
+      // 윗줄·아랫줄 글자와 겹치지 않게 한다(2026-09-29 원장님 요청).
+      const tall = /\\begin\{|\\\\/.test(parts[i]);
       try {
-        out.push(katex.renderToString(parts[i], { throwOnError: false }));
+        const html = katex.renderToString(tall ? `\\def\\arraystretch{1.4}${parts[i]}` : parts[i], { throwOnError: false });
+        out.push(tall ? `<span class="dgtall">${html}</span>` : html);
       } catch {
         out.push(esc(parts[i]));
       }
@@ -367,42 +376,144 @@ function dgTrim(cv: HTMLCanvasElement): HTMLCanvasElement {
 }
 
 // ---------------------------------------------------------------------
-// 문항을 읽는 순서대로 단(칼럼)에 채우기 (예전 dgPack)
+// 문항을 읽는 순서대로 단(칼럼)에 채우기 (예전 dgPack → 2026-09-29 보기 편하게 다시 짬)
 // ---------------------------------------------------------------------
+//
+// 원장님 요청(2026-09-29): 문제 사이 간격을 넉넉히 — 짧은 문제는 한 쪽(2단)에 최대 6개(단마다 3개),
+// 긴 문제는 한 쪽에 2개(단마다 1개). 그리고 남는 자리는 문제 아래 풀이 공간으로 고르게 나눈다.
+//  - 묶음(group): 안내글(type "text")은 바로 다음 문항과 한 묶음(단 맨 아래에 안내글만 홀로 남지 않게).
+//  - 한 단에는 문항 묶음 최대 DG_MAX_PER_COL(3)개.
+//  - "긴 문항" = 높이가 단 높이의 DG_LONG_RATIO(45%)를 넘는 묶음 → 그 단에 혼자 놓는다.
+//  - 단 높이를 넘는 묶음은 예전처럼 줄여서(최소 55%) 넣는다.
 
-function dgPack(
-  items: PackItem[],
-  hs: number[],
-  capFirst: number,
-  capFull: number
-): { cols: number[][]; sc: Record<number, number> } {
-  const cols: number[][] = [];
-  let cur: number[] = [];
+const DG_MAX_PER_COL = 3;
+const DG_LONG_RATIO = 0.45;
+
+type DgPacked = { cols: number[][][]; sc: Record<number, number> };
+
+function dgGroups(items: PackItem[]): number[][] {
+  const groups: number[][] = [];
+  let pending: number[] = [];
+  items.forEach((e, i) => {
+    pending.push(i);
+    if (e.it.type !== "text") {
+      groups.push(pending);
+      pending = [];
+    }
+  });
+  if (pending.length) groups.push(pending);
+  return groups;
+}
+
+function dgPack(items: PackItem[], hs: number[], capFirst: number, capFull: number): DgPacked {
+  const cols: number[][][] = [];
+  let cur: number[][] = [];
   let curH = 0;
+  let curLong = false;
   const sc: Record<number, number> = {};
-  function cap(ci: number): number {
-    return ci < 2 ? capFirst : capFull;
-  }
-  for (let i = 0; i < items.length; i++) {
-    let h = hs[i];
-    let need = h;
-    if (items[i].it.type === "text" && i + 1 < items.length) need = h + hs[i + 1]; // 안내글이 단 맨 아래에 홀로 남지 않게
-    if (curH > 0 && curH + need > cap(cols.length)) {
+  const cap = (ci: number) => (ci < 2 ? capFirst : capFull);
+  for (const g of dgGroups(items)) {
+    let gh = g.reduce((t, i) => t + hs[i], 0);
+    const long = gh > cap(cols.length) * DG_LONG_RATIO;
+    if (cur.length && (curLong || long || cur.length >= DG_MAX_PER_COL || curH + gh > cap(cols.length))) {
       cols.push(cur);
       cur = [];
       curH = 0;
     }
     const c = cap(cols.length);
-    if (h > c) {
-      sc[i] = Math.max(0.55, c / h);
-      h = Math.min(h, c);
+    if (gh > c) {
+      const s = Math.max(0.55, c / gh);
+      for (const i of g) {
+        sc[i] = s;
+        hs[i] = hs[i] * s;
+      }
+      gh = g.reduce((t, i) => t + hs[i], 0);
     }
-    cur.push(i);
-    curH += h;
-    hs[i] = h;
+    cur.push(g);
+    curH += gh;
+    curLong = long;
   }
   if (cur.length) cols.push(cur);
   return { cols, sc };
+}
+
+// ---------------------------------------------------------------------
+// 쪽 → 그림: 브라우저가 직접 그리기 (2026-09-29)
+// ---------------------------------------------------------------------
+//
+// 예전에는 html2canvas(html2pdf.js)로 쪽을 그림으로 옮겼는데, html2canvas가 KaTeX의 큰 괄호(cases의 {)·
+// 루트 기호를 제자리에 못 그려서 괄호가 흩어지고 아랫줄 글자를 침범했다(원장님 제보). 화면(브라우저)에서는
+// 제대로 보이므로, 쪽 DOM을 SVG <foreignObject>에 넣어 브라우저가 직접 그리게 한다. SVG 그림 안에서는
+// 외부 파일을 못 불러오므로 KaTeX 글꼴은 data: URL로 넣은 CSS를 쓴다. 이 방식이 실패하면(일부 브라우저가
+// 캔버스를 막는 경우 등) 예전 html2canvas로 되돌아간다.
+
+const KATEX_BASE = "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/";
+
+function bufToB64(buf: ArrayBuffer): string {
+  const b = new Uint8Array(buf);
+  let s = "";
+  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, Array.from(b.subarray(i, i + 0x8000)));
+  return btoa(s);
+}
+
+let inlineCssReady: Promise<string> | null = null;
+function loadInlineKatexCss(): Promise<string> {
+  if (!inlineCssReady) {
+    inlineCssReady = (async () => {
+      const res = await fetch(KATEX_BASE + "katex.min.css");
+      if (!res.ok) throw new Error("수식 글꼴 CSS를 불러오지 못했습니다.");
+      let css = await res.text();
+      const names = Array.from(new Set(Array.from(css.matchAll(/url\((fonts\/[^)]+?\.woff2)\)/g)).map((m) => m[1])));
+      const data = new Map<string, string>();
+      await Promise.all(
+        names.map(async (n) => {
+          const r = await fetch(KATEX_BASE + n);
+          if (!r.ok) throw new Error(`수식 글꼴을 불러오지 못했습니다: ${n}`);
+          data.set(n, "data:font/woff2;base64," + bufToB64(await r.arrayBuffer()));
+        })
+      );
+      // src:url(fonts/X.woff2) format("woff2"),url(…woff) format("woff"),url(…ttf) format("truetype") → woff2 하나만(data:)
+      css = css.replace(/src:\s*url\((fonts\/[^)]+?\.woff2)\)\s*format\(["']woff2["']\)[^;}]*/g, (_m, n) => `src:url(${data.get(n)}) format("woff2")`);
+      return css;
+    })();
+    inlineCssReady.catch(() => {
+      inlineCssReady = null;
+    });
+  }
+  return inlineCssReady;
+}
+
+async function rasterizeNative(el: HTMLElement, css: string, scale: number): Promise<HTMLCanvasElement> {
+  const W = DGL.W;
+  const H = DGL.H;
+  const body = new XMLSerializer().serializeToString(el);
+  const style = css.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${W * scale}" height="${H * scale}" viewBox="0 0 ${W} ${H}">` +
+    `<foreignObject x="0" y="0" width="${W}" height="${H}"><div xmlns="http://www.w3.org/1999/xhtml" style="width:${W}px;height:${H}px">` +
+    `<style>${style}</style>${body}</div></foreignObject></svg>`;
+  const img = new Image();
+  img.decoding = "sync";
+  const loaded = new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error("쪽 그림을 만들지 못했습니다."));
+  });
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  await loaded;
+  try {
+    await img.decode();
+  } catch {
+    // ignore
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = W * scale;
+  canvas.height = H * scale;
+  const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  ctx.getImageData(0, 0, 1, 1); // 캔버스가 막혔으면(taint) 여기서 오류 → 예전 방식으로
+  return canvas;
 }
 
 // ---------------------------------------------------------------------
@@ -581,17 +692,27 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
   const stage = document.createElement("div");
   stageWrap.appendChild(stage);
 
+  function itemHtml(i: number): string {
+    const h = dgItemHtml(katex, items[i].it, items[i].imgs || []);
+    const s = pk.sc[i];
+    return s
+      ? `<div data-dgi="${i}" style="height:${Math.round(hs[i])}px;overflow:hidden"><div style="width:${Math.round(
+          DGL_CW / s
+        )}px;transform:scale(${s});transform-origin:0 0">${h}</div></div>`
+      : `<div data-dgi="${i}">${h}</div>`;
+  }
+  // 단의 남는 높이를 문항 아래 풀이 공간으로 나눈다. 모든 묶음이 (단 높이 ÷ 묶음 수) 안에 들어가면
+  // 같은 높이 칸으로 나눠 좌우 단의 문제 시작선이 맞고, 아니면 남는 높이를 묶음마다 똑같이 더한다.
   function colHtml(ci: number): string {
-    return (pk.cols[ci] || [])
-      .map((i) => {
-        const h = dgItemHtml(katex, items[i].it, items[i].imgs || []);
-        const s = pk.sc[i];
-        return s
-          ? `<div data-dgi="${i}" style="height:${Math.round(hs[i])}px;overflow:hidden"><div style="width:${Math.round(
-              DGL_CW / s
-            )}px;transform:scale(${s});transform-origin:0 0">${h}</div></div>`
-          : `<div data-dgi="${i}">${h}</div>`;
-      })
+    const gs = pk.cols[ci] || [];
+    if (!gs.length) return "";
+    const cap = ci < 2 ? capFirst : capFull;
+    const ghs = gs.map((g) => g.reduce((t, i) => t + hs[i], 0));
+    const slot = Math.floor(cap / gs.length);
+    const even = ghs.every((h) => h <= slot);
+    const extra = even ? 0 : Math.max(0, Math.floor((cap - ghs.reduce((t, h) => t + h, 0)) / gs.length) - 1);
+    return gs
+      .map((g) => `<div class="dgslot" style="${even ? `height:${slot}px` : `padding-bottom:${extra}px`}">${g.map(itemHtml).join("")}</div>`)
       .join("");
   }
 
@@ -651,19 +772,37 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
   const PW = 595.28;
   const PH = 841.89;
   const html2pdfFn = (window as any).html2pdf;
+  let nativeCss: string | null = null;
+  try {
+    nativeCss = DG_CSS + "\n" + (await loadInlineKatexCss());
+  } catch {
+    nativeCss = null;
+  }
   for (let k = 0; k < nPg; k++) {
     tick(`쪽을 그리는 중… ${k + 1}/${nPg}`);
-    const canvas: HTMLCanvasElement = await html2pdfFn()
-      .set({
-        margin: 0,
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", scrollX: 0, scrollY: 0 },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      })
-      .from(pageEls[k])
-      .toCanvas()
-      .get("canvas");
+    let canvas: HTMLCanvasElement | null = null;
+    if (nativeCss) {
+      try {
+        canvas = await rasterizeNative(pageEls[k], nativeCss, 2);
+      } catch (err) {
+        console.warn("브라우저 직접 그리기 실패 — html2canvas로 그립니다.", err);
+        nativeCss = null;
+      }
+    }
+    if (!canvas) {
+      canvas = await html2pdfFn()
+        .set({
+          margin: 0,
+          html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", scrollX: 0, scrollY: 0 },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        })
+        .from(pageEls[k])
+        .toCanvas()
+        .get("canvas");
+    }
+    const cv = canvas as HTMLCanvasElement;
     const jpgBytes: Uint8Array = await new Promise<Uint8Array>((resolve, reject) => {
-      canvas.toBlob(
+      cv.toBlob(
         (b) => {
           if (!b) {
             reject(new Error("이미지를 만들지 못했습니다."));
