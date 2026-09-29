@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { normalizeCohort } from "@/lib/profile/label";
+import { DEPARTMENTS, normalizeCohort, normalizeStudentNo, type Department } from "@/lib/profile/label";
 
 type Mode = "login" | "signup" | "forgot";
 
@@ -37,6 +37,10 @@ export default function LoginPage() {
   const [password2, setPassword2] = useState("");
   // 회원가입 때만: 기수·이름(2026-09-28) — 관리자가 계정 관리 화면에서 누구인지 바로 알아보도록
   const [cohort, setCohort] = useState("");
+  // 2026-09-29: 과(의대·수의대·약대·간호대). 의대는 기수, 나머지는 학번(둘 다 cohort 칸에 저장)
+  const [department, setDepartment] = useState<Department | "">("");
+  const isMed = department === "의대";
+  const cohortValue = isMed ? normalizeCohort(cohort) : normalizeStudentNo(cohort);
   const [displayName, setDisplayName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -121,16 +125,21 @@ export default function LoginPage() {
       setErr("비밀번호 확인이 일치하지 않습니다. 두 칸에 같은 비밀번호를 입력해 주세요.");
       return;
     }
-    if (!normalizeCohort(cohort) || !displayName.trim()) {
+    if (!department) {
       setBusy(false);
-      setErr("기수와 이름을 입력해 주세요.");
+      setErr("과를 골라 주세요.");
+      return;
+    }
+    if (!cohortValue || !displayName.trim()) {
+      setBusy(false);
+      setErr(isMed ? "기수와 이름을 입력해 주세요." : "학번과 이름을 입력해 주세요.");
       return;
     }
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       // 이름·기수만 보낸다. 권한(role)은 가입 트리거(0021)가 항상 '대기'로 정하고, 관리자가 승인한다.
-      options: { data: { display_name: displayName.trim().slice(0, 30), cohort: normalizeCohort(cohort) } },
+      options: { data: { display_name: displayName.trim().slice(0, 30), cohort: cohortValue, department } },
     });
     setBusy(false);
     if (error) {
@@ -197,17 +206,43 @@ export default function LoginPage() {
             />
           </div>
           {mode === "signup" && (
-            <div className="grid grid-cols-[6rem_1fr] gap-2">
+            <div>
+              <span className="label">과</span>
+              <div className="grid grid-cols-4 gap-1" role="radiogroup" aria-label="과">
+                {DEPARTMENTS.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    role="radio"
+                    aria-checked={department === d}
+                    className={
+                      "rounded-md border px-1 py-2 text-sm " +
+                      (department === d ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white hover:bg-slate-50")
+                    }
+                    onClick={() => {
+                      if (department !== d) setCohort("");
+                      setDepartment(d);
+                    }}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {mode === "signup" && department && (
+            <div className="grid grid-cols-[7rem_1fr] gap-2">
               <div>
                 <label className="label" htmlFor="cohort">
-                  기수
+                  {isMed ? "기수" : "학번"}
                 </label>
                 <input
                   id="cohort"
                   required
-                  maxLength={10}
+                  maxLength={isMed ? 10 : 20}
+                  inputMode={isMed ? "numeric" : undefined}
                   className="input"
-                  placeholder="예: 31"
+                  placeholder={isMed ? "예: 31" : "예: 21"}
                   value={cohort}
                   onChange={(e) => setCohort(e.target.value)}
                 />
@@ -277,7 +312,7 @@ export default function LoginPage() {
             type="submit"
             className="btn-primary w-full"
             disabled={
-              busy || !email || (mode !== "forgot" && !password) || (mode === "signup" && (!cohort.trim() || !displayName.trim() || !password2 || password !== password2))
+              busy || !email || (mode !== "forgot" && !password) || (mode === "signup" && (!department || !cohort.trim() || !displayName.trim() || !password2 || password !== password2))
             }
           >
             {busy ? "처리 중…" : mode === "login" ? "로그인" : mode === "signup" ? "회원가입" : "재설정 메일 보내기"}
