@@ -152,23 +152,33 @@ export async function submitVerification(
   });
   if (error) return { ok: false, msg: error.message };
 
-  const { primaryReviewId, verifyReviewId, pointsEarned } = data;
+  const { primaryReviewId, verifyReviewId, pointsEarned } = (data ?? {}) as {
+    primaryReviewId?: string;
+    verifyReviewId?: string;
+    pointsEarned?: number;
+  };
 
+  // 제출(적립)은 위 RPC에서 이미 끝났다 — 아래 일치 비교가 실패해도 예외로 화면을 깨뜨리지 않고 제출 완료로 처리한다
+  // (비교가 안 된 건은 관리자 불일치 화면에서 확인 가능).
   let isMatch = false;
   if (primaryReviewId && verifyReviewId) {
-    const admin = createAdminClient();
-    const { data: primary } = await admin
-      .from("tutor_item_reviews")
-      .select("answer_display")
-      .eq("id", primaryReviewId)
-      .maybeSingle();
-    isMatch = isCorrect(answerDisplay.trim(), primary?.answer_display ?? "");
-    await (supabase.rpc as any)("resolve_tutor_verification", {
-      p_verify_review_id: verifyReviewId,
-      p_is_match: isMatch,
-    });
+    try {
+      const admin = createAdminClient();
+      const { data: primary } = await admin
+        .from("tutor_item_reviews")
+        .select("answer_display")
+        .eq("id", primaryReviewId)
+        .maybeSingle();
+      isMatch = isCorrect(answerDisplay.trim(), primary?.answer_display ?? "");
+      await (supabase.rpc as any)("resolve_tutor_verification", {
+        p_verify_review_id: verifyReviewId,
+        p_is_match: isMatch,
+      });
+    } catch (e) {
+      console.error("verification compare failed", e);
+    }
   }
 
   revalidatePath("/tutor/dashboard");
-  return { ok: true, pointsEarned, isMatch };
+  return { ok: true, pointsEarned: pointsEarned ?? 0, isMatch };
 }
