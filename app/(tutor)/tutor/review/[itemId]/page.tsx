@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireTutor } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import SubmissionForm from "./SubmissionForm";
 import ProblemPageImage from "./ProblemPageImage";
 
@@ -10,20 +11,25 @@ import ProblemPageImage from "./ProblemPageImage";
 // 다시 풀게 한다. verify 문항은 원 제출자의 답을 볼 수 없어야 하므로(블라인드 재검증) 당연히 제외.
 export default async function ReviewItemPage({
   params,
-  searchParams,
 }: {
   params: { itemId: string };
   searchParams: { kind?: string };
 }) {
   await requireTutor();
-  const kind: "primary" | "verify" = searchParams.kind === "verify" ? "verify" : "primary";
 
+  // 0037: 과외선생님 세션은 item_explanations를 직접 읽지 못한다(행 전체 — AI 답·앞사람 답까지 — 가 보이던 구멍을 막음).
+  // 지금 이 문항을 배정받았는지만 DB 함수로 확인하고, 화면에 필요한 열만 서버가 읽어 보여 준다.
   const supabase = await createClient();
-  const { data: item } = (await supabase
-    .from("item_explanations")
-    .select("id, exam_id, item_label, area, unit, difficulty, source_page, bbox_x0, bbox_y0, bbox_x1, bbox_y1")
-    .eq("id", params.itemId)
-    .maybeSingle()) as any;
+  const { data: access } = (await (supabase.rpc as any)("tutor_item_access", { p_item_explanation_id: params.itemId })) as any;
+  const kind: "primary" | "verify" = access === "verify" ? "verify" : "primary";
+  const admin = createAdminClient();
+  const { data: item } = access
+    ? ((await admin
+        .from("item_explanations")
+        .select("id, exam_id, item_label, area, unit, difficulty, source_page, bbox_x0, bbox_y0, bbox_x1, bbox_y1")
+        .eq("id", params.itemId)
+        .maybeSingle()) as any)
+    : { data: null };
 
   if (!item) {
     return (
@@ -36,11 +42,11 @@ export default async function ReviewItemPage({
     );
   }
 
-  const { data: exam } = (await supabase
-    .from("exams")
-    .select("code, name")
-    .eq("id", item.exam_id)
-    .maybeSingle()) as any;
+  const [{ data: exam }, { data: keyRow }] = await Promise.all([
+    admin.from("exams").select("code, name").eq("id", item.exam_id).maybeSingle() as any,
+    // 정답 입력 방식(객관식 ①~⑤ / 주관식)을 정하려고 "유형"만 읽는다 — 정답 값은 읽지 않는다
+    admin.from("answer_key").select("type").eq("exam_id", item.exam_id).eq("item_label", item.item_label).maybeSingle() as any,
+  ]);
 
   return (
     <div className="space-y-4">
@@ -58,7 +64,7 @@ export default async function ReviewItemPage({
           난이도 {item.difficulty}
           {/* 0028: 난이도별 적립 — 하·중하·중 1P, 중상·상 2P (DB review_points_for_item과 같은 규칙) */}
           <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-            제출 시 +{item.difficulty === "중상" || item.difficulty === "상" ? 2 : 1}P
+            기본 +{item.difficulty === "중상" || item.difficulty === "상" ? 2 : 1}P
           </span>
         </p>
         <div className="border-t border-slate-100 pt-2">
@@ -79,7 +85,7 @@ export default async function ReviewItemPage({
         </p>
       </div>
 
-      <SubmissionForm itemExplanationId={item.id} kind={kind} />
+      <SubmissionForm itemExplanationId={item.id} kind={kind} answerType={keyRow?.type === "객관식" ? "객관식" : "주관식"} />
     </div>
   );
 }
