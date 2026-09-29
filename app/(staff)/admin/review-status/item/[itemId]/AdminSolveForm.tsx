@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { adminSolveItem } from "../../actions";
 import { MathPreview, MathToolbar } from "@/app/_components/MathTools";
+import { latexToPlain } from "@/lib/grading";
 
 export default function AdminSolveForm({
   itemId,
@@ -22,6 +23,7 @@ export default function AdminSolveForm({
   const [key, setKey] = useState(initialKey);
   const [display, setDisplay] = useState(initialDisplay);
   const [solution, setSolution] = useState(initialSolution);
+  const keyRef = useRef<HTMLInputElement | null>(null);
   const displayRef = useRef<HTMLInputElement | null>(null);
   const solutionRef = useRef<HTMLTextAreaElement | null>(null);
   const [pending, start] = useTransition();
@@ -51,8 +53,16 @@ export default function AdminSolveForm({
           <label className="label" htmlFor="adm-key">
             정답표(채점용)
           </label>
-          <input id="adm-key" className="input" value={key} onChange={(e) => setKey(e.target.value)} placeholder="예: 3 / 12 / 3/4 (여러 정답은 |)" />
-          <p className="text-xs text-slate-400 mt-1">학생 답안 채점에 쓰는 값입니다. 객관식은 번호만(예: 3).</p>
+          <input id="adm-key" ref={keyRef} className="input" value={key} onChange={(e) => setKey(e.target.value)} placeholder="예: 3 / 12 / 3/4 (여러 정답은 |)" />
+          <p className="text-xs text-slate-400 mt-1">학생 답안 채점에 쓰는 값입니다. 객관식은 번호만(예: 3). 분수·루트는 아래 버튼으로 적어도 됩니다.</p>
+          <MathToolbar target={keyRef} value={key} onChange={setKey} circled />
+          {/[$\\]/.test(key) && (
+            <p className="text-xs text-slate-600 mt-1">
+              정답표에 저장될 모양: <b className="font-mono">{latexToPlain(key) || "—"}</b>
+              <span className="text-slate-400"> (학생이 3/4·0.75·6/8 등으로 적어도 같은 값이면 정답)</span>
+            </p>
+          )}
+          <MathPreview text={key} className="mt-1" />
         </div>
         <div>
           <label className="label" htmlFor="adm-display">

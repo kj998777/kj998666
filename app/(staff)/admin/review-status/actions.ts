@@ -1,5 +1,6 @@
 "use server";
 
+import { latexToPlain } from "@/lib/grading";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
@@ -283,8 +284,11 @@ export async function adminSolveItem(
   input: { key: string; display: string; solution: string }
 ): Promise<Result & { regraded?: number }> {
   const { userId } = await requireRole("admin");
-  const key = String(input?.key ?? "").trim();
-  const display = String(input?.display ?? "").trim() || key;
+  // 2026-09-29: 채점용 답도 수식 버튼으로 적을 수 있다 — 정답표에는 채점·표시가 깔끔한 글 모양(3/4, √3/2)으로 저장하고,
+  // 정답 표시(해설용)를 비워 두면 적은 수식 그대로 쓴다.
+  const rawKey = String(input?.key ?? "").trim();
+  const key = latexToPlain(rawKey).trim();
+  const display = String(input?.display ?? "").trim() || rawKey;
   const solution = String(input?.solution ?? "").trim();
   if (!key) return { ok: false, msg: "정답(정답표)을 입력해 주세요." };
   if (key.length > 200) return { ok: false, msg: "정답이 너무 깁니다(200자 이하)." };
