@@ -1,5 +1,6 @@
 "use client";
 
+import FigureFixPanel from "./FigureFixPanel";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -26,7 +27,7 @@ function figNote(b: { figFixed?: string[]; figSuspect?: string[] }): string {
   const parts: string[] = [];
   if (b.figFixed?.length) parts.push(`그림 자리 자동 보정 ${b.figFixed.length}곳(${b.figFixed.join(", ")}번 — 확인해 주세요)`);
   if (b.figSuspect?.length) parts.push(`그림을 못 찾은 곳 ${b.figSuspect.length}곳(${b.figSuspect.join(", ")}번 — 원본과 비교해 주세요)`);
-  return parts.length ? " · " + parts.join(" · ") : "";
+  return parts.length ? " · " + parts.join(" · ") + " — 아래 '그림 자리 직접 고치기'에서 고칠 수 있어요" : "";
 }
 
 export default function DigitizeControl({
@@ -231,6 +232,11 @@ export default function DigitizeControl({
               </a>
             )}
           </div>
+          {job.stage === "dg_done" && (
+            <div>
+              <FigureFixPanel code={code} />
+            </div>
+          )}
           {applyMsg && <p className={applyMsg.indexOf("실패") === 0 ? "text-red-600" : "text-slate-500"}>{applyMsg}</p>}
           {pdfMsg && <p className={pdfMsg.indexOf("실패") === 0 ? "text-red-600" : "text-slate-500"}>{pdfMsg}</p>}
         </div>

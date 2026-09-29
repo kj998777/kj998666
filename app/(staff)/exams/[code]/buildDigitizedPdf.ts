@@ -28,7 +28,7 @@ import { canvasGray, refineFigureBox, type Box } from "@/lib/digitize/figureRefi
 // AI 결과 데이터 타입 (DG_TOOL, lib/ai/prompts.ts 와 같은 모양)
 // ---------------------------------------------------------------------
 
-type DgFigure = { x0: number; y0: number; x1: number; y1: number; where?: "stem" | "end" };
+type DgFigure = { x0: number; y0: number; x1: number; y1: number; where?: "stem" | "end"; manual?: boolean };
 type DgItem = {
   type: "question" | "text";
   label?: string;
@@ -140,7 +140,7 @@ function loadHtml2Pdf(): Promise<any> {
 }
 
 let pdfJsReady: Promise<any> | null = null;
-function loadPdfJs(): Promise<any> {
+export function loadPdfJs(): Promise<any> {
   if (!pdfJsReady) {
     pdfJsReady = (async () => {
       if ((window as any).pdfjsLib) return (window as any).pdfjsLib;
@@ -544,7 +544,7 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
   if (!g.pages || !g.pages.length) throw new Error("아직 디지털화된 쪽이 없습니다.");
 
   tick("시험지 원본을 불러오는 중…");
-  const pdfRes = await fetch(`/exams/${encodeURIComponent(code)}/original-pdf`, { credentials: "same-origin" });
+  const pdfRes = await fetch(`/exams/${encodeURIComponent(code)}/original-pdf?scan=1`, { credentials: "same-origin" });
   if (!pdfRes.ok) {
     let msg = "시험지 원본 PDF를 불러오지 못했습니다.";
     try {
@@ -619,7 +619,8 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
         const pc = await pageCv(e.pg);
         // 2026-09-29: AI가 준 그림 자리가 빗나가면(그래프 대신 선택지·다음 문제 글자가 잘려 나옴) 원본 쪽에서 실제 그림을 찾아 고친다
         let fb: Box = f;
-        try {
+        // 관리자가 "그림 자리 직접 고치기"로 지정한 그림(manual)은 자동 보정하지 않고 그대로 쓴다
+        if (!f.manual) try {
           let g = grayCache.get(e.pg);
           if (!g) {
             g = canvasGray(pc);
