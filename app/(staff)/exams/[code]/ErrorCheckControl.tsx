@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import {
   cancelErrorCheckAction,
   discardErrorCheckAction,
-  pollErrorCheckAction,
   setErrorFlagAction,
   startErrorCheckAction,
   type ErrorCheckPoll,
 } from "./error-actions";
+import { pollJob } from "@/lib/jobPoll";
 
 const ACTIVE = new Set(["rx_submit", "rx_wait"]);
 
@@ -31,20 +31,28 @@ export default function ErrorCheckControl({
   const [msg, setMsg] = useState("");
   const [pending, start] = useTransition();
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const busy = useRef(false);
 
   useEffect(() => {
     function stop() {
       if (timer.current) clearInterval(timer.current);
       timer.current = null;
     }
+    // 2026-09-29 최적화: fetch로 확인(화면 이동을 막지 않음), 앞선 확인이 끝나기 전에는 새로 부르지 않음
     if (check && ACTIVE.has(check.stage)) {
-      timer.current = setInterval(() => {
-        start(async () => {
-          const r = await pollErrorCheckAction(code, label);
+      timer.current = setInterval(async () => {
+        if (busy.current) return;
+        busy.current = true;
+        try {
+          const res = await pollJob<ErrorCheckPoll>(code, "errcheck", label);
+          if (!res.ok) return;
+          const r = res.data;
           setCheck(r);
           if (r && (r.stage === "rx_done" || r.stage === "rx_error")) router.refresh();
-        });
-      }, 4000);
+        } finally {
+          busy.current = false;
+        }
+      }, 5000);
     } else {
       stop();
     }

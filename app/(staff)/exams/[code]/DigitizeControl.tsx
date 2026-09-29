@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import {
   applyDigitizedPdfAsOriginal,
   cancelDigitizeAction,
-  pollDigitizeAction,
   startDigitizeAction,
   type DigitizePoll,
 } from "./digitize-actions";
+import { pollJob } from "@/lib/jobPoll";
 import { uploadPdfDirect } from "@/lib/supabase/uploadPdf";
 
 const ACTIVE = new Set(["dg_upload", "dg_submit", "dg_wait"]);
@@ -45,6 +45,7 @@ export default function DigitizeControl({
   const [applyMsg, setApplyMsg] = useState("");
   const [pdfMsg, setPdfMsg] = useState("");
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const busy = useRef(false);
 
   async function onDownloadPdf() {
     setPdfBusy(true);
@@ -100,13 +101,19 @@ export default function DigitizeControl({
       if (timer.current) clearInterval(timer.current);
       timer.current = null;
     }
+    // 2026-09-29 최적화: fetch로 확인(화면 이동을 막지 않음), 앞선 확인이 끝나기 전에는 새로 부르지 않음.
+    // 디지털화는 이 화면의 확인이 진행을 밀어 주므로 다른 탭을 봐도 계속 확인한다.
     if (job && ACTIVE.has(job.stage)) {
-      timer.current = setInterval(() => {
-        start(async () => {
-          const r = await pollDigitizeAction(code);
-          setJob(r);
-        });
-      }, 4000);
+      timer.current = setInterval(async () => {
+        if (busy.current) return;
+        busy.current = true;
+        try {
+          const r = await pollJob<DigitizePoll>(code, "digitize");
+          if (r.ok) setJob(r.data);
+        } finally {
+          busy.current = false;
+        }
+      }, 5000);
     } else {
       stop();
     }
