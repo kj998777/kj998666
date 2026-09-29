@@ -17,8 +17,8 @@ export default async function AssignedPage() {
       <div className="card space-y-1">
         <h1 className="text-lg font-semibold">맡은 문제</h1>
         <p className="text-sm text-slate-500">
-          배정받은 문항은 30분 동안 선생님 몫으로 남아 있습니다. 다른 앱에 다녀오거나 화면을 닫았다면 여기서 이어서 풀어 주세요.
-          30분이 지나면 다른 선생님에게 넘어갑니다.
+          배정받은 문항은 1시간 동안 선생님 몫으로 남아 있습니다. 다른 앱에 다녀오거나 화면을 닫았다면 여기서 이어서 풀어 주세요.
+          1시간이 지나면 다른 선생님에게 넘어갑니다.
         </p>
       </div>
 

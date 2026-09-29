@@ -186,16 +186,38 @@ export default function SubmissionForm({
       <div>
         <label className="label">풀이 사진 (선택)</label>
         <p className="text-xs text-slate-500 mb-1">
-          손으로 쓴 풀이를 사진으로 찍어 올려도 됩니다. 자동으로 정리·디지털화되지 않고, 찍은 사진
-          그대로 저장됩니다.
+          손으로 쓴 풀이를 사진으로 찍거나, 앨범에 있는 사진·화면 캡처를 골라 올려도 됩니다. 자동으로 정리·디지털화되지
+          않고, 올린 사진 그대로 저장됩니다.
         </p>
-        <input
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="input"
-          onChange={(e) => handleImageChange(e.target.files?.[0] ?? null)}
-        />
+        {/* 2026-09-29: capture 속성 때문에 휴대폰에서 카메라만 열리고 앨범·캡처 사진을 고를 수 없었다 →
+            "사진 찍기"(카메라 바로 열기)와 "앨범에서 고르기"(사진 보관함·파일) 두 버튼으로 나눴다. */}
+        <div className="flex flex-wrap gap-2">
+          <label className="btn-secondary cursor-pointer">
+            사진 찍기
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="sr-only"
+              onChange={(e) => {
+                handleImageChange(e.target.files?.[0] ?? null);
+                e.currentTarget.value = ""; // 같은 사진을 다시 골라도 반영되게
+              }}
+            />
+          </label>
+          <label className="btn-secondary cursor-pointer">
+            앨범에서 고르기
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(e) => {
+                handleImageChange(e.target.files?.[0] ?? null);
+                e.currentTarget.value = "";
+              }}
+            />
+          </label>
+        </div>
         {imagePreviewUrl && (
           <div className="mt-2 flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
