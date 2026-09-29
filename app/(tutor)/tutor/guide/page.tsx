@@ -7,6 +7,8 @@ import { requireTutor } from "@/lib/auth/requireTutor";
 // 화면 문구가 바뀌면 그림도 같이 다시 만들어야 한다.
 // 2026-09-29 갱신: 맡은 문제 탭(11-assigned), 적던 답 임시 저장, 사진 자동 줄이기, 전체 문제 해설지 PDF, 문항 자동 자르기,
 // 환영 포인트·배정 일시 정지 FAQ. 모든 그림의 위쪽 메뉴에 "맡은 문제"가 들어가도록 다시 찍었다.
+// 2026-09-29 2차: 원장님 요청으로 단계별 탭(?tab=start|review|store|manage|bugs|faq)으로 나눠 한 단계씩 보여 준다
+// (서버에서 탭을 골라 그리므로 자바스크립트 없이도 동작, 링크로 특정 단계를 바로 열 수 있음). "버그 신고" 단계(12-bugs) 추가.
 
 type Shot = { src: string; w: number; h: number; alt: string };
 type Step = {
@@ -27,7 +29,7 @@ const SECTIONS: { id: string; title: string; summary: string; steps: Step[] }[] 
       {
         id: "dashboard",
         title: "내 활동 화면 둘러보기",
-        lead: "위쪽 메뉴에서 언제든 원하는 곳으로 이동할 수 있습니다.",
+        lead: "위쪽 메뉴에서 언제든 원하는 곳으로 이동할 수 있습니다. 맨 오른쪽 “버그 신고”는 화면이 이상할 때 알려 주는 곳입니다(아래 “버그 신고” 탭 참고).",
         shot: { src: "/guide/01-dashboard.webp", w: 1180, h: 578, alt: "내 활동 화면 — 검토하기, 맡은 문제, 기출 스토어, 포인트, 검토하러 가기 버튼 위치" },
         points: [
           <><b>검토하기</b> — 문항을 풀어서 포인트를 버는 곳입니다.</>,
@@ -181,6 +183,28 @@ const SECTIONS: { id: string; title: string; summary: string; steps: Step[] }[] 
       },
     ],
   },
+  {
+    id: "bugs",
+    title: "버그 신고하기",
+    summary: "화면이 이상하거나 버튼이 안 되거나 포인트·구매가 이상하면 위쪽 메뉴 “버그 신고”로 알려 주세요.",
+    steps: [
+      {
+        id: "bugs-send",
+        title: "신고 보내고 답변 확인하기",
+        lead: "종류·제목·내용만 적으면 됩니다. 원장님이 확인하면 같은 화면 아래에 처리 상태와 답변이 표시됩니다.",
+        shot: { src: "/guide/12-bugs.webp", w: 1180, h: 962, alt: "버그 신고 화면 — 종류, 제목과 화면, 내용, 스크린샷, 신고 보내기, 내가 보낸 신고의 상태와 원장님 답변" },
+        points: [
+          <><b>종류</b>를 고릅니다 — 화면·기능 오류 / 문제·해설 오류 / 포인트·구매 / 기타.</>,
+          <><b>제목</b>과, 알면 <b>어느 화면·시험·문항</b>에서 생겼는지 적습니다.</>,
+          <><b>무슨 일이 있었는지</b> “무엇을 눌렀을 때 → 어떻게 됐는지 → 원래는 어떻게 돼야 하는지” 순서로 적어 주시면 가장 빨리 고칠 수 있습니다.</>,
+          <><b>스크린샷</b>(선택) — 화면을 캡처해 올려 주세요. 큰 사진은 자동으로 줄여서 올라갑니다.</>,
+          <><b>신고 보내기</b>를 누르면 접수됩니다. 적던 내용은 이 기기에 임시 저장돼서 다른 앱에 다녀와도 남아 있습니다.</>,
+          <><b>내가 보낸 신고</b>에서 처리 상태(접수 → 확인 중 → 해결/보류)와 <b>원장님 답변</b>을 확인할 수 있습니다.</>,
+        ],
+        tip: <>문항 하나의 정답·해설만 고치면 되는 경우에는 구매한 시험의 <b>해설·정답 수정 요청</b> 탭(3단계)을 쓰면 바로 그 문항에 반영돼 더 빠릅니다. 신고는 하루 10건까지 보낼 수 있습니다.</>,
+      },
+    ],
+  },
 ];
 
 const FAQ: { q: string; a: React.ReactNode }[] = [
@@ -192,6 +216,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   { q: "“사후 검증 불일치”가 올라갔어요. 불이익이 있나요?", a: <>다른 선생님의 답과 달랐다는 뜻일 뿐, 포인트가 빠지지는 않습니다. 원장님이 두 답을 비교해 맞는 쪽으로 정리합니다. 반복되면 원장님이 따로 연락드릴 수 있습니다.</> },
   { q: "“새 검토 문항 배정이 잠시 멈춰 있다”고 나와요.", a: <>사후 검증에서 다른 선생님 답과 다른 경우가 여러 번 있어 원장님이 확인하는 중이라는 뜻입니다. 그동안에도 기출 스토어와 구매한 시험 관리는 그대로 쓸 수 있으니, 궁금한 점은 원장님께 문의해 주세요.</> },
   { q: "문제 이미지가 잘려 보이거나 다른 번호 문제가 나와요.", a: <><b>전체 쪽 보기</b>로 시험지 한 쪽을 통째로 보고, 필요하면 <b>이전 쪽 / 다음 쪽</b>으로 넘겨 가며 풀어 주세요. 자주 그러면 원장님께 시험 이름과 번호를 알려 주시면 바로잡겠습니다.</> },
+  { q: "사이트가 이상하게 동작해요. 어디에 알려야 하나요?", a: <>위쪽 메뉴 <b>버그 신고</b>에서 보내 주세요. 스크린샷을 함께 올리면 훨씬 빨리 고칠 수 있고, 처리 상태와 답변도 같은 화면에서 볼 수 있습니다.</> },
   { q: "학생 제출이 제 화면에 안 보여요.", a: <>학생이 <b>선생님 전용 QR이나 링크</b>로 들어왔는지 확인해 주세요. 학원용 일반 링크로 제출하면 선생님 화면에는 보이지 않습니다.</> },
 ];
 
@@ -203,97 +228,159 @@ function Num({ n }: { n: number }) {
   );
 }
 
-export default async function TutorGuidePage() {
+const TABS: { id: string; label: string }[] = [
+  { id: "start", label: "시작하기" },
+  { id: "review", label: "1 · 검토하고 포인트 받기" },
+  { id: "store", label: "2 · 기출 스토어" },
+  { id: "manage", label: "3 · 구매한 시험 관리" },
+  { id: "bugs", label: "버그 신고" },
+  { id: "faq", label: "자주 묻는 질문" },
+];
+
+function StepCard({ st }: { st: Step }) {
+  return (
+    <div id={st.id} className="card space-y-4 scroll-mt-4">
+      <div>
+        <h3 className="font-medium">{st.title}</h3>
+        <p className="text-sm text-slate-500">{st.lead}</p>
+      </div>
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={st.shot.src}
+          width={st.shot.w}
+          height={st.shot.h}
+          alt={st.shot.alt}
+          loading="lazy"
+          className="mx-auto h-auto w-full"
+          style={{ maxWidth: st.shot.w }}
+        />
+      </div>
+      <ol className="space-y-2">
+        {st.points.map((p, i) => (
+          <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
+            <Num n={i + 1} />
+            <span className="pt-0.5">{p}</span>
+          </li>
+        ))}
+      </ol>
+      {st.tip && (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <b>알아두기</b> · {st.tip}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export default async function TutorGuidePage({ searchParams }: { searchParams: { tab?: string } }) {
   await requireTutor();
+  const tab = TABS.some((t) => t.id === searchParams.tab) ? (searchParams.tab as string) : "start";
+  const idx = TABS.findIndex((t) => t.id === tab);
+  const prev = idx > 0 ? TABS[idx - 1] : null;
+  const next = idx < TABS.length - 1 ? TABS[idx + 1] : null;
+  const sec = SECTIONS.find((x) => x.id === tab);
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-6">
       <div className="space-y-3">
         <h1 className="text-lg font-semibold">사용법</h1>
         <p className="text-sm text-slate-500">
-          처음 오셨다면 위에서부터 순서대로 따라 해 보세요. 그림 속 <span className="font-medium text-rose-600">빨간 번호</span>가
+          처음 오셨다면 아래 탭을 왼쪽부터 순서대로 눌러 보세요. 그림 속 <span className="font-medium text-rose-600">빨간 번호</span>가
           그림 아래 설명 번호와 같습니다. (그림은 예시 화면이라 이름·점수 등은 실제와 다릅니다.)
         </p>
+        {/* 휴대폰에서도 모든 탭이 한눈에 보이도록 옆으로 밀지 않고 줄을 바꿔 보여 준다 */}
+        <nav className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+          {TABS.map((t) => (
+            <Link
+              key={t.id}
+              href={`/tutor/guide?tab=${t.id}`}
+              scroll={false}
+              className={
+                "rounded-full border px-3 py-1.5 text-sm whitespace-nowrap " +
+                (t.id === tab
+                  ? "border-slate-900 bg-slate-900 font-medium text-white"
+                  : "border-slate-300 bg-white text-slate-600 hover:border-slate-400")
+              }
+            >
+              {t.label}
+            </Link>
+          ))}
+        </nav>
+      </div>
+
+      {tab === "start" && (
         <div className="grid gap-3 sm:grid-cols-3">
           {[
-            ["1", "검토하고 포인트 받기", "문항 1개 = 1P", "#review"],
-            ["2", "기출 스토어에서 구매", "시험 1개 = 3P", "#store"],
-            ["3", "학생 제출·보고서·해설지", "QR·링크로 제출", "#manage"],
-          ].map(([n, t, s, href]) => (
-            <a key={n} href={href} className="card flex items-center gap-3 hover:border-slate-300">
+            ["1", "검토하고 포인트 받기", "문항 1개 = 1P", "review"],
+            ["2", "기출 스토어에서 구매", "시험 1개 = 3P", "store"],
+            ["3", "학생 제출·보고서·해설지", "QR·링크로 제출", "manage"],
+          ].map(([n, t, sub, id]) => (
+            <Link key={n} href={`/tutor/guide?tab=${id}`} scroll={false} className="card flex items-center gap-3 hover:border-slate-300">
               <span className="text-2xl font-semibold text-rose-600">{n}</span>
               <span>
                 <span className="block text-sm font-medium text-slate-900">{t}</span>
-                <span className="block text-xs text-slate-500">{s}</span>
+                <span className="block text-xs text-slate-500">{sub}</span>
               </span>
-            </a>
+            </Link>
           ))}
         </div>
-      </div>
+      )}
 
-      {SECTIONS.map((sec) => (
-        <section key={sec.id} id={sec.id} className="space-y-6 scroll-mt-4">
+      {sec && (
+        <section className="space-y-6">
           <div className="border-b border-slate-200 pb-2">
             <h2 className="text-base font-semibold">{sec.title}</h2>
             <p className="text-sm text-slate-500">{sec.summary}</p>
+            {sec.steps.length > 1 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {sec.steps.map((st, i) => (
+                  <a key={st.id} href={`#${st.id}`} className="badge bg-slate-100 text-slate-700 hover:bg-slate-200">
+                    {i + 1}. {st.title}
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
           {sec.steps.map((st) => (
-            <div key={st.id} id={st.id} className="card space-y-4 scroll-mt-4">
-              <div>
-                <h3 className="font-medium">{st.title}</h3>
-                <p className="text-sm text-slate-500">{st.lead}</p>
-              </div>
-              <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={st.shot.src}
-                  width={st.shot.w}
-                  height={st.shot.h}
-                  alt={st.shot.alt}
-                  loading="lazy"
-                  className="mx-auto h-auto w-full"
-                  style={{ maxWidth: st.shot.w }}
-                />
-              </div>
-              <ol className="space-y-2">
-                {st.points.map((p, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
-                    <Num n={i + 1} />
-                    <span className="pt-0.5">{p}</span>
-                  </li>
-                ))}
-              </ol>
-              {st.tip && (
-                <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                  <b>알아두기</b> · {st.tip}
-                </p>
-              )}
-            </div>
+            <StepCard key={st.id} st={st} />
           ))}
         </section>
-      ))}
+      )}
 
-      <section id="faq" className="space-y-3 scroll-mt-4">
-        <div className="border-b border-slate-200 pb-2">
-          <h2 className="text-base font-semibold">자주 묻는 질문</h2>
-        </div>
-        <div className="card divide-y divide-slate-100 py-1">
-          {FAQ.map((f) => (
-            <details key={f.q} className="py-2">
-              <summary className="cursor-pointer text-sm font-medium text-slate-800">{f.q}</summary>
-              <p className="mt-2 text-sm text-slate-600">{f.a}</p>
-            </details>
-          ))}
-        </div>
-      </section>
+      {tab === "faq" && (
+        <section className="space-y-3">
+          <div className="border-b border-slate-200 pb-2">
+            <h2 className="text-base font-semibold">자주 묻는 질문</h2>
+          </div>
+          <div className="card divide-y divide-slate-100 py-1">
+            {FAQ.map((f) => (
+              <details key={f.q} className="py-2">
+                <summary className="cursor-pointer text-sm font-medium text-slate-800">{f.q}</summary>
+                <p className="mt-2 text-sm text-slate-600">{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+      )}
 
-      <div className="flex gap-3">
-        <Link href="/tutor/review" className="btn-primary">
-          검토하러 가기
-        </Link>
-        <Link href="/tutor/store" className="btn-secondary">
-          기출 스토어 보기
-        </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
+        {prev ? (
+          <Link href={`/tutor/guide?tab=${prev.id}`} className="btn-secondary">
+            ← {prev.label}
+          </Link>
+        ) : (
+          <span />
+        )}
+        {next ? (
+          <Link href={`/tutor/guide?tab=${next.id}`} className="btn-primary">
+            다음: {next.label} →
+          </Link>
+        ) : (
+          <Link href="/tutor/review" className="btn-primary">
+            검토하러 가기
+          </Link>
+        )}
       </div>
     </div>
   );

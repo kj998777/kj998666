@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth/requireRole";
 import SignOutButton from "./SignOutButton";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const ROLE_LABEL: Record<string, string> = { admin: "관리자", editor: "편집자", viewer: "뷰어" };
 
@@ -11,6 +12,8 @@ export default async function StaffLayout({ children }: { children: React.ReactN
 
   // 관리자에게만: 회원가입 후 승인을 기다리는 계정 수(2026-09-28 원장님 요청 2) — "계정 관리" 옆 숫자
   let pendingCount = 0;
+  // 관리자에게만: 새로 들어온(접수) 과외선생님 버그 신고 수(2026-09-29, 0026 전이면 0)
+  let bugCount = 0;
   if (session.role === "admin") {
     const supabase = await createClient();
     const { count } = await supabase
@@ -18,6 +21,14 @@ export default async function StaffLayout({ children }: { children: React.ReactN
       .select("id", { count: "exact", head: true })
       .eq("role", "대기");
     pendingCount = count ?? 0;
+    try {
+      const { count: bc, error: bErr } = await (createAdminClient().from("bug_reports") as any)
+        .select("id", { count: "exact", head: true })
+        .eq("status", "접수");
+      bugCount = bErr ? 0 : bc ?? 0;
+    } catch {
+      bugCount = 0;
+    }
   }
 
   return (
@@ -63,6 +74,16 @@ export default async function StaffLayout({ children }: { children: React.ReactN
             )}
             {session.role === "admin" && (
               <Link href="/admin/tutor-disputes" className="nav-link">과외 검토 분쟁</Link>
+            )}
+            {session.role === "admin" && (
+              <Link href="/admin/bug-reports" className="nav-link">
+                버그 신고
+                {bugCount > 0 && (
+                  <span className="ml-1 inline-flex items-center justify-center rounded-full bg-brand-700 text-white text-[11px] leading-none min-w-[1.1rem] h-[1.1rem] px-1 align-middle">
+                    {bugCount}
+                  </span>
+                )}
+              </Link>
             )}
           </nav>
         </div>

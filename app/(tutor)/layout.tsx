@@ -49,6 +49,7 @@ export default async function TutorLayout({ children }: { children: React.ReactN
             </Link>
             <Link href="/tutor/store" className="nav-link">기출 스토어</Link>
             <Link href="/tutor/guide" className="nav-link">사용법</Link>
+            <Link href="/tutor/bugs" className="nav-link">버그 신고</Link>
           </nav>
         </div>
       </header>
