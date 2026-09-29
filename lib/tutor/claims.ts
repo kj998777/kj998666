@@ -20,7 +20,7 @@ export type ActiveClaim = {
 export async function getMyActiveClaims(tutorId: string): Promise<ActiveClaim[]> {
   const admin = createAdminClient() as any;
   const now = new Date().toISOString();
-  const [{ data: prim }, { data: ver }] = await Promise.all([
+  const [{ data: prim }, { data: ver }, { data: gold }] = await Promise.all([
     admin
       .from("item_explanations")
       .select("id, exam_id, item_label, claim_expires_at")
@@ -37,8 +37,25 @@ export async function getMyActiveClaims(tutorId: string): Promise<ActiveClaim[]>
       .gt("verify_claim_expires_at", now)
       .eq("verified", false)
       .limit(50),
+    // 0037: 정답 아는 문항(열린 시험의 문항) — 화면에는 새 문항과 똑같이 보인다
+    admin
+      .from("tutor_gold_attempts")
+      .select("item_explanation_id, exam_id, item_label, claim_expires_at")
+      .eq("tutor_id", tutorId)
+      .is("submitted_at", null)
+      .eq("released", false)
+      .gt("claim_expires_at", now)
+      .limit(10),
   ]);
-  const rows: { id: string; exam: string; label: string; exp: string; kind: "primary" | "verify" }[] = [
+  const rows: { id: string; exam: string; label: string; exp: string; kind: "primary" | "verify"; gold?: boolean }[] = [
+    ...((gold as any[]) ?? []).map((r) => ({
+      id: r.item_explanation_id,
+      exam: r.exam_id,
+      label: r.item_label,
+      exp: r.claim_expires_at,
+      kind: "primary" as const,
+      gold: true,
+    })),
     ...((prim as any[]) ?? []).map((r) => ({ id: r.id, exam: r.exam_id, label: r.item_label, exp: r.claim_expires_at, kind: "primary" as const })),
     ...((ver as any[]) ?? []).map((r) => ({
       id: r.item_explanation_id,
@@ -53,7 +70,7 @@ export async function getMyActiveClaims(tutorId: string): Promise<ActiveClaim[]>
   const { data: exams } = (await admin.from("exams").select("id, name, status").in("id", examIds)) as any;
   const byId = new Map(((exams as any[]) ?? []).map((e) => [e.id, e]));
   return rows
-    .filter((r) => byId.get(r.exam)?.status === "검수대기") // 그사이 열린(검토 끝난) 시험은 뺀다
+    .filter((r) => r.gold || byId.get(r.exam)?.status === "검수대기") // 그사이 열린(검토 끝난) 시험은 뺀다
     .sort((a, b) => a.exp.localeCompare(b.exp))
     .map((r) => ({
       itemExplanationId: r.id,
