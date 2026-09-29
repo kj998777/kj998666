@@ -9,7 +9,7 @@ export function normalizeCohort(raw: string): string {
 }
 
 /** 2026-09-29: 회원가입 "과". 의대는 기수, 나머지는 학번을 받는다(둘 다 profiles.cohort에 저장, 0033). */
-export const DEPARTMENTS = ["의대", "수의대", "약대", "간호대"] as const;
+export const DEPARTMENTS = ["의대", "수의대", "약대"] as const; // 2026-09-29 원장님 요청: 간호대 뺌(예전 계정 값은 DB에 그대로 둠)
 export type Department = (typeof DEPARTMENTS)[number];
 
 /** 학번: "21" → "21학번", "2021" → "2021학번", "21학번" 그대로, 더 긴 학번(2021123456)은 숫자 그대로. 빈 값이면 "". */
