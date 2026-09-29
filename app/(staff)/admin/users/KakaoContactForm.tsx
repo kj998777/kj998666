@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { saveKakaoContact } from "./actions";
 
-// 대기 화면에 띄울 원장님 카카오톡 연락처(2026-09-29). QR 그림은 카카오톡 내 프로필 → QR코드 화면을 캡처해 올리면 된다
+// 대기 화면에 띄울 원장님 카카오톡 오픈채팅(2026-09-29 원장님 요청: 오픈채팅으로 받기). 링크만 넣으면 QR은 대기 화면이 자동으로 만들고,
+// 따로 QR 그림을 올려도 된다
 // (브라우저에서 한 변 480px로 줄여 data: URL로 저장 — 따로 저장소 버킷이 필요 없음).
 type Contact = { kakao_id: string; kakao_url: string; kakao_qr: string; note: string };
 
@@ -45,23 +46,29 @@ export default function KakaoContactForm({ initial }: { initial: Contact }) {
     <div className="grid gap-4 md:grid-cols-[1fr_12rem]">
       <div className="space-y-3">
         <div>
-          <label className="label" htmlFor="kk-id">
-            카카오톡 ID
+          <label className="label" htmlFor="kk-url">
+            카카오톡 오픈채팅 링크
           </label>
-          <input id="kk-id" className="input" value={v.kakao_id} onChange={set("kakao_id")} placeholder="예: medicmath" maxLength={60} />
+          <input id="kk-url" className="input" value={v.kakao_url} onChange={set("kakao_url")} placeholder="예: https://open.kakao.com/o/sAbCdEf" maxLength={300} />
+          <p className="text-xs text-slate-400 mt-1">
+            카카오톡 → 오픈채팅 → 1:1 채팅방 만들기(또는 내 오픈채팅방) → 공유 → 링크 복사해서 붙여 넣으세요. 대기 화면에 &ldquo;오픈채팅으로 보내기&rdquo;
+            버튼과 이 링크로 만든 QR이 보입니다.
+          </p>
+          {v.kakao_url && !/open\.kakao\.com\//i.test(v.kakao_url) && (
+            <p className="text-xs text-amber-700 mt-1">오픈채팅 링크는 보통 open.kakao.com/o/… 모양입니다. 링크가 맞는지 확인해 주세요.</p>
+          )}
         </div>
         <div>
-          <label className="label" htmlFor="kk-url">
-            프로필·오픈채팅 링크 (선택)
+          <label className="label" htmlFor="kk-id">
+            카카오톡 ID (선택)
           </label>
-          <input id="kk-url" className="input" value={v.kakao_url} onChange={set("kakao_url")} placeholder="예: https://open.kakao.com/o/..." maxLength={300} />
-          <p className="text-xs text-slate-400 mt-1">링크를 넣으면 대기 화면에 &ldquo;카카오톡 열기&rdquo; 버튼이 생기고, QR 그림이 없으면 이 링크로 QR을 만들어 보여 줍니다.</p>
+          <input id="kk-id" className="input" value={v.kakao_id} onChange={set("kakao_id")} placeholder="오픈채팅 대신 ID로 친구 추가할 때" maxLength={60} />
         </div>
         <div>
           <label className="label" htmlFor="kk-note">
             덧붙일 말 (선택)
           </label>
-          <input id="kk-note" className="input" value={v.note} onChange={set("note")} placeholder="예: 친구 추가 후 메시지 남겨 주세요" maxLength={300} />
+          <input id="kk-note" className="input" value={v.note} onChange={set("note")} placeholder="예: 참여 코드 1234 / 들어와서 위 내용을 보내 주세요" maxLength={300} />
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -80,13 +87,13 @@ export default function KakaoContactForm({ initial }: { initial: Contact }) {
         </div>
       </div>
       <div className="space-y-2">
-        <span className="label">카카오톡 QR 그림 (선택)</span>
+        <span className="label">QR 그림 (선택 — 없으면 링크로 자동 생성)</span>
         {v.kakao_qr ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={v.kakao_qr} alt="카카오톡 QR" className="w-40 h-40 object-contain border border-slate-200 rounded" />
         ) : (
           <div className="w-40 h-40 border border-dashed border-slate-300 rounded flex items-center justify-center text-xs text-slate-400 text-center px-2">
-            카카오톡 → 내 프로필 → QR코드 화면을 캡처해 올려 주세요
+            비워 두면 오픈채팅 링크로 QR을 자동으로 만들어 보여 줍니다
           </div>
         )}
         <div className="flex flex-wrap gap-2">

@@ -148,9 +148,9 @@ async function KakaoContactSection() {
   const { data, error } = (await supabase.from("site_contact").select("kakao_id, kakao_url, kakao_qr, note").maybeSingle()) as any;
   return (
     <div className="card">
-      <h2 className="font-medium mb-1">대기 계정 안내용 카카오톡</h2>
+      <h2 className="font-medium mb-1">대기 계정 안내용 카카오톡 오픈채팅</h2>
       <p className="text-sm text-slate-500 mb-3">
-        회원가입 후 대기 중인 사람에게 &ldquo;가입 정보를 카카오톡으로 보내 주세요&rdquo;라는 안내와 함께 이 연락처가 보입니다.
+        회원가입 후 대기 중인 사람에게 &ldquo;가입 정보를 원장님 오픈채팅으로 보내 주세요&rdquo;라는 안내와 함께 이 오픈채팅 링크·QR이 보입니다.
       </p>
       {error ? (
         <p className="text-sm text-amber-700">0033 SQL을 실행하면 여기서 설정할 수 있습니다.</p>
