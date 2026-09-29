@@ -37,12 +37,32 @@ export default async function TutorDashboardPage() {
       <div>
         <h1 className="text-lg font-semibold">내 활동</h1>
         <p className="text-sm text-slate-500">
-          검토대기 문항을 풀어 포인트를 벌고, 그 포인트로 기출문제 PDF를 받을 수 있습니다.{" "}
-          <Link href="/tutor/guide" className="font-medium text-rose-600 hover:underline">
-            처음이세요? 사용법 보기 →
-          </Link>
+          검토대기 문항을 풀어 포인트를 벌고, 그 포인트로 기출문제 PDF를 받을 수 있습니다.
         </p>
       </div>
+
+      {/* 2026-09-29 원장님 요청: 작은 글씨 링크라 잘 안 보였던 "처음이세요? 사용법 보기"를 크고 눈에 띄는 배너로 */}
+      <Link
+        href="/tutor/guide"
+        className="group block rounded-2xl border-2 border-rose-300 bg-rose-50 p-4 sm:p-5 shadow-sm transition hover:border-rose-500 hover:bg-rose-100"
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-rose-600 text-xl font-bold text-white">
+              ?
+            </span>
+            <div>
+              <p className="text-lg sm:text-xl font-bold text-rose-700">처음이신가요? 사용법부터 보세요</p>
+              <p className="text-sm text-rose-900/80 mt-0.5">
+                그림과 화살표로 단계별 설명 — 검토하고 포인트 받기 · 기출 스토어 · 학생 제출·보고서 · 버그 신고
+              </p>
+            </div>
+          </div>
+          <span className="inline-flex items-center justify-center rounded-xl bg-rose-600 px-5 py-3 text-base font-semibold text-white group-hover:bg-rose-700 sm:shrink-0">
+            사용법 보기 →
+          </span>
+        </div>
+      </Link>
 
       {trust === "paused" && (
         <div className="card border-red-300 bg-red-50 text-sm text-red-700">

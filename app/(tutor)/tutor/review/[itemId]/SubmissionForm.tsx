@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { compressImage } from "@/lib/image/compress";
+import { compressImage, MAX_UPLOAD_BYTES } from "@/lib/image/compress";
+import { actionErrorMessage } from "@/lib/actionError";
 import { useRouter } from "next/navigation";
 import { submitPrimaryReview, submitVerification, releaseReviewClaim, claimNextReviewItem } from "../actions";
 
@@ -72,6 +73,7 @@ export default function SubmissionForm({
   const needSolution = solution.trim().length < MIN_SOLUTION_CHARS && !image;
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
+  const [needsReload, setNeedsReload] = useState(false);
   const [result, setResult] = useState<{ pointsEarned: number; isMatch?: boolean } | null>(null);
   const [nextMsg, setNextMsg] = useState("");
 
@@ -132,6 +134,12 @@ export default function SubmissionForm({
   async function handleImageChange(raw: File | null) {
     // 큰 휴대폰 사진은 서버 한도(약 4.5MB)를 넘겨 제출이 실패했으므로 올리기 전에 줄인다(lib/image/compress.ts)
     const file = raw ? await compressImage(raw) : null;
+    // 줄여도 너무 크면(브라우저가 못 여는 형식 등) 보내다 실패하므로 미리 막는다
+    if (file && file.size > MAX_UPLOAD_BYTES) {
+      setErr("이 사진은 용량이 너무 커서 올릴 수 없어요. 다른 사진을 고르거나 화면을 캡처해서 올려 주세요.");
+      return;
+    }
+    setErr("");
     setImage(file);
     setImagePreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -234,7 +242,16 @@ export default function SubmissionForm({
           </div>
         )}
       </div>
-      {err && <p className="text-sm text-red-600">{err}</p>}
+      {err && (
+        <div className="space-y-2">
+          <p className="text-sm text-red-600">{err}</p>
+          {needsReload && (
+            <button type="button" className="btn-secondary" onClick={() => window.location.reload()}>
+              새로고침
+            </button>
+          )}
+        </div>
+      )}
       {needSolution && (
         <p className="text-sm text-amber-700">
           풀이를 {MIN_SOLUTION_CHARS}자 이상 적거나 풀이 사진을 올려야 제출할 수 있어요.
@@ -247,18 +264,30 @@ export default function SubmissionForm({
           onClick={() =>
             start(async () => {
               setErr("");
-              const r =
-                kind === "verify"
-                  ? await submitVerification(itemExplanationId, answerDisplay, solution, image)
-                  : await submitPrimaryReview(itemExplanationId, answerDisplay, solution, image);
-              if (!r.ok) {
-                setErr(r.msg ?? "제출하지 못했습니다.");
+              setNeedsReload(false);
+              // 2026-09-29: 서버 액션이 예외를 던지면(새 배포 직후 옛 화면, 연결 끊김, 용량 초과 등) 흰 "Application error"
+              // 화면이 떴다 → 잡아서 안내 문구로 보여 주고, 적던 답·풀이는 그대로 둔다.
+              let r: { ok: boolean; msg?: string; pointsEarned?: number; isMatch?: boolean };
+              try {
+                r =
+                  kind === "verify"
+                    ? await submitVerification(itemExplanationId, answerDisplay, solution, image)
+                    : await submitPrimaryReview(itemExplanationId, answerDisplay, solution, image);
+              } catch (e) {
+                console.error("review submit failed", e);
+                const m = actionErrorMessage(e);
+                setErr(m.text);
+                setNeedsReload(m.needsReload);
+                return;
+              }
+              if (!r || !r.ok) {
+                setErr(r?.msg ?? "제출하지 못했습니다.");
                 return;
               }
               clearDraft();
               setResult({
-                pointsEarned: r.pointsEarned,
-                isMatch: "isMatch" in r ? (r as { isMatch: boolean }).isMatch : undefined,
+                pointsEarned: r.pointsEarned ?? 0,
+                isMatch: r.isMatch,
               });
             })
           }
@@ -270,7 +299,14 @@ export default function SubmissionForm({
           disabled={pending}
           onClick={() =>
             start(async () => {
-              await releaseReviewClaim(itemExplanationId);
+              try {
+                await releaseReviewClaim(itemExplanationId);
+              } catch (e) {
+                const m = actionErrorMessage(e);
+                setErr(m.text);
+                setNeedsReload(m.needsReload);
+                return;
+              }
               clearDraft();
               goToNextItem();
             })

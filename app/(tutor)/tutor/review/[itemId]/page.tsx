@@ -56,6 +56,10 @@ export default async function ReviewItemPage({
           {item.area && `${item.area} · `}
           {item.unit && `${item.unit} · `}
           난이도 {item.difficulty}
+          {/* 0028: 난이도별 적립 — 하·중하·중 1P, 중상·상 2P (DB review_points_for_item과 같은 규칙) */}
+          <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+            제출 시 +{item.difficulty === "중상" || item.difficulty === "상" ? 2 : 1}P
+          </span>
         </p>
         <div className="border-t border-slate-100 pt-2">
           <ProblemPageImage

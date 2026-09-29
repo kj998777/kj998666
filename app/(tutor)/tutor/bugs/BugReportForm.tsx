@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { compressImage } from "@/lib/image/compress";
+import { compressImage, MAX_UPLOAD_BYTES } from "@/lib/image/compress";
+import { actionErrorMessage } from "@/lib/actionError";
 import { BUG_CATEGORIES } from "@/lib/bugs";
 import { submitBugReport } from "./actions";
 
@@ -64,8 +65,23 @@ export default function BugReportForm({ defaultPage }: { defaultPage?: string })
       fd.set("body", body);
       fd.set("page_hint", pageHint);
       fd.set("user_agent", typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 400) : "");
-      if (photo) fd.set("photo", await compressImage(photo));
-      const r = await submitBugReport(fd);
+      if (photo) {
+        const small = await compressImage(photo);
+        if (small.size > MAX_UPLOAD_BYTES) {
+          setMsg({ ok: false, text: "사진 용량이 너무 커서 보낼 수 없어요. 다른 사진을 고르거나 화면을 캡처해서 올려 주세요." });
+          return;
+        }
+        fd.set("photo", small);
+      }
+      // 예외(새 배포 직후 옛 화면, 연결 끊김 등)가 흰 오류 화면으로 번지지 않게 잡는다(2026-09-29)
+      let r: Awaited<ReturnType<typeof submitBugReport>>;
+      try {
+        r = await submitBugReport(fd);
+      } catch (e) {
+        console.error("bug report submit failed", e);
+        setMsg({ ok: false, text: actionErrorMessage(e).text.replace("적어 둔 답·풀이 글은", "적어 둔 내용은") });
+        return;
+      }
       if (!r.ok) {
         setMsg({ ok: false, text: r.msg });
         return;

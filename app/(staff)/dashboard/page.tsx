@@ -80,7 +80,7 @@ export default async function DashboardPage({
     {
       href: "/classes",
       title: "반 관리",
-      desc: "학생이 제출 화면에서 고를 학교급·학년·반 목록을 관리합니다.",
+      desc: "학생이 제출 화면에서 고를 학교급·학년·반 목록을 관리합니다. 과외선생님 학생 제출은 \"과외 반\"에 모여 있습니다.",
     },
   ];
   if (isAdmin) {
