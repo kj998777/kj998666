@@ -12,15 +12,13 @@ export default async function TutorLayout({ children }: { children: React.ReactN
   const session = await requireTutor();
 
   const supabase = await createClient();
-  const { data: stats } = await supabase
-    .from("tutor_stats")
-    .select("points_balance")
-    .eq("tutor_id", session.userId)
-    .maybeSingle();
-  // "맡은 문제" 메뉴 옆 숫자(지금 배정받아 풀고 있는 문항 수)
-  const claimCount = await getMyActiveClaims(session.userId)
-    .then((c) => c.length)
-    .catch(() => 0);
+  // 포인트와 "맡은 문제" 숫자(지금 배정받아 풀고 있는 문항 수)를 동시에 조회(2026-09-29 최적화)
+  const [{ data: stats }, claimCount] = await Promise.all([
+    supabase.from("tutor_stats").select("points_balance").eq("tutor_id", session.userId).maybeSingle(),
+    getMyActiveClaims(session.userId)
+      .then((c) => c.length)
+      .catch(() => 0),
+  ]);
 
   return (
     <div className="min-h-screen">
