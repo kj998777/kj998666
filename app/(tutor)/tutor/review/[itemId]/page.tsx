@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import SubmissionForm from "./SubmissionForm";
 import ProblemPageImage from "./ProblemPageImage";
+import { blindExamLabel } from "@/lib/tutor/claims";
 
 // 편향 방지: answer_display/solution/difficulty_reason/exam_error_* 는 절대 select하지 않는다.
 // primary 문항도 AI가 만든 초안(정답·풀이)이 낮은 확신/오답이라서 검토 큐에 온 것이므로, 그 초안을
@@ -43,7 +44,7 @@ export default async function ReviewItemPage({
   }
 
   const [{ data: exam }, { data: keyRow }] = await Promise.all([
-    admin.from("exams").select("code, name").eq("id", item.exam_id).maybeSingle() as any,
+    admin.from("exams").select("school_level, folder_grade").eq("id", item.exam_id).maybeSingle() as any,
     // 정답 입력 방식(객관식 ①~⑤ / 주관식)을 정하려고 "유형"만 읽는다 — 정답 값은 읽지 않는다
     admin.from("answer_key").select("type").eq("exam_id", item.exam_id).eq("item_label", item.item_label).maybeSingle() as any,
   ]);
@@ -54,8 +55,9 @@ export default async function ReviewItemPage({
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* kind가 verify여도 화면에 표시하지 않는다 — "새 문항과 똑같은 화면"이어야 검증자가
               눈치채지 못하고 자기 실력대로 다시 푼다(블라인드 재검증, 계획 문서 참고). */}
+          {/* 2026-09-30: 시험 이름은 보여 주지 않는다(정답 아는 문항을 알아보지 못하게) — 학교급·학년만 */}
           <h1 className="text-lg font-semibold">
-            {exam?.name ?? "시험"} · {item.item_label}번
+            {blindExamLabel(exam)} · {item.item_label}번
           </h1>
         </div>
         <p className="text-sm text-slate-500">
