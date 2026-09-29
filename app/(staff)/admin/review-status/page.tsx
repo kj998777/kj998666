@@ -46,6 +46,9 @@ const DIFF_CLS: Record<string, string> = {
   상: "bg-rose-100 text-rose-700",
 };
 
+// 판정 대기가 이 날짜 수를 넘으면 주황색으로 알린다(관리자 홈 카드 배지와 같은 값 — app/(staff)/dashboard/page.tsx)
+const STALE_SECOND_DAYS = 3;
+
 export default async function ReviewStatusPage({ searchParams }: { searchParams?: { all?: string } }) {
   await requireRole("admin");
   const supabase = await createClient();
@@ -175,6 +178,8 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
     if (!stErr) for (const r of (st as any[]) ?? []) stageById.set(r.id, r.review_stage);
   }
   let totalAdminStage = 0;
+  // 2026-09-30: 판정(두 번째 선생님)을 3일 넘게 기다리는 문항 — 판정할 수 있는 선생님(검증됨·우수)이 적으면 쌓인다
+  let totalStaleSecond = 0;
 
   const reviews = (reviewsRaw as any[]) ?? [];
   const primaryByItem = new Map<string, any>();
@@ -218,9 +223,13 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
           state = { label: "셋 다 다름 · 원장님 판정", cls: "bg-red-600 text-white" };
           totalAdminStage++;
         } else if (stage === "second" && primary) {
+          const waitDays = Math.floor((now - new Date(primary.created_at).getTime()) / 86400000);
+          const stale = waitDays >= STALE_SECOND_DAYS;
+          if (stale) totalStaleSecond++;
           state = match
             ? { label: "AI와 일치 · 신규 선생님이라 1명 더 확인 중", cls: "bg-amber-100 text-amber-800" }
             : { label: "AI와 다름 · 다른 선생님 판정 대기", cls: "bg-sky-100 text-sky-700" };
+          if (stale) state = { label: `${state.label} · ${waitDays}일째`, cls: "bg-orange-500 text-white" };
         } else if (primary) {
           state = match
             ? { label: "제출 · AI와 일치", cls: "bg-amber-100 text-amber-800" }
@@ -277,7 +286,15 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
             시험 {exams.length}개 · 미확정 {totalUnconfirmed}문항
             {totalMismatch > 0 && <span className="text-red-600"> · AI와 다른 제출 {totalMismatch}문항</span>}
             {totalAdminStage > 0 && <span className="text-red-700 font-medium"> · 원장님 판정 필요 {totalAdminStage}문항</span>}
+            {totalStaleSecond > 0 && <span className="text-orange-700 font-medium"> · 판정 {STALE_SECOND_DAYS}일 넘게 대기 {totalStaleSecond}문항</span>}
           </p>
+          {totalStaleSecond > 0 && (
+            <p className="mt-1 rounded-md bg-orange-50 border border-orange-200 px-3 py-2 text-sm text-orange-900">
+              다른 선생님의 판정을 {STALE_SECOND_DAYS}일 넘게 기다리는 문항이 {totalStaleSecond}개 있습니다(주황색 표시). 판정은 등급이
+              &ldquo;검증됨·우수&rdquo;인 선생님만 할 수 있어서 그런 선생님이 적으면 쌓입니다. 급한 시험이면 번호를 눌러 직접 풀거나
+              &ldquo;이 정답으로 확정&rdquo;을 눌러 주세요.
+            </p>
+          )}
           <p className="text-xs text-slate-400 mt-1">
             과외선생님 답이 정답표와 같으면 자동 확정되고, 다르면 다른 선생님이 두 답을 모른 채 다시 풀어 2:1이면 자동 확정됩니다(다수결).
             셋 다 다를 때만 &ldquo;원장님 판정&rdquo;으로 남습니다. 시험의 모든 문항이 확정되면 시험이 자동으로 열립니다.
