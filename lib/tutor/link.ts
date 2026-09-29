@@ -36,7 +36,10 @@ export function tutorSubmitPath(examCode: string, token: string): string {
   return `/s/${encodeURIComponent(examCode)}?t=${encodeURIComponent(token)}`;
 }
 
-/** 과외선생님 링크 제출의 반 표시(학원 반 목록과 겹치지 않게, 과외선생님마다 구분되게). */
-export function tutorClassLabel(token: string): string {
-  return `과외-${token.slice(0, 6)}`;
+/** 과외선생님 링크 제출이 들어가는 반 이름. 2026-09-29 원장님 요청으로 선생님마다 "과외-토큰" 대신 모두 "과외" 한 반에
+ *  모은다(관리자 반 관리 → 과외 반에서 선생님별로 봄). 어느 선생님 학생인지는 submissions.tutor_id로 구분(0029). */
+export const TUTOR_CLASS_LABEL = "과외";
+
+export function tutorClassLabel(_token?: string): string {
+  return TUTOR_CLASS_LABEL;
 }
