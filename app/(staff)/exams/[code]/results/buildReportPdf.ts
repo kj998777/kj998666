@@ -173,7 +173,7 @@ function injectReportStyles(): void {
   if (stylesInjected) return;
   stylesInjected = true;
   const css = `
-.rpt { width: 760px; background:#fff; color:#1f2937; font-family:'Noto Sans CJK KR','Noto Sans KR','Malgun Gothic','Apple SD Gothic Neo',sans-serif; font-size:13px; line-height:1.55; padding: 4px; }
+.rpt { box-sizing: border-box; width: 760px; background:#fff; color:#1f2937; font-family:'Noto Sans CJK KR','Noto Sans KR','Malgun Gothic','Apple SD Gothic Neo',sans-serif; font-size:13px; line-height:1.55; padding: 4px; }
 .rpt * { box-sizing: border-box; overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
 .rpt h1 { font-size: 23px; margin: 0 0 3px; color:#0f2a4a; letter-spacing:-0.3px; }
 .rpt h2 { font-size: 16px; margin: 16px 0 6px; color:#0f2a4a; border-left: 4px solid #2563eb; padding-left: 8px; break-after: avoid; page-break-after: avoid; }
@@ -664,6 +664,105 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
   }
   b.push('<p class="rpt-foot">등급 구분·예상 등급·다른 학생과의 비교는 이 보고서에 포함하지 않았습니다.</p>');
 
+  return `<div class="rpt">${b.join("")}</div>`;
+}
+
+// ---------------------------------------------------------------------
+// 전체 문제 해설지 (2026-09-29 원장님 요청: 보고서 만들 때 전체 문항 해설을 따로 받기)
+// 학생 제출과 상관없이 시험의 모든 문항(문제·정답·풀이)을 모은 해설 PDF. 관리자·과외선생님 보고서
+// 패널에서 같은 데이터(report-data)를 그대로 쓴다.
+// ---------------------------------------------------------------------
+
+function keyDisplay(katex: any, it: ReportItem): string {
+  if (it.answer_display && it.answer_display.trim()) return mathHtml(katex, it.answer_display);
+  const raw = String(it.correct_answers ?? "").trim();
+  if (!raw) return "-";
+  // 정답표 칸은 "|"로 여러 정답을 허용하고, 객관식 "24"는 ②④(복수 정답)이다(lib/grading.ts).
+  const alts = raw.split("|").map((a) => a.trim()).filter(Boolean);
+  if (it.type === "객관식") {
+    return esc(alts.map((a) => (/^[1-5]+$/.test(a) ? a.split("").map((c) => CIRC[c]).join("") : a)).join(" 또는 "));
+  }
+  return alts.map((a) => mathHtml(katex, a)).join(" 또는 ");
+}
+
+function metaLine(it: ReportItem): string {
+  const parts: string[] = [];
+  if (it.area && it.area.trim()) parts.push(esc(it.area.trim()));
+  if (it.unit && it.unit.trim()) parts.push(esc(it.unit.trim()));
+  return parts.join(" › ");
+}
+
+export function buildSolutionsHtml(katex: any, data: ReportData): string {
+  const items = data.items;
+  const totalPoints = totalOf(items);
+  const b: string[] = [];
+  b.push(
+    `<div class="rpt-rowh"><div><h1>전체 문제 해설지</h1><div class="rpt-sub" style="margin:0">${esc(
+      data.exam.name
+    )} · ${items.length}문항 · 배점 합 ${fmt(totalPoints)}점</div></div></div>`
+  );
+
+  if (!items.length) {
+    b.push('<div class="rpt-box warn">이 시험에는 아직 정리된 문항이 없습니다.</div>');
+    return `<div class="rpt">${b.join("")}</div>`;
+  }
+
+  // 1. 빠른 정답표 — 두 줄씩 나란히(왼쪽 앞 절반, 오른쪽 뒤 절반)
+  b.push("<h2>1. 빠른 정답표</h2>");
+  const half = Math.ceil(items.length / 2);
+  const cell = (it: ReportItem | undefined) =>
+    it
+      ? `<td class="c"><b>${esc(it.label)}</b></td><td class="c">${keyDisplay(katex, it)}</td><td class="c">${fmt(it.points)}${
+          it.points_assigned ? "*" : ""
+        }</td><td class="c">${badge(it.difficulty)}</td>`
+      : '<td></td><td></td><td></td><td></td>';
+  b.push(
+    '<table><colgroup><col style="width:8%"><col style="width:22%"><col style="width:8%"><col style="width:12%">' +
+      '<col style="width:8%"><col style="width:22%"><col style="width:8%"><col style="width:12%"></colgroup>' +
+      "<thead><tr><th>번호</th><th>정답</th><th>배점</th><th>난이도</th><th>번호</th><th>정답</th><th>배점</th><th>난이도</th></tr></thead><tbody>"
+  );
+  for (let i = 0; i < half; i++) b.push(`<tr>${cell(items[i])}${cell(items[i + half])}</tr>`);
+  b.push("</tbody></table>");
+  if (items.some((i) => i.points_assigned)) {
+    b.push('<p class="rpt-small">* 시험지에 배점이 인쇄되지 않아 합이 100점이 되도록 임의로 배정한 문항입니다.</p>');
+  }
+
+  // 2. 문항별 문제·정답·풀이
+  const notesByLabel = new Map<string, string[]>();
+  for (const c of data.corrections) {
+    if (!c.teacher_note) continue;
+    const list = notesByLabel.get(c.item_label) ?? [];
+    list.push(c.teacher_note);
+    notesByLabel.set(c.item_label, list);
+  }
+  b.push('<h2 class="rpt-pagebreak">2. 문항별 풀이</h2>');
+  for (const it of items) {
+    const meta = metaLine(it);
+    const notes = notesByLabel.get(it.label) ?? [];
+    b.push(
+      `<div class="rpt-card"><div class="hd">${esc(it.label)}번 · ${badge(it.difficulty)} · 배점 ${fmt(it.points)}점${
+        it.points_assigned ? "*" : ""
+      }${it.exam_error_suspected ? ' <span class="rpt-tag">출제 오류 의심</span>' : ""}${
+        meta ? ` <span class="rpt-small">· ${meta}</span>` : ""
+      }</div>` +
+        (it.problem_statement && it.problem_statement.trim() ? `<div class="st">${mathHtml(katex, it.problem_statement)}</div>` : "") +
+        `<div class="row"><span class="rpt-pill key">정답: <b>${keyDisplay(katex, it)}</b></span></div>` +
+        (it.solution && it.solution.trim()
+          ? `<div class="rpt-sol"><b>풀이</b> — ${mathHtml(katex, it.solution)}</div>`
+          : '<div class="rpt-sol rpt-small">아직 등록된 풀이가 없습니다.</div>') +
+        notes.map((n) => `<div class="rpt-box warn"><b>확인한 점</b> — ${mathHtml(katex, n)}</div>`).join("") +
+        "</div>"
+    );
+  }
+
+  if (data.notes.length) {
+    b.push("<h2>3. 시험지·해설에서 확인한 점</h2><ul>");
+    for (const note of data.notes) b.push(`<li>${mathHtml(katex, note)}</li>`);
+    b.push("</ul>");
+  }
+  b.push(
+    '<p class="rpt-foot">난이도는 AI가 문제를 풀어 본 뒤 판단한 값이며 실제 정답률이 아닙니다. 문제 글은 원본 시험지를 요약·정리한 것이라 그림·표는 원본 시험지를 함께 보세요.</p>'
+  );
   return `<div class="rpt">${b.join("")}</div>`;
 }
 

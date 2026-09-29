@@ -72,6 +72,30 @@ export default function ReportPanel({
     }
   }
 
+  // 전체 문제 해설지 — 학생 제출과 상관없이 모든 문항의 문제·정답·풀이(2026-09-29)
+  async function onSolutions() {
+    setBusy(true);
+    setMsg("");
+    setProgress("시작하는 중…");
+    try {
+      const d = await ensureData();
+      if (!d.items.length) throw new Error("이 시험에는 아직 정리된 문항이 없습니다.");
+      const { ensureReportTools, buildSolutionsHtml, htmlToPdfBytes, downloadBytes } = await import("./buildReportPdf");
+      const { katex } = await ensureReportTools((m) => setProgress(m));
+      setProgress("해설지를 그리는 중…");
+      const html = buildSolutionsHtml(katex, d);
+      setProgress("PDF로 만드는 중… (문항이 많으면 시간이 걸릴 수 있습니다)");
+      const bytes = await htmlToPdfBytes(html);
+      downloadBytes(bytes, `${examName}_전체해설지.pdf`);
+      setProgress("완료되었습니다.");
+    } catch (e: any) {
+      setProgress("");
+      setMsg("실패: " + (e && e.message ? e.message : String(e)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onIndividual(students: ReportStudent[]) {
     if (!students.length) {
       setMsg("먼저 학생을 선택해 주세요.");
@@ -133,7 +157,8 @@ export default function ReportPanel({
       <h2 className="font-medium">성적 보고서 만들기</h2>
       <p className="text-sm text-slate-500">
         시험의 정답·해설(영역·난이도·풀이)과 채점 결과를 모아 종합 보고서(반 전체)와 개별 보고서(학생별) PDF를 만듭니다.
-        AI가 판단한 난이도이며 실제 정답률이 아니고, 등급·예상 등급은 포함하지 않습니다.
+        AI가 판단한 난이도이며 실제 정답률이 아니고, 등급·예상 등급은 포함하지 않습니다. 모든 문항의 문제·정답·풀이만 모은
+        전체 문제 해설지도 따로 받을 수 있습니다(제출한 학생이 없어도 됨).
       </p>
 
       {!data && !loading && (
@@ -145,9 +170,14 @@ export default function ReportPanel({
 
       {data && (
         <div className="space-y-3">
-          <div>
-            <button className="btn-secondary text-sm px-2 py-1" disabled={busy} onClick={onSummary}>
-              종합 보고서 PDF 만들기
+          <div className="flex flex-wrap gap-2">
+            {students.length > 0 && (
+              <button className="btn-secondary text-sm px-2 py-1" disabled={busy} onClick={onSummary}>
+                종합 보고서 PDF 만들기
+              </button>
+            )}
+            <button className="btn-secondary text-sm px-2 py-1" disabled={busy} onClick={onSolutions}>
+              전체 문제 해설지 PDF 받기
             </button>
           </div>
 
