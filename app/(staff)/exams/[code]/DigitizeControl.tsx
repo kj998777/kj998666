@@ -21,6 +21,14 @@ const STAGE_LABEL: Record<string, string> = {
   dg_error: "오류",
 };
 
+// 2026-09-29: 그림 자리 자동 보정 안내(buildDigitizedPdf의 figFixed / figSuspect)
+function figNote(b: { figFixed?: string[]; figSuspect?: string[] }): string {
+  const parts: string[] = [];
+  if (b.figFixed?.length) parts.push(`그림 자리 자동 보정 ${b.figFixed.length}곳(${b.figFixed.join(", ")}번 — 확인해 주세요)`);
+  if (b.figSuspect?.length) parts.push(`그림을 못 찾은 곳 ${b.figSuspect.length}곳(${b.figSuspect.join(", ")}번 — 원본과 비교해 주세요)`);
+  return parts.length ? " · " + parts.join(" · ") : "";
+}
+
 export default function DigitizeControl({
   code,
   examId,
@@ -56,7 +64,7 @@ export default function DigitizeControl({
       downloadPdfBytes(built.bytes, `${examName}_디지털시험지.pdf`);
       setPdfMsg(
         `저장했습니다 (${built.pages}쪽 · 문항 ${built.items}개 · 그림 ${built.figs}개${
-          built.figErrors ? ` · 그림 오류 ${built.figErrors}곳` : ""
+          (built.figErrors ? ` · 그림 오류 ${built.figErrors}곳` : "") + figNote(built)
         }). 옮겨 적은 글·수식·그림은 AI가 읽은 것이니 원본과 대조한 뒤 나눠 주세요.`
       );
     } catch (e: any) {
@@ -85,7 +93,7 @@ export default function DigitizeControl({
       if (!r.ok) throw new Error(r.msg ?? "적용하지 못했습니다.");
       setApplyMsg(
         `적용했습니다 (${built.pages}쪽 · 문항 ${built.items}개 · 그림 ${built.figs}개${
-          built.figErrors ? ` · 그림 오류 ${built.figErrors}곳` : ""
+          (built.figErrors ? ` · 그림 오류 ${built.figErrors}곳` : "") + figNote(built)
         }). 이제 이 디지털 시험지가 원본 PDF입니다 — 원본과 대조해 확인해 주세요.`
       );
       router.refresh();

@@ -22,6 +22,7 @@
 
 import { PDFDocument } from "pdf-lib";
 import { normalizeTex } from "@/lib/math/normalizeTex";
+import { canvasGray, refineFigureBox, type Box } from "@/lib/digitize/figureRefine";
 
 // ---------------------------------------------------------------------
 // AI 결과 데이터 타입 (DG_TOOL, lib/ai/prompts.ts 와 같은 모양)
@@ -60,6 +61,9 @@ export type BuildResult = {
   figs: number;
   figErrors: number;
   locations: DgLocation[];
+  /** 2026-09-29: 그림 자리 자동 보정 결과 — fixed: 자리를 고친 문항 번호들, suspect: 그림을 못 찾아 확인이 필요한 문항 번호들 */
+  figFixed: string[];
+  figSuspect: string[];
 };
 
 // ---------------------------------------------------------------------
@@ -597,6 +601,12 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
 
   let nFig = 0;
   const figErrs: string[] = [];
+  // 그림 자리 확인용 쪽 밝기(쪽마다 한 번) + 같은 쪽의 다른 그림 자리(옮길 때 겹치지 않게)
+  const grayCache = new Map<number, { gray: Uint8ClampedArray; w: number; h: number }>();
+  const figsOnPage = new Map<number, Box[]>();
+  for (const e of items) for (const f of e.it.figures || []) figsOnPage.set(e.pg, [...(figsOnPage.get(e.pg) || []), f]);
+  const figFixed: string[] = [];
+  const figSuspect: string[] = [];
   for (let k = 0; k < items.length; k++) {
     const e = items[k];
     const it = e.it;
@@ -607,12 +617,29 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
     for (const f of it.figures || []) {
       try {
         const pc = await pageCv(e.pg);
+        // 2026-09-29: AI가 준 그림 자리가 빗나가면(그래프 대신 선택지·다음 문제 글자가 잘려 나옴) 원본 쪽에서 실제 그림을 찾아 고친다
+        let fb: Box = f;
+        try {
+          let g = grayCache.get(e.pg);
+          if (!g) {
+            g = canvasGray(pc);
+            grayCache.set(e.pg, g);
+          }
+          const others = (figsOnPage.get(e.pg) || []).filter((o) => o !== f);
+          const rf = refineFigureBox(g.gray, g.w, g.h, f, others);
+          fb = rf.box;
+          const lab = it.label || "?";
+          if (rf.status === "moved" || rf.status === "expanded") figFixed.push(lab);
+          else if (rf.status === "suspect") figSuspect.push(lab);
+        } catch {
+          fb = f;
+        }
         const padX = Math.round(pc.width * 0.008);
         const padY = Math.round(pc.height * 0.006);
-        const x0 = Math.max(0, Math.floor((f.x0 / 1000) * pc.width) - padX);
-        const y0 = Math.max(0, Math.floor((f.y0 / 1000) * pc.height) - padY);
-        const x1 = Math.min(pc.width, Math.ceil((f.x1 / 1000) * pc.width) + padX);
-        const y1 = Math.min(pc.height, Math.ceil((f.y1 / 1000) * pc.height) + padY);
+        const x0 = Math.max(0, Math.floor((fb.x0 / 1000) * pc.width) - padX);
+        const y0 = Math.max(0, Math.floor((fb.y0 / 1000) * pc.height) - padY);
+        const x1 = Math.min(pc.width, Math.ceil((fb.x1 / 1000) * pc.width) + padX);
+        const y1 = Math.min(pc.height, Math.ceil((fb.y1 / 1000) * pc.height) + padY);
         let cv = document.createElement("canvas");
         cv.width = Math.max(2, x1 - x0);
         cv.height = Math.max(2, y1 - y0);
@@ -643,6 +670,7 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
     tick(`그림을 오리는 중… ${k + 1}/${items.length}`);
   }
   pageCache.clear();
+  grayCache.clear();
   try {
     await srcDoc.destroy();
   } catch {
@@ -823,7 +851,8 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
 
   const bytes = await outDoc.save();
   const qItems = items.filter((e) => e.it.type === "question").length;
-  return { bytes, pages: nPg, items: qItems, figs: nFig, figErrors: figErrs.length, locations };
+  const uniq = (a: string[]) => Array.from(new Set(a));
+  return { bytes, pages: nPg, items: qItems, figs: nFig, figErrors: figErrs.length, locations, figFixed: uniq(figFixed), figSuspect: uniq(figSuspect) };
 }
 
 export function downloadPdfBytes(bytes: Uint8Array, filename: string): void {
