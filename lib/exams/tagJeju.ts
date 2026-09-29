@@ -6,7 +6,9 @@ import { detectJejuSchool } from "@/lib/jejuSchools";
 // 이유: 0019 적용 전 DB에는 is_jeju 열이 없어 insert 자체가 실패하면 안 되므로, 여기서만 조용히 실패한다.
 export async function tagJejuSchool(client: any, examId: string, name: string, level: string | null): Promise<void> {
   const d = detectJejuSchool(name);
-  const patch: Record<string, unknown> = { is_jeju: d.jeju };
+  // 2026-09-29: 제주로 판정될 때만 켠다(새 시험은 기본값이 false라 끌 필요 없음 — 다른 경로에서 켠 표시를 덮어쓰지 않게)
+  if (!d.jeju) return;
+  const patch: Record<string, unknown> = { is_jeju: true };
   if (!level && d.level) patch.school_level = d.level;
   try {
     await (client.from("exams") as any).update(patch).eq("id", examId);
