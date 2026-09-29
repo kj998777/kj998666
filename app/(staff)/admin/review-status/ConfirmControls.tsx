@@ -93,7 +93,7 @@ export function EditRequestControl({ requestId, initialAnswer }: { requestId: st
               setErr("");
               const r = await acceptEditRequest(requestId, value);
               if (!r.ok) setErr(r.msg ?? "실패했습니다.");
-              else setDone(`반영했습니다${r.regraded ? ` — 제출 ${r.regraded}건 다시 채점` : ""}.`);
+              else setDone(`반영했습니다${r.regraded ? ` — 제출 ${r.regraded}건 다시 채점` : ""}${(r as any).reward ? ` · 요청한 선생님에게 +${(r as any).reward}P` : ""}.`);
             })
           }
         >
@@ -114,7 +114,7 @@ export function EditRequestControl({ requestId, initialAnswer }: { requestId: st
           거절
         </button>
       </div>
-      <p className="text-xs text-slate-400">입력칸을 비워 두면 정답은 그대로 두고 해설만 반영합니다.</p>
+      <p className="text-xs text-slate-400">입력칸을 비워 두면 정답은 그대로 두고 해설만 반영합니다. 정답이 바뀌면 요청한 선생님에게 +3P(해설만이면 +1P)를 주고, 예전 답을 냈던 선생님들의 정답률에 반영됩니다.</p>
       {err && <p className="text-xs text-red-600">{err}</p>}
     </div>
   );
