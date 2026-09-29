@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
+import { MathPreview, MathToolbar } from "@/app/_components/MathTools";
 import { updateItemExplanation } from "./actions";
 import ErrorCheckControl from "./ErrorCheckControl";
 
@@ -40,6 +41,16 @@ export default function ItemExplanationRow({
 }) {
   const [answer_display, setAnswer] = useState(row.answer_display);
   const [solution, setSolution] = useState(row.solution);
+  const answerRef = useRef<HTMLInputElement | null>(null);
+  const solutionRef = useRef<HTMLTextAreaElement | null>(null);
+  const setAnswerDirty = (v: string) => {
+    setAnswer(v);
+    setSaved(false);
+  };
+  const setSolutionDirty = (v: string) => {
+    setSolution(v);
+    setSaved(false);
+  };
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
   const [saved, setSaved] = useState(false);
@@ -88,24 +99,24 @@ export default function ItemExplanationRow({
             <div>
               <label className="label">정답표시</label>
               <input
+                ref={answerRef}
                 className="input py-1"
-                value={answer_display}
-                onChange={(e) => {
-                  setAnswer(e.target.value);
-                  setSaved(false);
-                }}
+                value={answer_display ?? ""}
+                onChange={(e) => setAnswerDirty(e.target.value)}
               />
+              <MathToolbar target={answerRef} value={answer_display ?? ""} onChange={setAnswerDirty} circled />
+              <MathPreview text={answer_display ?? ""} className="mt-1" />
             </div>
             <div>
               <label className="label">풀이</label>
+              <MathToolbar target={solutionRef} value={solution ?? ""} onChange={setSolutionDirty} />
               <textarea
-                className="input py-1 min-h-24"
-                value={solution}
-                onChange={(e) => {
-                  setSolution(e.target.value);
-                  setSaved(false);
-                }}
+                ref={solutionRef}
+                className="input py-1 min-h-24 mt-1"
+                value={solution ?? ""}
+                onChange={(e) => setSolutionDirty(e.target.value)}
               />
+              <MathPreview text={solution ?? ""} className="mt-1" />
             </div>
             <div className="flex items-center gap-2">
               {dirty && (
