@@ -21,6 +21,8 @@ import FolderSelect from "./FolderSelect";
 import ItemExplanationRow from "./ItemExplanationRow";
 import TutorDownloadCostInput from "./TutorDownloadCostInput";
 import { pageRangeLabel, trailingAnswerPages } from "@/lib/ai/answerPages";
+import { getQrBoxes } from "@/lib/ai/qrMask";
+import QrScanButton from "./QrScanButton";
 
 const ACTIVE_STAGES = new Set(["upload", "extract_submit", "extract_wait", "solve_submit", "solve_wait"]);
 
@@ -62,9 +64,12 @@ export default async function ExamDetailPage({
   let corrections: { id: string; item_label: string; issue: string; fix: string }[] = [];
   const checksByLabel: Record<string, Awaited<ReturnType<typeof getItemCheck>>> = {};
   let digitizeJob: Awaited<ReturnType<typeof getDigitizeJob>> = null;
+  // 원본 속 QR 가리기(0031): 찾아 둔 위치·진행 상태
+  let qr: Awaited<ReturnType<typeof getQrBoxes>> = { status: "unavailable", boxes: [], message: "" };
   if (canEdit) {
-    pdfMeta = await getExamPdfMeta(supabase, exam.id);
+    [pdfMeta, qr] = await Promise.all([getExamPdfMeta(supabase, exam.id), getQrBoxes(supabase, exam.id)]);
   }
+  const qrPages = Array.from(new Set(qr.boxes.map((b) => b.page))).sort((a, b) => a - b);
   if (isAdmin) {
     job = await getJob(supabase, exam.id);
     if (pdfMeta) digitizeJob = await getDigitizeJob(supabase, exam.id);
@@ -271,7 +276,32 @@ export default async function ExamDetailPage({
                 {pageRangeLabel(answerPages)})
               </label>
             )}
+            {/* 2026-09-29: 원본 쪽 안에 인쇄된 QR(학교·다른 학원 등)을 흰 칸으로 가림 */}
+            {qr.status === "done" && qr.boxes.length > 0 && (
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" name="maskQr" value="1" defaultChecked /> 원본 속 QR 가리기 ({qr.boxes.length}개 ·{" "}
+                {qrPages.join(", ")}쪽)
+              </label>
+            )}
           </div>
+          {qr.status !== "unavailable" && (
+            <p className="text-xs text-slate-500 flex flex-wrap items-center gap-2">
+              <span>
+                {qr.status === "done"
+                  ? qr.boxes.length
+                    ? "원본에 인쇄된 QR을 AI가 찾아 두었습니다. 체크하면 흰 칸으로 가립니다(원본 파일은 그대로)."
+                    : "원본에서 QR을 찾지 못했습니다(가릴 것 없음)."
+                  : qr.status === "pending"
+                    ? "원본 속 QR을 AI가 찾는 중입니다(보통 몇 분). 끝나면 여기서 가리기를 고를 수 있습니다."
+                    : qr.status === "error"
+                      ? `원본 속 QR을 찾지 못했습니다: ${qr.message}`
+                      : "원본 속 QR을 아직 찾지 않았습니다."}
+              </span>
+              {isAdmin && qr.status !== "pending" && (
+                <QrScanButton code={exam.code} label={qr.status === "done" ? "QR 다시 찾기" : "QR 찾기"} />
+              )}
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <label htmlFor="exclude">뺄 쪽 번호(원본 기준, 쉼표로 구분)</label>
             <input id="exclude" name="exclude" type="text" placeholder="예: 8,9" className="input w-40" />

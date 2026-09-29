@@ -132,3 +132,16 @@ export async function toggleExamStatus(code: string, open: boolean) {
   revalidatePath("/exams");
   return { ok: true };
 }
+
+/** 2026-09-29: 이 시험 원본 PDF 속 QR 위치를 (다시) AI로 찾게 한다(관리자). 결과는 크론이 몇 분 안에 채운다. */
+export async function rescanExamQr(code: string) {
+  await requireRole("admin");
+  const exam = await getExamId(code);
+  if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
+  const { enqueueQrScan } = await import("@/lib/ai/qrMask");
+  const queued = await enqueueQrScan(null, exam.id, { force: true });
+  revalidatePath(`/exams/${code}`);
+  return queued
+    ? { ok: true, msg: "QR 찾기를 걸었습니다. 보통 몇 분 안에 끝나며, 끝나면 PDF에서 자동으로 가려집니다." }
+    : { ok: false, msg: "이미 찾는 중이거나, 데이터베이스 마이그레이션 0031이 아직 적용되지 않았습니다." };
+}
