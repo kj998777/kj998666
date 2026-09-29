@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { cancelAiProcessing, pollAiJob, startAiProcessing, type JobPoll } from "../ai-actions";
+import { cancelAiProcessing, startAiProcessing, type JobPoll } from "../ai-actions";
+import { pollJob, pageVisible } from "@/lib/jobPoll";
 import { ACTIVE, STAGE_LABEL } from "../aiJobStage";
 
 export default function AiJobPanel({ code, initial }: { code: string; initial: JobPoll }) {
@@ -9,19 +10,25 @@ export default function AiJobPanel({ code, initial }: { code: string; initial: J
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState("");
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const busy = useRef(false);
 
   useEffect(() => {
     function stop() {
       if (timer.current) clearInterval(timer.current);
       timer.current = null;
     }
+    // 2026-09-29 최적화: fetch로 확인(화면 이동을 막지 않음), 겹쳐 부르지 않음, 다른 탭을 보는 동안은 쉼(서버 1분 자동 작업이 계속 진행)
     if (job && ACTIVE.has(job.stage)) {
-      timer.current = setInterval(() => {
-        start(async () => {
-          const r = await pollAiJob(code);
-          setJob(r);
-        });
-      }, 4000);
+      timer.current = setInterval(async () => {
+        if (busy.current || !pageVisible()) return;
+        busy.current = true;
+        try {
+          const r = await pollJob<JobPoll>(code, "ai");
+          if (r.ok) setJob(r.data);
+        } finally {
+          busy.current = false;
+        }
+      }, 5000);
     } else {
       stop();
     }

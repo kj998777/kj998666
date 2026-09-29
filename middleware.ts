@@ -6,6 +6,10 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request: { headers: request.headers } });
 
+  // 2026-09-29 최적화: 로그인 쿠키가 아예 없는 요청(학생 답안 제출 화면, 로그인 화면 등)은 갱신할 세션이 없으므로
+  // Supabase 인증 서버에 다녀오지 않고 바로 넘긴다.
+  if (!request.cookies.getAll().some((c) => c.name.startsWith("sb-"))) return response;
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

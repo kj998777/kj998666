@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { getAiSettingsPublic, getCreditInfo } from "@/lib/ai/settings";
@@ -72,16 +73,18 @@ async function loadLocate(
   if (error) return { available: false, missingItems: 0, jobs: [], stale: { exams: 0, items: 0 }, recheck: { exams: 0, items: 0 } };
   const jobs = (jobsRaw as any[]) ?? [];
 
-  const missingItems = await countMissingLocateItems(supabase);
-  const stale = await countStaleDigitized(supabase).catch(() => ({ exams: 0, items: 0 }));
-  const recheck = await countRecheck(supabase).catch(() => ({ exams: 0, items: 0 }));
-
+  // 2026-09-29 최적화: 세 가지 집계와 시험 이름 조회를 차례로가 아니라 동시에 한다.
   const examIds = [...new Set(jobs.map((j) => j.exam_id))];
+  const [missingItems, stale, recheck, examsRes] = await Promise.all([
+    countMissingLocateItems(supabase).catch(() => 0),
+    countStaleDigitized(supabase).catch(() => ({ exams: 0, items: 0 })),
+    countRecheck(supabase).catch(() => ({ exams: 0, items: 0 })),
+    examIds.length
+      ? (supabase.from("exams").select("id, code, name").in("id", examIds) as any)
+      : Promise.resolve({ data: [] }),
+  ]);
   const examById = new Map<string, any>();
-  if (examIds.length) {
-    const { data: examsRaw } = (await supabase.from("exams").select("id, code, name").in("id", examIds)) as any;
-    for (const e of (examsRaw as any[]) ?? []) examById.set(e.id, e);
-  }
+  for (const e of ((examsRes as any)?.data as any[]) ?? []) examById.set(e.id, e);
   return {
     available: true,
     missingItems,
@@ -103,15 +106,40 @@ async function loadLocate(
   };
 }
 
+// 문항 영역 찾기 칸은 집계가 가장 무거워서 따로 불러온다 — 나머지 화면이 먼저 뜨고 이 칸은 준비되는 대로 채워진다(2026-09-29 최적화).
+async function LocateSection() {
+  const supabase = await createClient();
+  const locate = await loadLocate(supabase);
+  return (
+    <LocateStatusPanel
+      available={locate.available}
+      missingItems={locate.missingItems}
+      jobs={locate.jobs}
+      stale={locate.stale}
+      recheck={locate.recheck}
+    />
+  );
+}
+
+function LocateFallback() {
+  return (
+    <div className="space-y-2 animate-pulse">
+      <h2 className="font-medium">문항 영역 찾기</h2>
+      <p className="text-sm text-slate-400">진행 상황을 불러오는 중…</p>
+      <div className="h-4 w-2/3 rounded bg-slate-100" />
+      <div className="h-4 w-1/2 rounded bg-slate-100" />
+    </div>
+  );
+}
+
 export default async function AdminAiPage() {
   await requireRole("admin");
   const supabase = await createClient();
-  const [settings, credit, examJobs, digitizeJobs, locate] = await Promise.all([
+  const [settings, credit, examJobs, digitizeJobs] = await Promise.all([
     getAiSettingsPublic(supabase),
     getCreditInfo(supabase),
     loadExamJobs(supabase),
     loadDigitizeJobs(supabase),
-    loadLocate(supabase),
   ]);
 
   return (
@@ -138,13 +166,9 @@ export default async function AdminAiPage() {
       </div>
 
       <div className="card">
-        <LocateStatusPanel
-          available={locate.available}
-          missingItems={locate.missingItems}
-          jobs={locate.jobs}
-          stale={locate.stale}
-          recheck={locate.recheck}
-        />
+        <Suspense fallback={<LocateFallback />}>
+          <LocateSection />
+        </Suspense>
       </div>
     </div>
   );

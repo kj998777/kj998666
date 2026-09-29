@@ -1,7 +1,13 @@
 import "server-only";
 import { redirect } from "next/navigation";
+import * as React from "react";
+
 import { createClient } from "@/lib/supabase/server";
 import type { Role } from "@/lib/supabase/types";
+
+// React.cache(서버 컴포넌트에서 한 요청 안의 결과 재사용). 타입 선언이 없는 환경에서도 빌드가 깨지지 않도록 any로 꺼내고,
+// 없으면 그냥 매번 부른다(동작은 예전과 같음).
+const cache: <T extends (...args: any[]) => any>(fn: T) => T = ((React as any).cache as any) ?? ((fn: any) => fn);
 
 // 이중 방어 패턴: 화면(서버 컴포넌트)에서 역할에 따라 버튼을 아예 숨기고,
 // 실제 변경을 수행하는 서버 액션/라우트 핸들러에서도 반드시 이 파일의 함수로 다시 검사한다.
@@ -23,8 +29,10 @@ function passesRole(role: Role, minRole: Role): boolean {
   return r >= min;
 }
 
-/** 로그인 상태 + 역할을 조회. 로그인 안 했거나 profiles 행이 없으면 null. */
-export async function getSessionAndRole(): Promise<SessionAndRole | null> {
+/** 로그인 상태 + 역할을 조회. 로그인 안 했거나 profiles 행이 없으면 null.
+ *  2026-09-29 최적화: 한 번의 화면 요청 안에서는 결과를 재사용한다(React cache) — 전에는 레이아웃과 페이지가
+ *  각각 불러 로그인 확인·역할 조회가 두 번씩 일어났다. 요청이 바뀌면 다시 조회하므로 권한 검사는 그대로다. */
+export const getSessionAndRole = cache(async function getSessionAndRoleUncached(): Promise<SessionAndRole | null> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -39,7 +47,7 @@ export async function getSessionAndRole(): Promise<SessionAndRole | null> {
   if (!profile) return null;
 
   return { userId: user.id, email: profile.email, role: profile.role };
-}
+});
 
 /**
  * 서버 컴포넌트(페이지/레이아웃)에서 사용. 요구 역할 미달이면 리다이렉트하고 함수가 반환되지 않는다.

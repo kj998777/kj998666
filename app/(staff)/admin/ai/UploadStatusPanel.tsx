@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { pollAiJob, startAiProcessing, cancelAiProcessing } from "../../exams/ai-actions";
+import { startAiProcessing, cancelAiProcessing } from "../../exams/ai-actions";
+import { pollJob } from "@/lib/jobPoll";
 import {
-  pollDigitizeAction,
   startDigitizeAction,
   cancelDigitizeAction,
 } from "../../exams/[code]/digitize-actions";
@@ -33,7 +33,11 @@ function timeAgo(iso: string) {
   return `${Math.floor(diffHr / 24)}일 전`;
 }
 
-type PollFn = (code: string) => Promise<{ stage: string; message: string; updatedAt: string } | null>;
+// 2026-09-29: 서버 액션 대신 fetch(lib/jobPoll.ts)로 확인 — ok=false(이번 확인 실패)면 줄을 그대로 둔다.
+type PollData = { stage: string; message: string; updatedAt: string } | null;
+type PollFn = (
+  code: string
+) => Promise<{ ok: true; data: { stage: string; message: string; updatedAt: string } | null } | { ok: false }>;
 type ActionFn = (code: string) => Promise<{ ok: boolean; msg?: string }>;
 type SetRows = (updater: UploadJobRow[] | ((prev: UploadJobRow[]) => UploadJobRow[])) => void;
 
@@ -60,6 +64,7 @@ function JobList({
   retryMessage,
   cancel,
   cancelMessage,
+  pauseWhenHidden = true,
 }: {
   rows: UploadJobRow[];
   setRows: SetRows;
@@ -73,6 +78,8 @@ function JobList({
   retryMessage: string;
   cancel: ActionFn;
   cancelMessage: string;
+  /** 다른 탭을 보는 동안 확인을 쉴지 — 서버 1분 자동 작업이 대신 진행해 주는 작업(AI 자동 처리)만 true */
+  pauseWhenHidden?: boolean;
 }) {
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
@@ -107,27 +114,37 @@ function JobList({
     });
   }
 
+  // 2026-09-29 최적화: 서버 액션 대신 fetch로 확인해 화면 이동을 막지 않고, 앞선 확인이 끝나기 전에는 새로 부르지 않는다(겹침 방지).
+  // AI 자동 처리는 다른 탭을 보는 동안 확인을 쉰다(서버 1분 자동 작업이 계속 진행). 디지털화는 이 화면이 진행을 밀어 주므로 계속 확인.
+  const busy = useRef(false);
   useEffect(() => {
-    const timer = setInterval(() => {
+    const timer = setInterval(async () => {
+      if (busy.current) return;
+      if (pauseWhenHidden && typeof document !== "undefined" && document.visibilityState !== "visible") return;
       const targets = rowsRef.current.filter((r) => activeStages.has(r.stage));
       if (targets.length === 0) return;
-      start(async () => {
+      busy.current = true;
+      try {
         const results = await Promise.all(targets.map(async (r) => ({ code: r.code, res: await poll(r.code) })));
         setRows((prev) => {
           let next = prev;
           for (const { code, res } of results) {
-            if (!res || res.stage === doneStage) {
+            if (!res.ok) continue; // 이번 확인 실패 — 그대로 두고 다음 주기에 다시
+            const d = res.data;
+            if (!d || d.stage === doneStage) {
               next = next.filter((row) => row.code !== code);
             } else {
               next = next.map((row) =>
-                row.code === code ? { ...row, stage: res.stage, message: res.message, updatedAt: res.updatedAt } : row
+                row.code === code ? { ...row, stage: d.stage, message: d.message, updatedAt: d.updatedAt } : row
               );
             }
           }
           return next;
         });
-      });
-    }, 4000);
+      } finally {
+        busy.current = false;
+      }
+    }, 5000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -243,7 +260,7 @@ export default function UploadStatusPanel({
           activeStages={AI_ACTIVE}
           doneStage="done"
           errorStage="error"
-          poll={pollAiJob}
+          poll={(c) => pollJob<PollData>(c, "ai")}
           retry={startAiProcessing}
           retryStage="upload"
           retryMessage="시험지를 AI에 올리는 중…"
@@ -260,7 +277,8 @@ export default function UploadStatusPanel({
           activeStages={DG_ACTIVE}
           doneStage="dg_done"
           errorStage="dg_error"
-          poll={pollDigitizeAction}
+          poll={(c) => pollJob<PollData>(c, "digitize")}
+          pauseWhenHidden={false}
           retry={startDigitizeAction}
           retryStage="dg_upload"
           retryMessage="시험지를 AI에 올리는 중…"

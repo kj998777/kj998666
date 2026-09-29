@@ -15,20 +15,16 @@ export default async function StaffLayout({ children }: { children: React.ReactN
   // 관리자에게만: 새로 들어온(접수) 과외선생님 버그 신고 수(2026-09-29, 0026 전이면 0)
   let bugCount = 0;
   if (session.role === "admin") {
+    // 두 숫자를 동시에 조회(2026-09-29 최적화 — 전에는 차례로 조회)
     const supabase = await createClient();
-    const { count } = await supabase
-      .from("profiles")
-      .select("id", { count: "exact", head: true })
-      .eq("role", "대기");
-    pendingCount = count ?? 0;
-    try {
-      const { count: bc, error: bErr } = await (createAdminClient().from("bug_reports") as any)
-        .select("id", { count: "exact", head: true })
-        .eq("status", "접수");
-      bugCount = bErr ? 0 : bc ?? 0;
-    } catch {
-      bugCount = 0;
-    }
+    const [pendingRes, bugRes] = await Promise.all([
+      supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "대기"),
+      Promise.resolve(
+        (createAdminClient().from("bug_reports") as any).select("id", { count: "exact", head: true }).eq("status", "접수")
+      ).catch(() => ({ count: 0, error: true })),
+    ]);
+    pendingCount = pendingRes.count ?? 0;
+    bugCount = (bugRes as any).error ? 0 : (bugRes as any).count ?? 0;
   }
 
   return (
