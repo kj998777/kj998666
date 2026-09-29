@@ -24,7 +24,8 @@ type Row = {
 // 배치 안에서라도 코드가 겹치지 않게 한다(그래도 기존 시험과 겹치면 서버가 "이미 사용 중" 오류를 돌려줌 —
 // 그건 표에서 코드를 고쳐 그 파일만 다시 시도하면 된다).
 function baseNameOf(file: File): string {
-  const n = file.name.replace(/\.pdf$/i, "").trim();
+  // 2026-09-29: 맥에서 고른 파일 이름은 한글이 분해형(NFD)이라 "제주" 같은 글자 검색이 안 됐다 → 표준형(NFC)으로 바꾼다
+  const n = file.name.normalize("NFC").replace(/\.pdf$/i, "").trim();
   return n || "시험";
 }
 
