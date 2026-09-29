@@ -45,7 +45,16 @@ async function uploadReviewPhoto(itemExplanationId: string, image: File | null |
 export async function claimNextReviewItem(): Promise<
   { itemExplanationId: string; kind: "primary" | "verify" } | { error: string } | null
 > {
-  await requireTutor();
+  const session = await requireTutor();
+  // 2026-09-29: 이미 맡고 있는 문항이 있으면(다른 앱에 갔다 와서 화면이 새로 열린 경우 등) 새로 배정하지 않고 그 문항으로
+  // 돌려보낸다 — 전에는 새 문항이 또 배정돼 앞 문항이 30분 동안 아무도 못 푸는 채로 묶였다. 다른 문항을 원하면 "포기"를 누르면 된다.
+  try {
+    const { getMyActiveClaims } = await import("@/lib/tutor/claims");
+    const mine = await getMyActiveClaims(session.userId);
+    if (mine.length) return { itemExplanationId: mine[0].itemExplanationId, kind: mine[0].kind };
+  } catch {
+    /* 확인 실패는 무시하고 평소대로 배정 */
+  }
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("claim_next_review_item");
   if (error) return { error: error.message || "문항을 배정받지 못했습니다." };

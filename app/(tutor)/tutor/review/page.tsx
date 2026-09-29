@@ -1,49 +1,35 @@
-"use client";
+import Link from "next/link";
+import { requireTutor } from "@/lib/auth/requireTutor";
+import { getMyActiveClaims } from "@/lib/tutor/claims";
+import ReviewQueueClient from "./ReviewQueueClient";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { claimNextReviewItem } from "./actions";
+export const dynamic = "force-dynamic";
 
-// 검토 큐는 목록으로 보여주지 않고(블라인드 배정을 위해) "다음 문항 받기" 버튼 하나로 진입점만
-// 제공한다. 배정된 문항은 /tutor/review/[itemId]?kind=primary|verify 로 이동해서 보여준다.
-export default function ReviewQueuePage() {
-  const router = useRouter();
-  const [pending, start] = useTransition();
-  const [msg, setMsg] = useState("");
-
+// 검토하기 첫 화면. 2026-09-29: 이미 맡고 있는 문항이 있으면(다른 앱에 갔다 와서 화면이 새로 열린 경우 등) 먼저 그 문항으로
+// 돌아갈 수 있게 보여 준다(맡은 문제 탭과 같은 목록, lib/tutor/claims.ts).
+export default async function ReviewQueuePage() {
+  const session = await requireTutor();
+  const claims = await getMyActiveClaims(session.userId).catch(() => []);
   return (
-    <div className="card text-center space-y-3 max-w-lg mx-auto">
-      <h1 className="text-lg font-semibold">검토하기</h1>
-      <p className="text-sm text-slate-500">
-        버튼을 누르면 검토가 필요한 문항 하나를 배정받습니다. 원본 문제지 PDF를 함께 보고 정답과
-        풀이를 제출하면 즉시 반영되고 포인트가 적립됩니다.
-      </p>
-      <button
-        className="btn-primary"
-        disabled={pending}
-        onClick={() =>
-          start(async () => {
-            setMsg("");
-            try {
-              const result = await claimNextReviewItem();
-              if (!result) {
-                setMsg("지금은 검토할 문항이 없습니다. 나중에 다시 확인해 주세요.");
-                return;
-              }
-              if ("error" in result) {
-                setMsg(result.error);
-                return;
-              }
-              router.push(`/tutor/review/${result.itemExplanationId}?kind=${result.kind}`);
-            } catch (e: any) {
-              setMsg(e?.message ?? "문항을 배정받지 못했습니다.");
-            }
-          })
-        }
-      >
-        다음 문항 받기
-      </button>
-      {msg && <p className="text-sm text-slate-500">{msg}</p>}
+    <div className="space-y-4">
+      {claims.length > 0 && (
+        <div className="card border-amber-300 bg-amber-50 max-w-lg mx-auto space-y-2">
+          <p className="text-sm text-amber-900 font-medium">풀고 있던 문제가 있습니다</p>
+          <ul className="space-y-1">
+            {claims.map((c) => (
+              <li key={c.itemExplanationId + c.kind} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span>
+                  {c.examName} · {c.itemLabel}번
+                </span>
+                <Link href={`/tutor/review/${c.itemExplanationId}?kind=${c.kind}`} className="btn-primary py-1 px-3 text-sm">
+                  이어서 풀기
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <ReviewQueueClient />
     </div>
   );
 }
