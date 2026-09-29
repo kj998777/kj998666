@@ -1,6 +1,6 @@
 // 순수 함수 단위 테스트. 프로젝트 의존성 설치 없이 `tsx test/grading.test.ts` 로 바로 돌아간다.
 import assert from "node:assert/strict";
-import { isCorrect, normalizeAnswer, toNumber, gradeSubmission } from "../lib/grading";
+import { isCorrect, normalizeAnswer, toNumber, gradeSubmission, latexToPlain } from "../lib/grading";
 
 let n = 0;
 function check(name: string, fn: () => void) {
@@ -97,5 +97,26 @@ check("gradeSubmission: 배점 합산 + 부동소수점 오차 제거", () => {
 check("gradeSubmission: 문항 수 불일치 시 예외", () => {
   assert.throws(() => gradeSubmission([{ item_label: "1", correct_answers: "1", points: 1, type: "객관식" }], []));
 });
+
+
+// --- 수식으로 적은 답(2026-09-29) ---
+check("latex 분수 → a/b", () => assert.equal(latexToPlain("$\\frac{3}{4}$"), "3/4"));
+check("latex 음수 분수", () => assert.equal(latexToPlain("$-\\dfrac{1}{2}$"), "-1/2"));
+check("latex 루트", () => assert.equal(latexToPlain("$2\\sqrt{3}$"), "2√3"));
+check("latex 분수 안 루트", () => assert.equal(latexToPlain("$\\frac{\\sqrt{3}}{2}$"), "√3/2"));
+check("latex 부등호", () => assert.equal(latexToPlain("$x \\le 3$"), "x ≤ 3"));
+check("latex 없는 글은 그대로", () => assert.equal(latexToPlain("3/4"), "3/4"));
+check("정답 $\\frac{3}{4}$ ↔ 학생 3/4", () => assert.equal(isCorrect("3/4", "$\\frac{3}{4}$"), true));
+check("정답 $\\frac{3}{4}$ ↔ 학생 0.75", () => assert.equal(isCorrect("0.75", "$\\frac{3}{4}$"), true));
+check("정답 $\\frac{3}{4}$ ↔ 학생 6/8", () => assert.equal(isCorrect("6/8", "$\\frac{3}{4}$"), true));
+check("정답 $\\frac{3}{4}$ ↔ 학생 4/3 오답", () => assert.equal(isCorrect("4/3", "$\\frac{3}{4}$"), false));
+check("정답 $\\frac{\\sqrt{3}}{2}$ ↔ 학생 √3/2", () => assert.equal(isCorrect("√3/2", "$\\frac{\\sqrt{3}}{2}$"), true));
+check("정답 $\\frac{\\sqrt{3}}{2}$ ↔ 학생 루트3/2", () => assert.equal(isCorrect("루트3/2", "$\\frac{\\sqrt{3}}{2}$"), true));
+check("정답 $2\\sqrt{3}$ ↔ 학생 2√3", () => assert.equal(isCorrect("2√3", "$2\\sqrt{3}$"), true));
+check("정답 $x \\ge 2$ ↔ 학생 x>=2", () => assert.equal(isCorrect("x>=2", "$x \\ge 2$"), true));
+check("정답 $3\\pi$ ↔ 학생 3pi", () => assert.equal(isCorrect("3pi", "$3\\pi$"), true));
+check("학생이 수식으로 적어도: $\\frac{1}{2}$ ↔ 정답 0.5", () => assert.equal(isCorrect("$\\frac{1}{2}$", "0.5"), true));
+check("(√3)/(2) = √3/2", () => assert.equal(isCorrect("(√3)/(2)", "√3/2"), true));
+check("여러 정답 중 수식", () => assert.equal(isCorrect("2", "$\\frac{1}{2}$|2"), true));
 
 console.log(`\n총 ${n}개 테스트 통과`);
