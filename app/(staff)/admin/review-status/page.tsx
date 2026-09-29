@@ -147,16 +147,21 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
   const pendingIds = ((pendingExamsRaw as any[]) ?? []).map((e) => e.id);
   const locate = await getLocateSummary(supabase, pendingIds);
   const examNameById = new Map(examRows.map((e) => [e.id, e.name as string]));
-  // 과외선생님 검토 배정과 같은 순서: 검수대기 → 제주 학교 → 고등 > 중등 > 그 밖 → 이름
+  // 과외선생님 검토 배정과 같은 순서: 검수대기 → 제주 학교 → 남은 검토대기 문항이 적은 시험(0030) → 고등 > 중등 > 그 밖 → 이름
+  const items: Item[] = itemsRaw ?? [];
+  const remainingByExam = new Map<string, number>();
+  for (const it of items) {
+    if (!it.tutor_reviewed && !it.review_confirmed) remainingByExam.set(it.exam_id, (remainingByExam.get(it.exam_id) ?? 0) + 1);
+  }
   const levelRank = (l: string | null | undefined) => (l === "고" ? 0 : l === "중" ? 1 : 2);
   const exams = examRows.sort(
     (a, b) =>
       Number(b.status === "검수대기") - Number(a.status === "검수대기") ||
       Number(!!b.is_jeju) - Number(!!a.is_jeju) ||
+      (remainingByExam.get(a.id) ?? 0) - (remainingByExam.get(b.id) ?? 0) ||
       levelRank(a.school_level) - levelRank(b.school_level) ||
       String(a.name).localeCompare(String(b.name), "ko")
   );
-  const items: Item[] = itemsRaw ?? [];
   const keyOf = new Map(((keysRaw as any[]) ?? []).map((k) => [`${k.exam_id}|${k.item_label}`, k]));
   const flagsByExam = new Map(((jobsRaw as any[]) ?? []).map((j) => [j.exam_id, (j.flags ?? {}) as Record<string, any>]));
 
