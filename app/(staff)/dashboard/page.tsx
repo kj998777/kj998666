@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { personLabel } from "@/lib/profile/label";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const ROLE_LABEL: Record<string, string> = { admin: "관리자", editor: "편집자", viewer: "뷰어" };
 
@@ -44,6 +45,7 @@ export default async function DashboardPage({
   let pending: { id: string; email: string; display_name?: string | null; cohort?: string | null }[] = [];
   let reviewExams: number | null = null;
   let disputes: number | null = null;
+  let bugs: number | null = null;
   if (isAdmin) {
     let { data, error } = (await supabase
       .from("profiles")
@@ -55,7 +57,7 @@ export default async function DashboardPage({
     }
     pending = data ?? [];
 
-    [reviewExams, disputes] = await Promise.all([
+    [reviewExams, disputes, bugs] = await Promise.all([
       headCount(supabase.from("exams").select("id", { count: "exact", head: true }).eq("status", "검수대기")),
       headCount(
         (supabase.from("tutor_item_reviews") as any)
@@ -64,6 +66,8 @@ export default async function DashboardPage({
           .eq("verified", true)
           .eq("resolved", false)
       ),
+      // 과외선생님 버그 신고(0026, 서비스롤 전용 표) 중 새로 들어온 것
+      headCount((createAdminClient().from("bug_reports") as any).select("id", { count: "exact", head: true }).eq("status", "접수")),
     ]);
   }
 
@@ -110,6 +114,13 @@ export default async function DashboardPage({
         title: "과외 검토 분쟁",
         desc: "사후 검증에서 처음 제출과 다른 답이 나온 문항을 비교하고 확정합니다.",
         badge: disputes ? `확인할 불일치 ${disputes}건` : null,
+        tone: "red",
+      },
+      {
+        href: "/admin/bug-reports",
+        title: "버그 신고",
+        desc: "과외선생님이 보낸 버그 신고를 보고 처리 상태와 답변을 남깁니다(답변은 선생님 화면에 보임).",
+        badge: bugs ? `새 신고 ${bugs}건` : null,
         tone: "red",
       }
     );
