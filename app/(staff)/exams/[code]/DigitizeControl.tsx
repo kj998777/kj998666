@@ -1,6 +1,7 @@
 "use client";
 
 import FigureFixPanel from "./FigureFixPanel";
+import ScanRestoreBox from "./ScanRestoreBox";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -37,6 +38,7 @@ export default function DigitizeControl({
   initial,
   isScanned,
   appliedAsOriginal,
+  scanMissing,
 }: {
   code: string;
   examId: string;
@@ -44,6 +46,8 @@ export default function DigitizeControl({
   initial: DigitizePoll;
   isScanned: boolean | null;
   appliedAsOriginal?: boolean;
+  // 2026-09-29: 원본으로 적용하면서 스캔본이 지워진 예전 시험(page.tsx가 확인)
+  scanMissing?: boolean;
 }) {
   const router = useRouter();
   const [job, setJob] = useState<DigitizePoll>(initial);
@@ -232,7 +236,8 @@ export default function DigitizeControl({
               </a>
             )}
           </div>
-          {job.stage === "dg_done" && (
+          {job.stage === "dg_done" && scanMissing && <ScanRestoreBox code={code} examId={examId} />}
+          {job.stage === "dg_done" && !scanMissing && (
             <div>
               <FigureFixPanel code={code} />
             </div>

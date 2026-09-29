@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { getJob } from "@/lib/ai/job";
-import { getExamPdfMeta } from "@/lib/ai/pdf";
+import { getExamPdfMeta, hasScanPdf } from "@/lib/ai/pdf";
+import { createAdminClient } from "@/lib/supabase/admin";
 import AddAnswerKeyForm from "./AddAnswerKeyForm";
 import AnswerKeyRow from "./AnswerKeyRow";
 import ToggleStatusButton from "./ToggleStatusButton";
@@ -104,6 +105,15 @@ export default async function ExamDetailPage({
       ? trailingAnswerPages(((explanations as any[]) ?? []).map((e) => e.source_page), pdfMeta.pages)
       : [];
 
+  // 2026-09-29: 원본으로 적용하면서 스캔본이 지워진 예전 시험인지(그림 다시 오리기·그림 자리 고치기에 스캔본이 필요)
+  let scanMissing = false;
+  if (isAdmin && pdfMeta?.replaced_with_digitized) {
+    try {
+      scanMissing = !(await hasScanPdf(createAdminClient(), exam.id));
+    } catch {
+      scanMissing = false;
+    }
+  }
   const digitizePoll = digitizeJob
     ? {
         stage: digitizeJob.stage,
@@ -320,6 +330,7 @@ export default async function ExamDetailPage({
           initial={digitizePoll}
           isScanned={pdfMeta.is_scanned ?? null}
           appliedAsOriginal={pdfMeta.replaced_with_digitized ?? false}
+          scanMissing={scanMissing}
         />
       )}
 
