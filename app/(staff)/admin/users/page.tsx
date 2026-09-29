@@ -2,16 +2,24 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import InviteForm from "./InviteForm";
 import UserRow from "./UserRow";
+import KakaoContactForm from "./KakaoContactForm";
 
 export default async function AdminUsersPage() {
   const session = await requireRole("admin");
 
   const supabase = await createClient();
   // 이름·기수(0021) 열이 아직 없는 DB에서도 목록은 보이도록, 실패하면 예전 열만 다시 읽는다.
+  // 과(department, 0033)까지 읽고, 열이 아직 없으면 이름·기수까지만, 그것도 없으면 예전 열만 다시 읽는다.
   let { data: profiles, error } = (await supabase
     .from("profiles")
-    .select("id, email, role, created_at, display_name, cohort")
+    .select("id, email, role, created_at, display_name, cohort, department")
     .order("created_at", { ascending: true })) as { data: any[] | null; error: any };
+  if (error) {
+    ({ data: profiles, error } = (await supabase
+      .from("profiles")
+      .select("id, email, role, created_at, display_name, cohort")
+      .order("created_at", { ascending: true })) as { data: any[] | null; error: any });
+  }
   if (error) {
     ({ data: profiles, error } = (await supabase
       .from("profiles")
@@ -82,6 +90,8 @@ export default async function AdminUsersPage() {
         </div>
       )}
 
+      <KakaoContactSection />
+
       <div className="card">
         <h2 className="font-medium mb-3">직원 계정 ({staffProfiles.length}명)</h2>
         {error && <p className="text-sm text-red-600">목록을 불러오지 못했습니다: {error.message}</p>}
@@ -128,6 +138,25 @@ export default async function AdminUsersPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// 2026-09-29: 대기 화면에 띄울 원장님 카카오톡 연락처(0033 site_contact). 표가 없으면(0033 전) 안내만.
+async function KakaoContactSection() {
+  const supabase = await createClient();
+  const { data, error } = (await supabase.from("site_contact").select("kakao_id, kakao_url, kakao_qr, note").maybeSingle()) as any;
+  return (
+    <div className="card">
+      <h2 className="font-medium mb-1">대기 계정 안내용 카카오톡 오픈채팅</h2>
+      <p className="text-sm text-slate-500 mb-3">
+        회원가입 후 대기 중인 사람에게 &ldquo;가입 정보를 원장님 오픈채팅으로 보내 주세요&rdquo;라는 안내와 함께 이 오픈채팅 링크·QR이 보입니다.
+      </p>
+      {error ? (
+        <p className="text-sm text-amber-700">0033 SQL을 실행하면 여기서 설정할 수 있습니다.</p>
+      ) : (
+        <KakaoContactForm initial={{ kakao_id: data?.kakao_id ?? "", kakao_url: data?.kakao_url ?? "", kakao_qr: data?.kakao_qr ?? "", note: data?.note ?? "" }} />
+      )}
     </div>
   );
 }

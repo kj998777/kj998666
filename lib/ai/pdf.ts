@@ -15,6 +15,38 @@ function pathOf(examId: string): string {
 }
 
 /**
+ * 2026-09-29: "디지털 시험지를 원본으로 적용"하면 원본 자리가 새로 조판한 PDF로 바뀌고 예전 버전(스캔본)은 지워졌다.
+ * 그러면 그림을 다시 오리거나(그림 자리 고치기) 다시 조판할 때 스캔본이 없어 엉뚱한 쪽에서 오려졌다. 그래서 처음 적용할 때
+ * 스캔본을 이 경로에 따로 남겨 둔다(버전 정리 대상이 아님). 새 시험지를 다시 올리면 지운다.
+ */
+export function scanBackupPathOf(examId: string): string {
+  return `${examId}/scan.pdf`;
+}
+
+/** 원본으로 적용하기 직전에 부른다: 지금 원본이 스캔본이면 scan.pdf로 복사해 둔다(이미 적용된 시험이면 그대로 둠). */
+export async function backupScanBeforeDigitizedApply(client: Client, examId: string): Promise<boolean> {
+  const meta = await getExamPdfMeta(client, examId);
+  if (!meta || meta.replaced_with_digitized) return false;
+  const { data, error } = await client.storage.from(BUCKET).download(meta.storage_path);
+  if (error || !data) throw new Error("스캔본을 따로 보관하지 못했습니다: " + (error?.message || "?"));
+  const { error: upErr } = await client.storage
+    .from(BUCKET)
+    .upload(scanBackupPathOf(examId), Buffer.from(await data.arrayBuffer()), { contentType: "application/pdf", upsert: true });
+  if (upErr) throw new Error("스캔본을 따로 보관하지 못했습니다: " + upErr.message);
+  return true;
+}
+
+/** 디지털화용 원본(스캔본) 바이트: 원본으로 적용한 시험이면 따로 보관한 scan.pdf, 아니면 지금 원본. 없으면 null. */
+export async function getScanPdfBuffer(client: Client, examId: string): Promise<Buffer | null> {
+  const meta = await getExamPdfMeta(client, examId);
+  if (!meta) return null;
+  const path = meta.replaced_with_digitized ? scanBackupPathOf(examId) : meta.storage_path;
+  const { data, error } = await client.storage.from(BUCKET).download(path);
+  if (error || !data) return null;
+  return Buffer.from(await data.arrayBuffer());
+}
+
+/**
  * 버그 수정(2026-09-28): 브라우저 직접 업로드는 이제 올릴 때마다 새 경로(`<examId>/<시각>.pdf`)에
  * 올린다(lib/supabase/uploadPdf.ts 참고 — 같은 경로에 덮어쓰면 캐시 때문에 예전 파일이 내려오는 문제).
  * 그중 가장 최근 것을 고른다. 버전 폴더가 비어 있으면 예전 방식 경로(`<examId>.pdf`).
@@ -92,6 +124,8 @@ export async function finalizePdfUpload(
     { onConflict: "exam_id" }
   );
   if (metaErr) throw metaErr;
+  // 새 시험지를 다시 올린 경우 따로 보관하던 예전 스캔본(scan.pdf)은 더 이상 맞지 않으므로 함께 지운다
+  if (!isDigitized) older.push(scanBackupPathOf(examId));
   // 이전 버전 정리(관리자만 삭제 권한이 있음 — 편집자가 올린 경우 등 실패해도 무시).
   if (older.length) {
     try {
