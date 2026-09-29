@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import PdfDropInput from "./PdfDropInput";
 import { createExamRow, finalizeAiExamUpload, pollAiJob, type JobPoll } from "./ai-actions";
 import { pdfTooLarge, uploadPdfDirect } from "@/lib/supabase/uploadPdf";
 import { ACTIVE, STAGE_LABEL } from "./aiJobStage";
@@ -179,17 +180,7 @@ export default function CreateAiExamBatchForm() {
 
       <div>
         <label className="label">시험지 PDF (여러 개 선택 가능, 파일당 최대 20MB)</label>
-        <input
-          type="file"
-          accept="application/pdf"
-          multiple
-          className="text-sm"
-          disabled={running}
-          onChange={(e) => {
-            const files = Array.from(e.target.files ?? []);
-            setRows(buildRows(files));
-          }}
-        />
+        <PdfDropInput multiple disabled={running} onFiles={(files) => setRows(buildRows(files))} />
         <p className="text-xs text-slate-500 mt-1">
           파일마다 시험이 하나씩 따로 만들어집니다. 학교급·연도·학년·학기·구분은 선택한 파일 전체에 똑같이 적용되고, 코드·이름은 파일
           이름에서 자동으로 채워지니 아래에서 각 파일별로 고쳐 주세요(코드는 서로 겹치면 안 됩니다).
