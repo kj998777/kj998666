@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { claimNextReviewItem } from "./actions";
+import { callReviewApi } from "@/lib/tutor/reviewApi";
 
 // 검토 큐는 목록으로 보여주지 않고(블라인드 배정을 위해) "다음 문항 받기" 버튼 하나로 진입점만
 // 제공한다. 배정된 문항은 /tutor/review/[itemId]?kind=primary|verify 로 이동해서 보여준다.
@@ -25,7 +25,13 @@ export default function ReviewQueueClient() {
           start(async () => {
             setMsg("");
             try {
-              const result = await claimNextReviewItem();
+              // 2026-09-29: 서버 액션 대신 고정 주소 — 사이트 업데이트 뒤에도 그대로 동작
+              const r = await callReviewApi({ op: "next" });
+              if (!r.ok) {
+                setMsg(r.msg ?? "문항을 배정받지 못했습니다.");
+                return;
+              }
+              const result = r.next;
               if (!result) {
                 setMsg("지금은 검토할 문항이 없습니다. 나중에 다시 확인해 주세요.");
                 return;

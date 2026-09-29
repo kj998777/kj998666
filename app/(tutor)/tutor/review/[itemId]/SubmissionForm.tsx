@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { compressImage, MAX_UPLOAD_BYTES } from "@/lib/image/compress";
-import { actionErrorMessage } from "@/lib/actionError";
 import { useRouter } from "next/navigation";
-import { submitPrimaryReview, submitVerification, releaseReviewClaim, claimNextReviewItem } from "../actions";
+// 2026-09-29: 서버 액션 대신 고정 주소(/api/tutor/review) — 사이트가 업데이트돼도 열어 둔 화면에서 그대로 제출된다
+import { callReviewApi } from "@/lib/tutor/reviewApi";
 import { MathPreview, MathToolbar } from "@/app/_components/MathTools";
 
 // 정답·풀이 칸의 수식 도구(2026-09-29): 관리자 화면과 같은 MathToolbar(분수·루트·경우 나누기 같은 수식 틀과 기호)와
@@ -72,20 +72,21 @@ export default function SubmissionForm({
   function goToNextItem() {
     start(async () => {
       setNextMsg("");
-      try {
-        const next = await claimNextReviewItem();
-        if (!next) {
-          setNextMsg("지금은 검토할 문항이 없습니다. 나중에 다시 확인해 주세요.");
-          return;
-        }
-        if ("error" in next) {
-          setNextMsg(next.error);
-          return;
-        }
-        router.push(`/tutor/review/${next.itemExplanationId}?kind=${next.kind}`);
-      } catch (e: any) {
-        setNextMsg(e?.message ?? "문항을 배정받지 못했습니다.");
+      const r = await callReviewApi({ op: "next" });
+      if (!r.ok) {
+        setNextMsg(r.msg ?? "문항을 배정받지 못했습니다.");
+        return;
       }
+      const next = r.next;
+      if (!next) {
+        setNextMsg("지금은 검토할 문항이 없습니다. 나중에 다시 확인해 주세요.");
+        return;
+      }
+      if ("error" in next) {
+        setNextMsg(next.error);
+        return;
+      }
+      router.push(`/tutor/review/${next.itemExplanationId}?kind=${next.kind}`);
     });
   }
 
@@ -225,23 +226,11 @@ export default function SubmissionForm({
             start(async () => {
               setErr("");
               setNeedsReload(false);
-              // 2026-09-29: 서버 액션이 예외를 던지면(새 배포 직후 옛 화면, 연결 끊김, 용량 초과 등) 흰 "Application error"
-              // 화면이 떴다 → 잡아서 안내 문구로 보여 주고, 적던 답·풀이는 그대로 둔다.
-              let r: { ok: boolean; msg?: string; pointsEarned?: number; isMatch?: boolean };
-              try {
-                r =
-                  kind === "verify"
-                    ? await submitVerification(itemExplanationId, answerDisplay, solution, image)
-                    : await submitPrimaryReview(itemExplanationId, answerDisplay, solution, image);
-              } catch (e) {
-                console.error("review submit failed", e);
-                const m = actionErrorMessage(e);
-                setErr(m.text);
-                setNeedsReload(m.needsReload);
-                return;
-              }
-              if (!r || !r.ok) {
-                setErr(r?.msg ?? "제출하지 못했습니다.");
+              // 오류(연결 끊김, 용량 초과, 로그인 풀림, 서버 오류)는 callReviewApi가 안내 문구로 바꿔 준다. 적던 답·풀이는 그대로 둔다.
+              const r = await callReviewApi({ op: "submit", itemExplanationId, kind, answerDisplay, solution, image });
+              if (!r.ok) {
+                setErr(r.msg ?? "제출하지 못했습니다.");
+                setNeedsReload(!!r.loggedOut);
                 return;
               }
               clearDraft();
@@ -259,12 +248,10 @@ export default function SubmissionForm({
           disabled={pending}
           onClick={() =>
             start(async () => {
-              try {
-                await releaseReviewClaim(itemExplanationId);
-              } catch (e) {
-                const m = actionErrorMessage(e);
-                setErr(m.text);
-                setNeedsReload(m.needsReload);
+              const r = await callReviewApi({ op: "release", itemExplanationId });
+              if (!r.ok) {
+                setErr(r.msg ?? "포기하지 못했습니다. 다시 눌러 주세요.");
+                setNeedsReload(!!r.loggedOut);
                 return;
               }
               clearDraft();
