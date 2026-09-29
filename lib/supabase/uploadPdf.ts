@@ -29,6 +29,15 @@ export function pdfTooLarge(file: File | Blob): boolean {
  * 올릴 때마다 새 경로(`<examId>/<시각>.pdf`)를 쓴다 — 서버의 finalizePdfUpload(lib/ai/pdf.ts)가 가장
  * 최근 파일을 골라 exam_pdf_meta.storage_path로 가리키고, 이전 버전은 지운다.
  */
+/** 2026-09-29: 스캔본만 다시 넣을 때(원본으로 적용한 뒤 스캔본이 지워진 시험) 임시 경로로 올린다 — 서버가 scan.pdf로 옮김. */
+export async function uploadScanRestoreDirect(examId: string, file: File | Blob): Promise<string> {
+  const supabase = createClient();
+  const path = `${examId}/scan-upload-${Date.now()}.pdf`;
+  const { error } = await supabase.storage.from("exam-pdfs").upload(path, file, { contentType: "application/pdf", upsert: false });
+  if (error) throw new Error("PDF를 올리지 못했습니다: " + error.message);
+  return path;
+}
+
 export async function uploadPdfDirect(examId: string, file: File | Blob): Promise<string> {
   const supabase = createClient();
   const path = `${examId}/${Date.now()}.pdf`;
