@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { finalizeAttachExamPdfOnly } from "../ai-actions";
 import { pdfTooLarge, uploadPdfDirect } from "@/lib/supabase/uploadPdf";
+import PdfDropInput from "../PdfDropInput";
 
 /**
  * 이미 정답·해설이 있는 시험(마이그레이션된 시험 등)에 원본 PDF만 연결하는 폼.
@@ -21,7 +22,7 @@ export default function AttachPdfForm({ code, examId }: { code: string; examId: 
   return (
     <form
       ref={formRef}
-      className="flex flex-wrap items-center gap-2"
+      className="space-y-2"
       action={(formData) => {
         setMsg(null);
         const file = formData.get("pdf");
@@ -46,11 +47,13 @@ export default function AttachPdfForm({ code, examId }: { code: string; examId: 
         });
       }}
     >
-      <input type="file" name="pdf" accept="application/pdf" required className="text-sm" />
-      <button type="submit" className="btn-primary" disabled={pending}>
-        {pending ? "저장하는 중…" : "원본 PDF만 저장 (AI 처리 안 함, 최대 20MB)"}
-      </button>
-      {msg && <span className={"text-sm " + (msg.ok ? "text-emerald-600" : "text-red-600")}>{msg.text}</span>}
+      <PdfDropInput name="pdf" required compact />
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" className="btn-primary" disabled={pending}>
+          {pending ? "저장하는 중…" : "원본 PDF만 저장 (AI 처리 안 함, 최대 20MB)"}
+        </button>
+        {msg && <span className={"text-sm " + (msg.ok ? "text-emerald-600" : "text-red-600")}>{msg.text}</span>}
+      </div>
     </form>
   );
 }

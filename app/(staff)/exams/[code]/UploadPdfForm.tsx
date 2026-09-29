@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { finalizeUploadPdfAndStartAi } from "../ai-actions";
 import { pdfTooLarge, uploadPdfDirect } from "@/lib/supabase/uploadPdf";
+import PdfDropInput from "../PdfDropInput";
 
 /**
  * #2(2026-09-28): PDF는 이제 브라우저가 Supabase Storage에 곧바로 올린다(최대 20MB — Vercel
@@ -45,8 +46,8 @@ export default function UploadPdfForm({ code, examId }: { code: string; examId: 
         });
       }}
     >
+      <PdfDropInput name="pdf" required compact />
       <div className="flex flex-wrap items-center gap-2">
-        <input type="file" name="pdf" accept="application/pdf" required className="text-sm" />
         <button type="submit" className="btn-primary" disabled={pending}>
           {pending ? "올리는 중…" : "시험지 PDF 올리고 AI 자동 처리 시작"}
         </button>

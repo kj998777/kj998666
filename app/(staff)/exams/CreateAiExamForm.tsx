@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createExamRow, finalizeAiExamUpload } from "./ai-actions";
 import { pdfTooLarge, uploadPdfDirect } from "@/lib/supabase/uploadPdf";
+import PdfDropInput from "./PdfDropInput";
 
 export default function CreateAiExamForm() {
   const [pending, start] = useTransition();
@@ -111,7 +112,7 @@ export default function CreateAiExamForm() {
       </div>
       <div>
         <label className="label">시험지 PDF</label>
-        <input type="file" name="pdf" accept="application/pdf" required className="text-sm" />
+        <PdfDropInput name="pdf" required />
         <p className="text-xs text-slate-500 mt-1">
           AI가 문항을 읽어 정답·해설을 자동으로 만듭니다. 다 되면 검수 화면에서 확인 후 시험을 열면 됩니다.
           (최대 20MB)
