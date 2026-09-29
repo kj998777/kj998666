@@ -3,6 +3,9 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import ResultRow from "./ResultRow";
 import ReportPanel from "./ReportPanel";
+import Link from "next/link";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { personLabel } from "@/lib/profile/label";
 
 type PerItem = { item_label: string; given: string; correct: boolean; points: number }[];
 
@@ -16,16 +19,28 @@ export default async function ResultsPage({ params }: { params: { code: string }
 
   const { data: rows, error } = await supabase
     .from("submissions")
-    .select("id, class_label, student_name, submitted_at, grading_results(total_score, per_item)")
+    .select("id, class_label, student_name, submitted_at, tutor_id, grading_results(total_score, per_item)")
     .eq("exam_id", exam.id)
     .order("class_label")
     .order("student_name");
+
+  // 과외 반(과외선생님 링크 제출)은 어느 선생님 학생인지 반 칸에 함께 적는다 — "과외 (30기 홍길동)"
+  const tutorIds = Array.from(new Set((rows ?? []).map((r: any) => r.tutor_id).filter(Boolean))) as string[];
+  const tutorName = new Map<string, string>();
+  if (tutorIds.length) {
+    const { data: ts } = await (createAdminClient() as any)
+      .from("profiles")
+      .select("id, email, display_name, cohort")
+      .in("id", tutorIds.slice(0, 150));
+    for (const t of (ts ?? []) as any[]) tutorName.set(t.id, personLabel(t));
+  }
+  const tutorCount = (rows ?? []).filter((r: any) => r.tutor_id).length;
 
   const submissions = (rows ?? []).map((r: any) => {
     const gr = Array.isArray(r.grading_results) ? r.grading_results[0] : r.grading_results;
     return {
       id: r.id,
-      class_label: r.class_label,
+      class_label: r.tutor_id ? `${r.class_label} (${tutorName.get(r.tutor_id) || "과외선생님"})` : r.class_label,
       student_name: r.student_name,
       submitted_at: r.submitted_at,
       total_score: gr?.total_score ?? 0,
@@ -43,6 +58,15 @@ export default async function ResultsPage({ params }: { params: { code: string }
         <h1 className="text-lg font-semibold">{exam.name} — 채점 결과</h1>
         <p className="text-sm text-slate-500">
           제출 {submissions.length}명 · 평균 {avg}점
+          {tutorCount > 0 && (
+            <>
+              {" "}
+              · 과외 반 {tutorCount}명{" "}
+              <Link href={`/classes/tutor?exam=${encodeURIComponent(code)}`} className="text-brand-700 hover:underline">
+                과외 반에서 보기 →
+              </Link>
+            </>
+          )}
         </p>
       </div>
 

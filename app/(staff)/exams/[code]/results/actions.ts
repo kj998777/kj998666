@@ -11,5 +11,6 @@ export async function deleteSubmission(code: string, submissionId: string) {
   const { error } = await supabase.from("submissions").delete().eq("id", submissionId);
   if (error) return { ok: false, msg: "삭제하지 못했습니다: " + error.message };
   revalidatePath(`/exams/${code}/results`);
+  revalidatePath("/classes/tutor");
   return { ok: true };
 }
