@@ -87,10 +87,21 @@ export default function LocateStatusPanel({
     }
   }, [router]);
 
+  // 2026-09-29 최적화: 다른 탭을 보고 있을 때는 확인을 쉬고(작업 자체는 서버의 1분 자동 작업이 계속 진행),
+  // 이 탭으로 돌아오면 곧바로 한 번 확인한다.
   useEffect(() => {
     if (!active) return;
-    const t = setInterval(tick, 20_000);
-    return () => clearInterval(t);
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") tick();
+    }, 20_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, [active, tick]);
 
   if (!available) {
