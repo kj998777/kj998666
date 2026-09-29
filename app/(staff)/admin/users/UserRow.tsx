@@ -85,7 +85,7 @@ export default function UserRow({
               inputMode="numeric"
               autoComplete="off"
               className="input py-1 px-2 w-48 text-sm"
-              placeholder={hasStudentNo ? "저장된 학번 있음(바꿀 때만 입력)" : "학번 붙여넣기 (예: 2025114055)"}
+              placeholder={hasStudentNo ? "저장된 학번 있음(바꿀 때만 입력)" : "학번 붙여넣기 (예: 2025XXXXXX)"}
               value={studentNo}
               disabled={pending}
               onChange={(e) => {
