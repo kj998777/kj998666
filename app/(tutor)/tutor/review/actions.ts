@@ -10,6 +10,15 @@ import { autoConfirmIfMatch } from "@/lib/review/confirm";
 
 const PHOTO_BUCKET = "tutor-review-photos";
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 10MB
+// 2026-09-29 원장님 요청: 풀이 없이 정답만 내는 제출을 막는다 — 풀이 글(이 글자 수 이상) 또는 풀이 사진 중 하나는 있어야 한다.
+// (제출 화면 SubmissionForm.tsx의 MIN_SOLUTION_CHARS와 같은 값)
+const MIN_SOLUTION_CHARS = 10;
+
+function missingSolution(solution: string, image?: File | null): boolean {
+  const hasImage = !!image && typeof (image as any).size === "number" && (image as File).size > 0;
+  return solution.trim().length < MIN_SOLUTION_CHARS && !hasImage;
+}
+const SOLUTION_REQUIRED_MSG = `풀이를 ${MIN_SOLUTION_CHARS}자 이상 적거나 풀이 사진을 올려 주세요. 풀이가 있어야 제출할 수 있습니다.`;
 
 /**
  * 제출 폼에서 올린 사진(선택)을 tutor-review-photos 버킷에 저장하고 경로를 돌려준다.
@@ -78,6 +87,7 @@ export async function submitPrimaryReview(
 ) {
   await requireTutor();
   if (!answerDisplay.trim()) return { ok: false, msg: "정답을 입력해 주세요." };
+  if (missingSolution(solution, image)) return { ok: false, msg: SOLUTION_REQUIRED_MSG };
 
   let imagePath: string | null = null;
   try {
@@ -124,6 +134,7 @@ export async function submitVerification(
 ) {
   await requireTutor();
   if (!answerDisplay.trim()) return { ok: false, msg: "정답을 입력해 주세요." };
+  if (missingSolution(solution, image)) return { ok: false, msg: SOLUTION_REQUIRED_MSG };
 
   let imagePath: string | null = null;
   try {
