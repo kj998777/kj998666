@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireTutor } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
 import SignOutButton from "@/app/(staff)/SignOutButton";
+import { getMyActiveClaims } from "@/lib/tutor/claims";
 
 // 과외선생님 전용 트랙 — admin/editor/viewer 계층(app/(staff)/layout.tsx)과 완전히 분리된 화면.
 // requireTutor()는 requireRole() 계층을 전혀 쓰지 않으므로, 직원 화면 URL을 직접 쳐도 이 레이아웃
@@ -16,6 +17,10 @@ export default async function TutorLayout({ children }: { children: React.ReactN
     .select("points_balance")
     .eq("tutor_id", session.userId)
     .maybeSingle();
+  // "맡은 문제" 메뉴 옆 숫자(지금 배정받아 풀고 있는 문항 수)
+  const claimCount = await getMyActiveClaims(session.userId)
+    .then((c) => c.length)
+    .catch(() => 0);
 
   return (
     <div className="min-h-screen">
@@ -38,6 +43,10 @@ export default async function TutorLayout({ children }: { children: React.ReactN
             <span className="hidden sm:inline text-slate-300">·</span>
             <span className="hidden sm:inline text-slate-500 text-sm">과외선생님</span>
             <Link href="/tutor/review" className="nav-link">검토하기</Link>
+            <Link href="/tutor/assigned" className="nav-link">
+              맡은 문제
+              {claimCount > 0 && <span className="ml-1 badge bg-red-100 text-red-700">{claimCount}</span>}
+            </Link>
             <Link href="/tutor/store" className="nav-link">기출 스토어</Link>
             <Link href="/tutor/guide" className="nav-link">사용법</Link>
           </nav>
