@@ -3,7 +3,7 @@
 import { useState } from "react";
 import CopyButton from "./CopyButton";
 
-// 2026-09-29 원장님 요청: 원장님께 보내는 가입 정보에 학번(학생증 번호, 예: 2025114055)도 꼭 들어가게.
+// 2026-09-29 원장님 요청: 원장님께 보내는 가입 정보에 학번(학생증 번호, 예: 2025XXXXXX)도 꼭 들어가게.
 // 여기서 적은 학번은 이 화면의 복사 글에만 들어가고 DB에는 저장하지 않는다 — 원장님이 승인할 때
 // 학생증 캡처와 맞춰 보고 계정 관리 화면에 붙여 넣어 저장한다(관리자만 볼 수 있음).
 export default function PendingMessage({ head, tail, initialStudentNo = "" }: { head: string[]; tail: string[]; initialStudentNo?: string }) {
@@ -21,7 +21,7 @@ export default function PendingMessage({ head, tail, initialStudentNo = "" }: { 
           className={"input mt-1 " + (clean ? "" : "border-amber-400")}
           inputMode="numeric"
           autoComplete="off"
-          placeholder="예: 2025114055 (25학번 말고 학생증에 적힌 번호 전체)"
+          placeholder="예: 2025XXXXXX (25학번 말고 학생증에 적힌 번호 전체)"
           value={no}
           maxLength={30}
           onChange={(e) => setNo(e.target.value)}
