@@ -7,6 +7,7 @@ import { ConfirmItemControl, ConfirmMatchedButton, EditRequestControl } from "./
 import LocatePanel from "./LocatePanel";
 import { getLocateSummary } from "@/lib/ai/locate";
 import { fetchAllIn, fetchAllPages } from "@/lib/supabase/fetchAll";
+import { personLabel } from "@/lib/profile/label";
 
 export const dynamic = "force-dynamic";
 
@@ -114,7 +115,7 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
       fetchAllIn(examIds, (ids, a, b) =>
         supabase
           .from("tutor_item_reviews")
-          .select("id, item_explanation_id, tutor_id, kind, answer_display, image_path, needs_verification, verified, is_match, matches_primary_review_id, created_at")
+          .select("id, item_explanation_id, tutor_id, kind, answer_display, image_path, needs_verification, verified, is_match, matches_primary_review_id, created_at, verify_claimed_by, verify_claim_expires_at")
           .in("exam_id", ids)
           .order("created_at", { ascending: true })
           .order("id")
@@ -155,13 +156,21 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
   const verifyByPrimary = new Map<string, any>();
   for (const r of reviews) if (r.kind === "verify" && r.matches_primary_review_id) verifyByPrimary.set(r.matches_primary_review_id, r);
 
-  const tutorIds = [...new Set(reviews.map((r) => r.tutor_id))];
-  const { data: profilesRaw } = tutorIds.length
-    ? ((await supabase.from("profiles").select("id, email").in("id", tutorIds)) as any)
-    : { data: [] };
-  const emailById = new Map(((profilesRaw as any[]) ?? []).map((p) => [p.id, p.email as string]));
-
   const now = Date.now();
+  // 2026-09-29: 지금 문항을 맡고 있는 과외선생님 이름도 보여 준다(검토 배정 + 사후검증 배정)
+  const tutorIds = [
+    ...new Set([
+      ...reviews.map((r) => r.tutor_id),
+      ...items.filter((it) => it.claimed_by).map((it) => it.claimed_by as string),
+      ...reviews.filter((r) => r.verify_claimed_by).map((r) => r.verify_claimed_by as string),
+    ]),
+  ];
+  const { data: profilesRaw } = tutorIds.length
+    ? await fetchAllIn(tutorIds, (ids, a, b) =>
+        supabase.from("profiles").select("id, email, display_name, cohort").in("id", ids).order("id").range(a, b)
+      )
+    : { data: [] };
+  const emailById = new Map(((profilesRaw as any[]) ?? []).map((p) => [p.id, personLabel(p) || "과외선생님"]));
   let totalUnconfirmed = 0;
   let totalMismatch = 0;
 
@@ -183,13 +192,16 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
             ? { label: "제출 · AI와 일치", cls: "bg-amber-100 text-amber-800" }
             : { label: "제출 · AI와 다름", cls: "bg-red-100 text-red-700" };
         } else if (claimed) {
-          state = { label: "과외선생님 풀이 중", cls: "bg-sky-100 text-sky-700" };
+          state = { label: `${emailById.get(it.claimed_by as string) ?? "과외선생님"} 풀이 중`, cls: "bg-sky-100 text-sky-700" };
         } else {
           state = { label: "검토 대기", cls: "bg-slate-100 text-slate-600" };
         }
         let verifyLabel = "—";
         if (primary?.needs_verification) {
           verifyLabel = !verify ? "검증 대기" : verify.is_match === true ? "검증 일치" : verify.is_match === false ? "검증 불일치" : "검증 판정 전";
+          const vClaimed =
+            !verify && primary.verify_claimed_by && primary.verify_claim_expires_at && new Date(primary.verify_claim_expires_at).getTime() > now;
+          if (vClaimed) verifyLabel = `검증 중 · ${emailById.get(primary.verify_claimed_by) ?? "과외선생님"}`;
         }
         const initial = primary && key ? toKeyAnswer(key.type, primary.answer_display) : key?.correct_answers ?? "";
         return {
