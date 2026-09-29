@@ -104,9 +104,7 @@ export default function UserRow({
           <>
             <div className="text-xs text-slate-400 mt-0.5">
               포인트 {pointsBalance} · 제출 {tutorStats.reviews_submitted}건
-              {tutorStats.reviews_flagged > 0 && (
-                <span className="text-red-500"> · 불일치 {tutorStats.reviews_flagged}건</span>
-              )}
+              {/* 0037: 불일치 횟수 대신 정답률 등급 — 운영 현황에서 봄 */}
             </div>
             <div className="flex items-center gap-1 mt-1">
               <input
