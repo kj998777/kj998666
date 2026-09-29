@@ -58,8 +58,9 @@ type CreateExamRowResult = { ok: true; id: string; code: string } | { ok: false;
 export async function createExamRow(formData: FormData): Promise<CreateExamRowResult> {
   const { userId } = await requireRole("admin");
 
-  const code = String(formData.get("code") ?? "").trim();
-  const name = String(formData.get("name") ?? "").trim();
+  // 한글을 표준형(NFC)으로 — 맥 파일 이름의 분해형(NFD)이면 글자 검색·제주 판정이 안 된다(2026-09-29)
+  const code = String(formData.get("code") ?? "").normalize("NFC").trim();
+  const name = String(formData.get("name") ?? "").normalize("NFC").trim();
   if (!code) return { ok: false, msg: "시험 코드를 입력해 주세요." };
   if (!name) return { ok: false, msg: "시험 이름을 입력해 주세요." };
 
