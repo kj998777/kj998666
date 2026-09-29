@@ -298,7 +298,11 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
                   <tbody>
                     {visible.map((r) => (
                       <tr key={r.it.id} className={"border-b border-slate-100 align-top " + (r.it.review_confirmed ? "opacity-60" : "")}>
-                        <td className="py-2 pr-2 whitespace-nowrap font-medium">{r.it.item_label}</td>
+                        <td className="py-2 pr-2 whitespace-nowrap font-medium">
+                          <Link href={`/admin/review-status/item/${r.it.id}`} className="link-accent" title="문제 보며 직접 풀기">
+                            {r.it.item_label}
+                          </Link>
+                        </td>
                         <td className="py-2 pr-2 whitespace-nowrap">
                           {r.key?.correct_answers ?? <span className="text-red-600">없음</span>}
                           {r.key?.type && <span className="text-xs text-slate-400 ml-1">{r.key.type}</span>}
@@ -336,9 +340,16 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
                         </td>
                         <td className="py-2">
                           {r.it.review_confirmed ? (
-                            <span className="text-xs text-slate-400">—</span>
+                            <Link href={`/admin/review-status/item/${r.it.id}`} className="text-xs link-accent">
+                              해설 보기·고치기
+                            </Link>
                           ) : (
-                            <ConfirmItemControl itemId={r.it.id} initialAnswer={r.initial} showKeepAi={!!r.primary && r.match === false} />
+                            <div className="space-y-1">
+                              <ConfirmItemControl itemId={r.it.id} initialAnswer={r.initial} showKeepAi={!!r.primary && r.match === false} />
+                              <Link href={`/admin/review-status/item/${r.it.id}`} className="text-xs link-accent">
+                                문제 보며 직접 풀기 →
+                              </Link>
+                            </div>
                           )}
                         </td>
                       </tr>

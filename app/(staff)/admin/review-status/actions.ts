@@ -272,3 +272,56 @@ export async function recheckAllLocations(): Promise<Result & { exams?: number; 
       : "다시 찾을 시험이 없습니다.",
   };
 }
+
+/**
+ * 2026-09-29 원장님 요청: 검토현황에서 관리자가 문제를 보며 직접 정답·해설을 등록하고 확정한다.
+ * key = 정답표에 넣을 값(채점용, 여러 정답은 |), display = 해설에 보이는 정답, solution = 풀이.
+ * 처음 덮어쓸 때 AI 원본을 ai_* 열에 남겨 둔다("AI 정답 유지"로 되돌릴 수 있게). 정답이 바뀌면 제출을 다시 채점한다.
+ */
+export async function adminSolveItem(
+  itemId: string,
+  input: { key: string; display: string; solution: string }
+): Promise<Result & { regraded?: number }> {
+  const { userId } = await requireRole("admin");
+  const key = String(input?.key ?? "").trim();
+  const display = String(input?.display ?? "").trim() || key;
+  const solution = String(input?.solution ?? "").trim();
+  if (!key) return { ok: false, msg: "정답(정답표)을 입력해 주세요." };
+  if (key.length > 200) return { ok: false, msg: "정답이 너무 깁니다(200자 이하)." };
+  if (display.length > 500) return { ok: false, msg: "정답 표시가 너무 깁니다(500자 이하)." };
+  if (solution.length > 20000) return { ok: false, msg: "풀이가 너무 깁니다." };
+
+  const supabase = await createClient();
+  const { data: ie } = (await supabase
+    .from("item_explanations")
+    .select("id, exam_id, item_label, answer_display, solution, ai_answer_display, ai_solution")
+    .eq("id", itemId)
+    .maybeSingle()) as any;
+  if (!ie) return { ok: false, msg: "문항을 찾을 수 없습니다." };
+  const [{ data: keyRow }, { data: exam }]: any[] = await Promise.all([
+    supabase.from("answer_key").select("id, correct_answers").eq("exam_id", ie.exam_id).eq("item_label", ie.item_label).maybeSingle(),
+    supabase.from("exams").select("code").eq("id", ie.exam_id).maybeSingle(),
+  ]);
+  if (!keyRow) return { ok: false, msg: "이 문항의 정답표 줄이 없습니다. 시험 상세에서 먼저 정답을 추가해 주세요." };
+
+  let keyChanged = false;
+  if (keyRow.correct_answers !== key) {
+    const { error } = await (supabase.from("answer_key") as any).update({ correct_answers: key }).eq("id", keyRow.id);
+    if (error) return { ok: false, msg: "정답표를 고치지 못했습니다: " + error.message };
+    keyChanged = true;
+  }
+
+  const patch: Record<string, unknown> = { answer_display: display, solution, updated_at: new Date().toISOString() };
+  if (ie.ai_answer_display == null) patch.ai_answer_display = ie.answer_display ?? "";
+  if (ie.ai_solution == null) patch.ai_solution = ie.solution ?? "";
+  const { error: eErr } = await (supabase.from("item_explanations") as any).update(patch).eq("id", ie.id);
+  if (eErr) return { ok: false, msg: "해설을 저장하지 못했습니다: " + eErr.message };
+
+  const err = await markConfirmed(supabase, [ie.id], userId, "admin");
+  if (err) return { ok: false, msg: "확정하지 못했습니다: " + err.message };
+
+  const regraded = keyChanged ? await regradeExam(createAdminClient(), ie.exam_id) : 0;
+  const examOpened = await openExamIfAllConfirmed(supabase, ie.exam_id);
+  refresh(exam?.code);
+  return { ok: true, regraded, examOpened };
+}
