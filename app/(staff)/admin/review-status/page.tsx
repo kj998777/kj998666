@@ -33,6 +33,16 @@ type Item = {
   review_confirmed: boolean;
   review_confirm_source: string | null;
   ai_answer_display: string | null;
+  difficulty: string | null;
+};
+
+// 2026-09-29 원장님 요청: 검토현황에서 문항 난이도도 함께 보기(과외 적립 포인트도 난이도로 정해짐 — 0028)
+const DIFF_CLS: Record<string, string> = {
+  하: "bg-slate-100 text-slate-600",
+  중하: "bg-slate-100 text-slate-700",
+  중: "bg-sky-100 text-sky-700",
+  중상: "bg-amber-100 text-amber-800",
+  상: "bg-rose-100 text-rose-700",
 };
 
 export default async function ReviewStatusPage({ searchParams }: { searchParams?: { all?: string } }) {
@@ -98,7 +108,7 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
         supabase
           .from("item_explanations")
           .select(
-            "id, exam_id, item_label, answer_display, tutor_reviewed, claimed_by, claim_expires_at, review_confirmed, review_confirm_source, ai_answer_display"
+            "id, exam_id, item_label, answer_display, tutor_reviewed, claimed_by, claim_expires_at, review_confirmed, review_confirm_source, ai_answer_display, difficulty"
           )
           .in("exam_id", ids)
           .order("id")
@@ -299,6 +309,7 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
                   <thead>
                     <tr className="text-left text-slate-500 border-b border-slate-200">
                       <th className="py-1.5 pr-2 font-medium">번호</th>
+                      <th className="py-1.5 pr-2 font-medium">난이도</th>
                       <th className="py-1.5 pr-2 font-medium">정답표</th>
                       <th className="py-1.5 pr-2 font-medium">AI 확신</th>
                       <th className="py-1.5 pr-2 font-medium">과외 제출</th>
@@ -314,6 +325,18 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
                           <Link href={`/admin/review-status/item/${r.it.id}`} className="link-accent" title="문제 보며 직접 풀기">
                             {r.it.item_label}
                           </Link>
+                        </td>
+                        <td className="py-2 pr-2 whitespace-nowrap">
+                          {r.it.difficulty ? (
+                            <span
+                              className={"badge " + (DIFF_CLS[r.it.difficulty] ?? "bg-slate-100 text-slate-600")}
+                              title={`과외 적립 ${r.it.difficulty === "중상" || r.it.difficulty === "상" ? 2 : 1}P`}
+                            >
+                              {r.it.difficulty}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
                         </td>
                         <td className="py-2 pr-2 whitespace-nowrap">
                           {r.key?.correct_answers ?? <span className="text-red-600">없음</span>}
