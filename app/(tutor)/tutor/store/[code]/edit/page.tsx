@@ -43,7 +43,9 @@ export default async function TutorEditRequestsPage({ params }: { params: { code
       <TutorExamTabs code={exam.code} name={exam.name} active="edit" />
       <p className="text-sm text-slate-500">
         정답이나 해설이 틀렸으면 문항을 펼쳐 고칠 내용을 보내 주세요. 원장님이 확인하면 정답표·해설에 반영되고, 선생님
-        학생들의 채점·보고서에도 그대로 적용됩니다.
+        학생들의 채점·보고서에도 그대로 적용됩니다. <b>정답이 바뀌면 +3P</b>(해설만 반영되면 +1P)를 드려요. 정답을 바꾸자는
+        요청은 풀이·메모에 근거를 10자 이상 적어야 하고, 하루 3건까지 보낼 수 있습니다(최근 30일에 반영 안 된 요청이 3건
+        이상이면 잠시 보낼 수 없어요).
       </p>
 
       <div className="card divide-y divide-slate-100">

@@ -14,12 +14,12 @@ export async function GET(_request: Request, { params }: { params: { itemId: str
   const auth = await requireTutorApi();
   if (auth.error) return auth.error;
 
+  // 0037: 배정 여부는 DB 함수로 확인하고(과외선생님은 item_explanations를 직접 못 읽음), 시험 id는 서비스롤로 읽는다
   const supabase = await createClient();
-  const { data: item } = (await supabase
-    .from("item_explanations")
-    .select("id, exam_id")
-    .eq("id", params.itemId)
-    .maybeSingle()) as any;
+  const { data: access } = (await (supabase.rpc as any)("tutor_item_access", { p_item_explanation_id: params.itemId })) as any;
+  const { data: item } = access
+    ? ((await createAdminClient().from("item_explanations").select("id, exam_id").eq("id", params.itemId).maybeSingle()) as any)
+    : { data: null };
 
   if (!item) {
     return Response.json(

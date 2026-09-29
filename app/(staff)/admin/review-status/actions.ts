@@ -7,6 +7,16 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { openExamIfAllConfirmed, tutorAnswerMatches } from "@/lib/review/confirm";
 import { regradeExam } from "@/lib/review/regrade";
+import { gradeGoldAttempt, judgeItemReviews } from "@/lib/review/majority";
+
+/** 0037: 원장님이 정한 정답으로 그 문항 선생님 제출들의 정답 여부를 기록(정답률·등급). 실패해도 확정은 그대로. */
+async function judgeAfterAdmin(itemId: string) {
+  try {
+    await judgeItemReviews(createAdminClient(), itemId, "admin");
+  } catch (e) {
+    console.error("judgeItemReviews failed", e);
+  }
+}
 
 // #3 관리자 검토현황 — 문항별 정답 확정. 확정되면 그 문항은 과외선생님 검토 큐에서도 빠지고
 // (tutor_reviewed=true), 시험의 모든 문항이 확정되면 검수대기 시험이 자동으로 열린다.
@@ -33,18 +43,23 @@ async function loadItem(supabase: any, itemId: string) {
 }
 
 async function markConfirmed(supabase: any, itemIds: string[], userId: string, source: "admin" | "auto_match") {
-  const { error } = await (supabase.from("item_explanations") as any)
-    .update({
-      review_confirmed: true,
-      review_confirm_source: source,
-      review_confirmed_by: userId,
-      review_confirmed_at: new Date().toISOString(),
-      // 확정된 문항은 과외선생님 검토 큐에서 뺀다(아직 아무도 안 풀었어도).
-      tutor_reviewed: true,
-      claimed_by: null,
-      claim_expires_at: null,
-    })
-    .in("id", itemIds);
+  const patch: Record<string, unknown> = {
+    review_confirmed: true,
+    review_confirm_source: source,
+    review_confirmed_by: userId,
+    review_confirmed_at: new Date().toISOString(),
+    // 확정된 문항은 과외선생님 검토 큐에서 뺀다(아직 아무도 안 풀었어도).
+    tutor_reviewed: true,
+    review_stage: null, // 0037: 다수결 대기·원장님 판정 표시도 끝
+    claimed_by: null,
+    claim_expires_at: null,
+  };
+  let { error } = await (supabase.from("item_explanations") as any).update(patch).in("id", itemIds);
+  if (error && /review_stage/.test(String(error.message))) {
+    // 0037 SQL 전이면 열이 없다 — 그 열만 빼고 다시
+    delete patch.review_stage;
+    ({ error } = await (supabase.from("item_explanations") as any).update(patch).in("id", itemIds));
+  }
   return error;
 }
 
@@ -82,6 +97,7 @@ export async function confirmItem(itemId: string, answer: string): Promise<Resul
 
   // 정답이 바뀌었으면 이미 들어온 제출(있다면)을 새 정답으로 다시 채점
   if (keyChanged) await regradeExam(createAdminClient(), ie.exam_id);
+  await judgeAfterAdmin(ie.id);
 
   const examOpened = await openExamIfAllConfirmed(supabase, ie.exam_id);
   refresh(code);
@@ -109,6 +125,7 @@ export async function keepAiAnswer(itemId: string): Promise<Result> {
 
   const err = await markConfirmed(supabase, [ie.id], userId, "admin");
   if (err) return { ok: false, msg: "확정하지 못했습니다: " + err.message };
+  await judgeAfterAdmin(ie.id);
 
   const examOpened = await openExamIfAllConfirmed(supabase, ie.exam_id);
   refresh(code);
@@ -155,11 +172,11 @@ export async function confirmMatchedItems(examId: string): Promise<Result & { co
  * 수정 요청 채택. answer(관리자가 입력칸에서 최종 확인한 정답표 값)가 지금 정답과 다르면 정답표를 바꾸고
  * 기존 제출을 다시 채점한다. 요청에 해설이 있으면 해설도 바꾼다.
  */
-export async function acceptEditRequest(requestId: string, answer: string): Promise<Result & { regraded?: number }> {
+export async function acceptEditRequest(requestId: string, answer: string): Promise<Result & { regraded?: number; reward?: number }> {
   const { userId } = await requireRole("admin");
   const supabase = await createClient();
   const { data: req } = (await (supabase.from("tutor_edit_requests") as any)
-    .select("id, exam_id, item_label, proposed_answer, proposed_solution, status")
+    .select("id, exam_id, item_label, tutor_id, proposed_answer, proposed_solution, status")
     .eq("id", requestId)
     .maybeSingle()) as any;
   if (!req) return { ok: false, msg: "요청을 찾을 수 없습니다." };
@@ -198,8 +215,38 @@ export async function acceptEditRequest(requestId: string, answer: string): Prom
   if (uErr) return { ok: false, msg: "요청 상태를 바꾸지 못했습니다: " + uErr.message };
 
   const regraded = keyChanged ? await regradeExam(createAdminClient(), req.exam_id) : 0;
+
+  // 0037 이의제기 보상·판정: 정답이 바뀌면 +3P(해설만 반영이면 +1P), 그 문항 선생님 제출·정답 아는 문항 채점을 새 정답으로 다시 기록
+  let reward = 0;
+  try {
+    const admin = createAdminClient() as any;
+    reward = keyChanged ? 3 : req.proposed_solution ? 1 : 0;
+    if (reward && req.tutor_id) {
+      const { error: lErr } = await admin.from("tutor_points_ledger").insert({
+        tutor_id: req.tutor_id,
+        delta: reward,
+        reason: "dispute_reward",
+        ref_exam_id: req.exam_id,
+        ref_item_label: req.item_label,
+      });
+      if (!lErr) {
+        const { data: st } = await admin.from("tutor_stats").select("points_balance").eq("tutor_id", req.tutor_id).maybeSingle();
+        if (st) await admin.from("tutor_stats").update({ points_balance: Number(st.points_balance) + reward }).eq("tutor_id", req.tutor_id);
+      } else reward = 0;
+    }
+    if (keyChanged) {
+      const { data: ieRow } = await admin.from("item_explanations").select("id").eq("exam_id", req.exam_id).eq("item_label", req.item_label).maybeSingle();
+      if (ieRow) {
+        await judgeItemReviews(admin, ieRow.id, "dispute");
+        const { data: golds } = await admin.from("tutor_gold_attempts").select("id").eq("item_explanation_id", ieRow.id).not("submitted_at", "is", null);
+        for (const g of (golds as any[]) ?? []) await gradeGoldAttempt(admin, g.id);
+      }
+    }
+  } catch (e) {
+    console.error("dispute reward/judge failed", e);
+  }
   refresh(exam?.code);
-  return { ok: true, regraded };
+  return { ok: true, regraded, reward };
 }
 
 export async function rejectEditRequest(requestId: string): Promise<Result> {
@@ -325,6 +372,7 @@ export async function adminSolveItem(
   if (err) return { ok: false, msg: "확정하지 못했습니다: " + err.message };
 
   const regraded = keyChanged ? await regradeExam(createAdminClient(), ie.exam_id) : 0;
+  await judgeAfterAdmin(ie.id);
   const examOpened = await openExamIfAllConfirmed(supabase, ie.exam_id);
   refresh(exam?.code);
   return { ok: true, regraded, examOpened };

@@ -49,6 +49,7 @@ export default async function StaffLayout({ children }: { children: React.ReactN
           <nav className="order-last sm:order-2 w-full sm:w-auto sm:flex-1 sm:px-2 flex flex-wrap items-center gap-x-4 gap-y-1 whitespace-nowrap py-1.5 text-sm font-medium text-slate-700">
             <Link href="/exams" className="nav-link">시험·정답</Link>
             <Link href="/classes" className="nav-link">반 관리</Link>
+            <Link href="/students" className="nav-link">학생 분석</Link>
             {session.role === "admin" && (
               <Link href="/admin/users" className="nav-link">
                 계정 관리

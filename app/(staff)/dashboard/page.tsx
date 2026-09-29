@@ -46,6 +46,8 @@ export default async function DashboardPage({
   let reviewExams: number | null = null;
   let disputes: number | null = null;
   let bugs: number | null = null;
+  let adminStage: number | null = null;
+  let staleSecond: number | null = null;
   if (isAdmin) {
     let { data, error } = (await supabase
       .from("profiles")
@@ -57,7 +59,7 @@ export default async function DashboardPage({
     }
     pending = data ?? [];
 
-    [reviewExams, disputes, bugs] = await Promise.all([
+    [reviewExams, disputes, bugs, adminStage, staleSecond] = await Promise.all([
       headCount(supabase.from("exams").select("id", { count: "exact", head: true }).eq("status", "검수대기")),
       headCount(
         (supabase.from("tutor_item_reviews") as any)
@@ -68,6 +70,18 @@ export default async function DashboardPage({
       ),
       // 과외선생님 버그 신고(0026, 서비스롤 전용 표) 중 새로 들어온 것
       headCount((createAdminClient().from("bug_reports") as any).select("id", { count: "exact", head: true }).eq("status", "접수")),
+      // 0037 다수결: 셋 다 달라 원장님이 정해야 하는 문항(열이 없으면 null → 배지 안 보임)
+      headCount((supabase.from("item_explanations") as any).select("id", { count: "exact", head: true }).eq("review_stage", "admin")),
+      // 다른 선생님 판정을 3일 넘게 기다리는 문항(처음 제출 시각 기준) — 검토현황의 주황색 표시와 같은 기준
+      headCount(
+        (supabase.from("tutor_item_reviews") as any)
+          .select("id, item_explanations!inner(review_stage)", { count: "exact", head: true })
+          .eq("kind", "primary")
+          .eq("needs_verification", true)
+          .eq("verified", false)
+          .eq("item_explanations.review_stage", "second")
+          .lt("created_at", new Date(Date.now() - 3 * 86400000).toISOString())
+      ),
     ]);
   }
 
@@ -81,6 +95,11 @@ export default async function DashboardPage({
       href: "/classes",
       title: "반 관리",
       desc: "학생이 제출 화면에서 고를 학교급·학년·반 목록을 관리합니다. 과외선생님 학생 제출은 \"과외 반\"에 모여 있습니다.",
+    },
+    {
+      href: "/students",
+      title: "학생 분석",
+      desc: "학생별 시험 점수 추이, 영역·단원별 정답률, 우선 복습할 단원과 다시 풀 문항을 보고 학부모 상담용 누적 보고서 PDF를 받습니다.",
     },
   ];
   if (isAdmin) {
@@ -101,8 +120,11 @@ export default async function DashboardPage({
         href: "/admin/review-status",
         title: "검토현황",
         desc: "검수대기 시험의 문항별 검토 상태와 맡은 과외선생님을 보고, 문제를 보며 직접 정답·해설을 등록합니다.",
-        badge: reviewExams ? `검수대기 시험 ${reviewExams}개` : null,
-        tone: "amber",
+        badge:
+          [adminStage ? `원장님 판정 ${adminStage}문항` : null, staleSecond ? `판정 3일+ 대기 ${staleSecond}문항` : null, reviewExams ? `검수대기 시험 ${reviewExams}개` : null]
+            .filter(Boolean)
+            .join(" · ") || null,
+        tone: adminStage || staleSecond ? "red" : "amber",
       },
       {
         href: "/admin/ops",

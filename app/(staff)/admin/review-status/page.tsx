@@ -20,6 +20,7 @@ const SOURCE_LABEL: Record<string, string> = {
   admin: "관리자 확정",
   legacy: "이전 확정",
   ai_confident: "AI 확신",
+  majority: "다수결",
 };
 
 type Item = {
@@ -44,6 +45,9 @@ const DIFF_CLS: Record<string, string> = {
   중상: "bg-amber-100 text-amber-800",
   상: "bg-rose-100 text-rose-700",
 };
+
+// 판정 대기가 이 날짜 수를 넘으면 주황색으로 알린다(관리자 홈 카드 배지와 같은 값 — app/(staff)/dashboard/page.tsx)
+const STALE_SECOND_DAYS = 3;
 
 export default async function ReviewStatusPage({ searchParams }: { searchParams?: { all?: string } }) {
   await requireRole("admin");
@@ -165,6 +169,18 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
   const keyOf = new Map(((keysRaw as any[]) ?? []).map((k) => [`${k.exam_id}|${k.item_label}`, k]));
   const flagsByExam = new Map(((jobsRaw as any[]) ?? []).map((j) => [j.exam_id, (j.flags ?? {}) as Record<string, any>]));
 
+  // 0037: 다수결 진행 상태(second = 다른 선생님 판정 대기, admin = 셋 다 달라 원장님 판정). 0037 전이면 열이 없어 빈 값.
+  const stageById = new Map<string, string>();
+  {
+    const { data: st, error: stErr } = (await fetchAllIn(examIds, (ids, a, b) =>
+      (supabase.from("item_explanations") as any).select("id, review_stage").in("exam_id", ids).not("review_stage", "is", null).order("id").range(a, b)
+    )) as any;
+    if (!stErr) for (const r of (st as any[]) ?? []) stageById.set(r.id, r.review_stage);
+  }
+  let totalAdminStage = 0;
+  // 2026-09-30: 판정(두 번째 선생님)을 3일 넘게 기다리는 문항 — 판정할 수 있는 선생님(검증됨·우수)이 적으면 쌓인다
+  let totalStaleSecond = 0;
+
   const reviews = (reviewsRaw as any[]) ?? [];
   const primaryByItem = new Map<string, any>();
   for (const r of reviews) if (r.kind === "primary") primaryByItem.set(r.item_explanation_id, r); // 가장 최근 것
@@ -200,8 +216,20 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
         const match = primary && key ? tutorAnswerMatches(key.type, primary.answer_display, key.correct_answers) : null;
         const claimed = !!it.claimed_by && !!it.claim_expires_at && new Date(it.claim_expires_at).getTime() > now;
         let state: { label: string; cls: string };
+        const stage = stageById.get(it.id);
         if (it.review_confirmed) {
           state = { label: "확정 · " + (SOURCE_LABEL[it.review_confirm_source ?? ""] ?? "확정"), cls: "bg-emerald-100 text-emerald-700" };
+        } else if (stage === "admin") {
+          state = { label: "셋 다 다름 · 원장님 판정", cls: "bg-red-600 text-white" };
+          totalAdminStage++;
+        } else if (stage === "second" && primary) {
+          const waitDays = Math.floor((now - new Date(primary.created_at).getTime()) / 86400000);
+          const stale = waitDays >= STALE_SECOND_DAYS;
+          if (stale) totalStaleSecond++;
+          state = match
+            ? { label: "AI와 일치 · 신규 선생님이라 1명 더 확인 중", cls: "bg-amber-100 text-amber-800" }
+            : { label: "AI와 다름 · 다른 선생님 판정 대기", cls: "bg-sky-100 text-sky-700" };
+          if (stale) state = { label: `${state.label} · ${waitDays}일째`, cls: "bg-orange-500 text-white" };
         } else if (primary) {
           state = match
             ? { label: "제출 · AI와 일치", cls: "bg-amber-100 text-amber-800" }
@@ -257,9 +285,19 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
           <p className="text-sm text-slate-500">
             시험 {exams.length}개 · 미확정 {totalUnconfirmed}문항
             {totalMismatch > 0 && <span className="text-red-600"> · AI와 다른 제출 {totalMismatch}문항</span>}
+            {totalAdminStage > 0 && <span className="text-red-700 font-medium"> · 원장님 판정 필요 {totalAdminStage}문항</span>}
+            {totalStaleSecond > 0 && <span className="text-orange-700 font-medium"> · 판정 {STALE_SECOND_DAYS}일 넘게 대기 {totalStaleSecond}문항</span>}
           </p>
+          {totalStaleSecond > 0 && (
+            <p className="mt-1 rounded-md bg-orange-50 border border-orange-200 px-3 py-2 text-sm text-orange-900">
+              다른 선생님의 판정을 {STALE_SECOND_DAYS}일 넘게 기다리는 문항이 {totalStaleSecond}개 있습니다(주황색 표시). 판정은 등급이
+              &ldquo;검증됨·우수&rdquo;인 선생님만 할 수 있어서 그런 선생님이 적으면 쌓입니다. 급한 시험이면 번호를 눌러 직접 풀거나
+              &ldquo;이 정답으로 확정&rdquo;을 눌러 주세요.
+            </p>
+          )}
           <p className="text-xs text-slate-400 mt-1">
-            과외선생님 답이 정답표와 같으면 자동 확정되고, 시험의 모든 문항이 확정되면 시험이 자동으로 열립니다.
+            과외선생님 답이 정답표와 같으면 자동 확정되고, 다르면 다른 선생님이 두 답을 모른 채 다시 풀어 2:1이면 자동 확정됩니다(다수결).
+            셋 다 다를 때만 &ldquo;원장님 판정&rdquo;으로 남습니다. 시험의 모든 문항이 확정되면 시험이 자동으로 열립니다.
             &ldquo;이 정답으로 확정&rdquo;은 입력칸의 값을 정답표에 그대로 저장합니다(여러 정답은 | 로 구분).
             시험은 과외선생님에게 문항이 배정되는 순서(제주 학교 → 고등 → 중등)대로 보입니다. 제주 학교인데
             &ldquo;타 지역&rdquo;으로 표시된 시험은 시험 상세에서 &ldquo;제주도 내 학교 시험&rdquo;을 체크해 주세요.

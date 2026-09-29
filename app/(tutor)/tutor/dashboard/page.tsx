@@ -3,10 +3,12 @@ import { requireTutor } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
 
 const REASON_LABEL: Record<string, string> = {
-  review_primary: "문항 검토(최초 제출)",
-  review_verify: "문항 검토(사후 검증)",
+  // 0037: 새 문항·판정 문항을 구분해 보여 주지 않는다(블라인드)
+  review_primary: "문항 검토",
+  review_verify: "문항 검토",
   download_purchase: "기출 다운로드",
   admin_adjustment: "관리자 조정",
+  dispute_reward: "정답 이의 채택 보상",
 };
 
 export default async function TutorDashboardPage() {
@@ -16,7 +18,7 @@ export default async function TutorDashboardPage() {
   const [{ data: stats }, { data: ledger }] = await Promise.all([
     supabase
       .from("tutor_stats")
-      .select("points_balance, reviews_submitted, reviews_flagged")
+      .select("points_balance, reviews_submitted")
       .eq("tutor_id", session.userId)
       .maybeSingle(),
     supabase
@@ -27,10 +29,26 @@ export default async function TutorDashboardPage() {
       .limit(20),
   ]);
 
-  const s = (stats as any) ?? { points_balance: 0, reviews_submitted: 0, reviews_flagged: 0 };
+  const s = (stats as any) ?? { points_balance: 0, reviews_submitted: 0 };
 
-  // 신뢰도(0025): 주의·정지면 안내. 0025 전이면 조회가 실패해 아무것도 안 보인다.
-  const { data: trust } = (await (supabase.rpc as any)("tutor_trust_level", { p_tutor: session.userId })) as any;
+  // 신뢰도(0037: 정답률 등급). 0037 전이면 정답률 조회가 실패해 등급만 보인다.
+  const [{ data: trust }, { data: acc }, { data: rank }] = await Promise.all([
+    (supabase.rpc as any)("tutor_trust_level", { p_tutor: session.userId }),
+    (supabase.rpc as any)("tutor_accuracy", { p_tutor: session.userId }),
+    // 0038 포인트 랭킹(문제로 얻은 포인트만) — 내 순위만
+    (supabase.rpc as any)("tutor_point_ranking", { p_period: "all", p_limit: 1 }),
+  ]);
+  const myRank = rank?.mine as { rank: number; points: number } | null | undefined;
+  const judged = Number(acc?.judged ?? 0);
+  const accPct = judged ? Math.round((Number(acc?.correct ?? 0) / judged) * 100) : null;
+  const LEVEL: Record<string, { label: string; cls: string; note: string }> = {
+    new: { label: "신규", cls: "text-sky-700", note: "처음 5문항 · 포인트 1배" },
+    ok: { label: "검증됨", cls: "text-emerald-700", note: "포인트 1배" },
+    top: { label: "우수", cls: "text-violet-700", note: "포인트 1.5배" },
+    watch: { label: "주의", cls: "text-amber-700", note: "포인트 0.5배 · 제출 전부 재확인" },
+    paused: { label: "정지", cls: "text-red-700", note: "새 문항 배정 멈춤" },
+  };
+  const lv = LEVEL[String(trust ?? "ok")] ?? LEVEL.ok;
 
   return (
     <div className="space-y-6">
@@ -66,14 +84,14 @@ export default async function TutorDashboardPage() {
 
       {trust === "paused" && (
         <div className="card border-red-300 bg-red-50 text-sm text-red-700">
-          지금은 새 검토 문항 배정이 잠시 멈춰 있습니다. 사후 검증에서 다른 선생님 답과 다른 경우가 여러 번 있어 원장님이
-          확인하는 중입니다. 기출 스토어는 그대로 쓸 수 있고, 궁금한 점은 원장님께 문의해 주세요.
+          지금은 새 검토 문항 배정이 잠시 멈춰 있습니다. 최근 제출의 정답률이 50%보다 낮아 원장님이 확인하는 중입니다. 기출
+          스토어는 그대로 쓸 수 있고, 궁금한 점은 원장님께 문의해 주세요.
         </div>
       )}
       {trust === "watch" && (
         <div className="card border-amber-300 bg-amber-50 text-sm text-amber-800">
-          최근 사후 검증에서 다른 선생님 답과 다른 경우가 있어, 당분간 제출하신 문항은 모두 한 번 더 확인합니다. 포인트는
-          그대로 적립됩니다. 문제를 조금 더 꼼꼼히 확인해 주세요.
+          최근 제출의 정답률이 70%보다 낮아, 당분간 제출하신 문항은 모두 한 번 더 확인하고 포인트는 절반으로 적립됩니다.
+          정답률이 다시 오르면 자동으로 풀립니다. 문제를 조금 더 꼼꼼히 확인해 주세요.
         </div>
       )}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
@@ -86,19 +104,24 @@ export default async function TutorDashboardPage() {
           <div className="text-xs sm:text-sm text-slate-500 mt-1">제출한 검토</div>
         </div>
         <div className="card text-center">
-          <div className={"text-2xl sm:text-3xl font-semibold " + (s.reviews_flagged > 0 ? "text-red-600" : "")}>
-            {s.reviews_flagged}
+          <div className={"text-2xl sm:text-3xl font-semibold " + lv.cls}>{lv.label}</div>
+          <div className="text-xs sm:text-sm text-slate-500 mt-1">
+            등급 · {lv.note}
+            <br />
+            {accPct === null ? "정답률은 판정이 쌓이면 보여요" : `정답률 ${accPct}% (최근 ${judged}건)`}
           </div>
-          <div className="text-xs sm:text-sm text-slate-500 mt-1">사후 검증 불일치</div>
         </div>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <Link href="/tutor/review" className="btn-primary">
           검토하러 가기
         </Link>
         <Link href="/tutor/store" className="btn-secondary">
           기출 스토어 보기
+        </Link>
+        <Link href="/tutor/ranking" className="btn-secondary">
+          랭킹{myRank ? ` · 내 순위 ${myRank.rank}위` : ""}
         </Link>
       </div>
 
