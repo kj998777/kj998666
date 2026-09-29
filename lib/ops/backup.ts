@@ -41,6 +41,7 @@ const TABLES = [
   "digitized_pages",
   "item_locate_jobs",
   "ai_usage",
+  "bug_reports", // 0026 과외선생님 버그 신고(0026 전이면 요약에 오류로만 표시)
 ];
 
 // id 열이 없는 표의 기본키(마이그레이션 기준)
