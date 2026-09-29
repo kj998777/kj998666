@@ -10,6 +10,8 @@ import LocateStatusPanel, { type LocateJobRow } from "./LocateStatusPanel";
 import QrScanPanel from "./QrScanPanel";
 import { getQrScanSummary } from "@/lib/ai/qrMask";
 import { createAdminClient } from "@/lib/supabase/admin";
+import ReplaceOriginalPanel, { type ReplaceRow } from "./ReplaceOriginalPanel";
+import { hasScanPdf } from "@/lib/ai/pdf";
 
 // AI 자동 처리(exam_jobs)와 디지털화(digitize_jobs) 중 아직 끝나지 않은 것들을 모아 온다.
 // review(검수대기) 단계는 시험 목록 폴더 트리의 "검수대기" 표시와 중복되므로 여기서는 뺀다.
@@ -134,6 +136,34 @@ async function QrSection() {
   );
 }
 
+// 2026-09-29: 원본 PDF를 디지털 시험지로 대체 — 디지털화가 끝난 시험 목록(대체 여부·스캔본 보관 여부)
+async function ReplaceSection() {
+  const supabase = await createClient();
+  const { data: jobs } = (await supabase.from("digitize_jobs").select("exam_id").eq("stage", "dg_done")) as any;
+  const ids = [...new Set(((jobs as any[]) ?? []).map((j) => j.exam_id))];
+  let rows: ReplaceRow[] = [];
+  if (ids.length) {
+    const [{ data: exams }, { data: metas }] = await Promise.all([
+      supabase.from("exams").select("id, code, name, created_at").in("id", ids) as any,
+      supabase.from("exam_pdf_meta").select("exam_id, replaced_with_digitized, uploaded_at").in("exam_id", ids) as any,
+    ]);
+    const metaById = new Map<string, any>(((metas as any[]) ?? []).map((m) => [m.exam_id, m]));
+    const admin = createAdminClient();
+    rows = await Promise.all(
+      ((exams as any[]) ?? [])
+        .filter((e) => metaById.has(e.id))
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+        .map(async (e) => {
+          const m = metaById.get(e.id);
+          const replaced = !!m?.replaced_with_digitized;
+          const scanOk = replaced ? await hasScanPdf(admin, e.id).catch(() => true) : true;
+          return { examId: e.id, code: e.code, name: e.name, replaced, scanOk, appliedAt: replaced ? m?.uploaded_at ?? null : null };
+        })
+    );
+  }
+  return <ReplaceOriginalPanel rows={rows} />;
+}
+
 function LocateFallback() {
   return (
     <div className="space-y-2 animate-pulse">
@@ -181,6 +211,12 @@ export default async function AdminAiPage() {
       <div className="card">
         <Suspense fallback={<LocateFallback />}>
           <LocateSection />
+        </Suspense>
+      </div>
+
+      <div className="card">
+        <Suspense fallback={<p className="text-sm text-slate-400">디지털화가 끝난 시험을 불러오는 중…</p>}>
+          <ReplaceSection />
         </Suspense>
       </div>
 
