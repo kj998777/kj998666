@@ -18,6 +18,7 @@
 //   - 정답 여러 개는 "|" 로 구분, 하나라도 맞으면 정답
 //   - (2026-09-29 추가) 객관식에서 답을 여러 개 고르는 문항은 순서를 따지지 않음: 정답 "3,5"(③⑤)에 "5,3"도 정답.
 //     객관식이고 양쪽이 모두 선택지 번호(1~9)로만 이뤄졌을 때만 적용한다.
+//   - (2026-09-29 추가) 수식으로 적은 답: $\\frac{3}{4}$ → 3/4, \\sqrt{2} → √2, \\le → ≤ 등(latexToPlain)
 
 const CIRCLED: Record<string, string> = {
   "①": "1",
@@ -31,8 +32,54 @@ const CIRCLED: Record<string, string> = {
   "⑨": "9",
 };
 
-export function normalizeAnswer(input: unknown): string {
+/**
+ * (2026-09-29) 수식으로 적은 답($\frac{3}{4}$, \sqrt{2}, x \le 3 …)을 평범한 글(3/4, √2, x≤3)로 바꾼다.
+ * 관리자·과외선생님이 수식 버튼(app/_components/MathTools.tsx)으로 정답을 적으면 이 모양이 들어오므로,
+ * 채점 비교 전에 학생이 치는 모양과 같게 맞춘다. $ 나 \ 가 없으면 그대로 돌려준다.
+ */
+export function latexToPlain(input: unknown): string {
   let s = String(input ?? "");
+  if (!/[\\$]/.test(s)) return s;
+  const simple = (x: string) => /^-?[0-9a-zA-Z.√π]+$/.test(x);
+  s = s
+    .replace(/\$/g, "")
+    .replace(/\\left|\\right|\\displaystyle/g, "")
+    .replace(/\\(?:text|mathrm|mathbf|operatorname)\{([^{}]*)\}/g, "$1");
+  // 안쪽부터 여러 번(분수 안의 루트, 분수 안의 분수)
+  for (let k = 0; k < 6; k++) {
+    const before = s;
+    s = s
+      .replace(/\\sqrt\[([^[\]{}]*)\]\{([^{}]*)\}/g, (_m, n, x) => `√[${n}](${x})`)
+      .replace(/\\sqrt\{([^{}]*)\}/g, (_m, x) => (simple(x) ? `√${x}` : `√(${x})`))
+      .replace(/\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}/g, (_m, a, b) => `${simple(a) ? a : `(${a})`}/${simple(b) ? b : `(${b})`}`);
+    if (s === before) break;
+  }
+  s = s
+    .replace(/\^\{\\circ\}|\\circ/g, "°")
+    .replace(/\\pi(?![a-zA-Z])/g, "π")
+    .replace(/\\times(?![a-zA-Z])/g, "×")
+    .replace(/\\cdot(?![a-zA-Z])/g, "·")
+    .replace(/\\div(?![a-zA-Z])/g, "÷")
+    .replace(/\\(?:leq|le)(?![a-zA-Z])/g, "≤")
+    .replace(/\\(?:geq|ge)(?![a-zA-Z])/g, "≥")
+    .replace(/\\(?:neq|ne)(?![a-zA-Z])/g, "≠")
+    .replace(/\\pm(?![a-zA-Z])/g, "±")
+    .replace(/\\infty(?![a-zA-Z])/g, "∞")
+    .replace(/\\alpha(?![a-zA-Z])/g, "α")
+    .replace(/\\beta(?![a-zA-Z])/g, "β")
+    .replace(/\\theta(?![a-zA-Z])/g, "θ")
+    .replace(/\\angle(?![a-zA-Z])/g, "∠")
+    .replace(/\\triangle(?![a-zA-Z])/g, "△")
+    .replace(/\^\{([^{}]*)\}/g, "^$1")
+    .replace(/_\{([^{}]*)\}/g, "_$1")
+    .replace(/\\[,;:! ]/g, "")
+    .replace(/[{}]/g, "")
+    .replace(/\\/g, "");
+  return s.trim();
+}
+
+export function normalizeAnswer(input: unknown): string {
+  let s = latexToPlain(input);
   s = s.replace(/[①-⑨]/g, (c) => CIRCLED[c] ?? c);
   s = s.replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
   s = s.replace(/[−–—－]/g, "-");
@@ -45,6 +92,8 @@ export function normalizeAnswer(input: unknown): string {
   s = s.replace(/[×·⋅]/g, "*").replace(/÷/g, "/");
   s = s.replace(/pi/g, "π");
   s = s.replace(/>=/g, "≥").replace(/<=/g, "≤");
+  // (2026-09-29) 분수의 위·아래를 감싼 괄호가 한 덩어리뿐이면 뺀다: (√3)/(2) → √3/2
+  s = s.replace(/\(([a-z0-9.√π^]+)\)(?=\/)/g, "$1").replace(/\/\(([a-z0-9.√π^]+)\)/g, "/$1");
   return s;
 }
 
