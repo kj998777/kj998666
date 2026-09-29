@@ -61,6 +61,47 @@ function aliasesOf(full: string): string[] {
 export const JEJU_HIGH_ALIASES = Array.from(new Set(JEJU_HIGH_SCHOOLS.flatMap(aliasesOf)));
 export const JEJU_MIDDLE_ALIASES = Array.from(new Set(JEJU_MIDDLE_SCHOOLS.flatMap(aliasesOf)));
 
+// ---------------------------------------------------------------------------
+// 2026-09-29 원장님 제보: "제주도 지역 학교 자동분류가 너무 안 된다" → 판별 규칙을 넓혔다.
+//
+// 1) 이름 어디에든 "제주"·"서귀포"가 들어가면 제주 학교로 본다(예: "2025 제주 1-1 기말").
+// 2) 학원(제주시)에서 실제로 부르는 짧은 이름 — "일고", "중앙여고", "사대부고", "동여중", "여상" 등 — 도 제주로 본다.
+//    다만 다른 지역에도 흔한 이름이라, 시험 이름에 다른 시·도 이름(서울·부산·경기…)이 함께 있으면 제주로 보지 않는다
+//    (예전 제보: "서울 중앙고"가 제주로 잡히면 안 됨).
+// 3) "고/중"을 빼고 쓴 이름("남녕 1-1 기말", "대기 2학년")도, 제주에만 있는 학교 이름이면 제주로 본다.
+// ---------------------------------------------------------------------------
+
+/** 다른 지역에도 흔해서, 다른 시·도 이름이 같이 있으면 제주로 보지 않는 짧은 이름 */
+const LOCAL_SHORT: [string, "고" | "중"][] = [
+  ["중앙여고", "고"], ["중앙고", "고"], ["제일고", "고"], ["일고", "고"], ["사대부고", "고"], ["대사대부고", "고"],
+  ["여상", "고"], ["과학고", "고"], ["외고", "고"],
+  ["중앙여중", "중"], ["중앙중", "중"], ["제일중", "중"], ["일중", "중"], ["사대부중", "중"], ["대사대부중", "중"],
+  ["동여중", "중"], ["동중", "중"], ["서중", "중"],
+];
+
+/** 시험 이름에 이런 지역 이름이 있으면 짧은 이름(LOCAL_SHORT)만으로는 제주로 보지 않는다 */
+const OTHER_REGIONS = [
+  "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기", "강원", "충북", "충남", "충청", "전북", "전남",
+  "전라", "경북", "경남", "경상", "수원", "성남", "고양", "용인", "창원", "청주", "천안", "전주", "포항", "김해", "강남",
+  "서초", "송파", "분당", "일산", "목동", "대치",
+];
+
+/** "고/중" 없이 써도 제주 학교로 볼 수 있는(다른 지역에 같은 이름 학교가 거의 없는) 학교 이름 앞부분 */
+const JEJU_STEMS: string[] = [
+  "남녕", "대기", "오현", "함덕", "애월", "표선", "노형", "오름", "탐라", "귀일", "김녕", "조천", "효돈", "위미",
+  "안덕", "신산", "무릉", "저청", "신엄", "추자", "우도", "남주", "신성여", "삼성여", "대정여", "한림공", "서귀",
+];
+
+function shortLevel(name: string, alias: string): "고" | "중" | null {
+  // 줄임말 바로 뒤에 "고"/"중"이 붙어 있으면 그 학교급
+  const i = name.indexOf(alias);
+  if (i < 0) return null;
+  const next = name.charAt(i + alias.length);
+  if (next === "고") return "고";
+  if (next === "중") return "중";
+  return null;
+}
+
 /** 시험 이름에서 제주 학교 여부와 학교급(알 수 있으면)을 알아낸다. */
 export function detectJejuSchool(examName: string): { jeju: boolean; level: "고" | "중" | null } {
   const name = String(examName ?? "").replace(/\s+/g, "");
@@ -69,8 +110,32 @@ export function detectJejuSchool(examName: string): { jeju: boolean; level: "고
     ...JEJU_HIGH_ALIASES.map((a) => [a, "고"] as [string, "고"]),
     ...JEJU_MIDDLE_ALIASES.map((a) => [a, "중"] as [string, "중"]),
   ].sort((x, y) => y[0].length - x[0].length);
+  const otherRegion = OTHER_REGIONS.some((r) => name.includes(r));
   for (const [alias, level] of all) {
+    // 다른 시·도 이름이 같이 있으면 "제주/서귀"가 들어간 이름만 인정(예: "서울 세화고"는 제주 세화고가 아님)
+    if (otherRegion && !/제주|서귀/.test(alias)) continue;
     if (name.includes(alias)) return { jeju: true, level };
+  }
+
+  // 1) "제주"·"서귀포"가 이름에 있으면 제주
+  if (!otherRegion && /제주|서귀포/.test(name)) {
+    return { jeju: true, level: /고등|고\d|고[^가-힣]|고$/.test(name) ? "고" : /중학|중\d|중[^가-힣]|중$/.test(name) ? "중" : null };
+  }
+  if (otherRegion) return { jeju: false, level: null };
+
+  // 2) 학원에서 부르는 짧은 이름(다른 지역 이름이 없을 때만)
+  for (const [alias, level] of [...LOCAL_SHORT].sort((x, y) => y[0].length - x[0].length)) {
+    // 짧은 이름 앞에 다른 한글이 붙어 있으면(예: "서울중앙고"의 "중앙고", "동일고"의 "일고") 다른 학교일 수 있어 건너뛴다.
+    // 단, 앞 글자가 숫자·기호·공백(지운 자리)이면 괜찮다.
+    const re = new RegExp(`(^|[^가-힣])${alias}`);
+    if (re.test(String(examName ?? "").replace(/\s+/g, " ")) || name.startsWith(alias)) return { jeju: true, level };
+  }
+
+  // 3) "고/중" 없이 쓴 제주 학교 이름
+  const raw = String(examName ?? "");
+  for (const stem of JEJU_STEMS) {
+    const re = new RegExp(`(^|[^가-힣])${stem}(고|중|여|\\s|\\d|[^가-힣]|$)`);
+    if (re.test(raw)) return { jeju: true, level: shortLevel(name, stem) };
   }
   return { jeju: false, level: null };
 }
