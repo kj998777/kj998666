@@ -116,6 +116,8 @@ export type Database = {
           student_name: string;
           answers: unknown;
           submitted_at: string;
+          // 0017: 과외선생님 링크 제출이면 그 선생님 id(0029부터 반 이름은 모두 "과외")
+          tutor_id: string | null;
         };
         Insert: {
           exam_id: string;
