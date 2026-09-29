@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { toKeyAnswer } from "@/lib/review/confirm";
 import ProblemPageImage from "@/app/(tutor)/tutor/review/[itemId]/ProblemPageImage";
 import AdminSolveForm from "./AdminSolveForm";
+import AdminPhotos from "./AdminPhotos";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +44,16 @@ export default async function AdminReviewItemPage({ params }: { params: { itemId
     supabase.from("item_explanations").select("id, item_label, review_confirmed").eq("exam_id", it.exam_id),
     supabase.from("answer_key").select("item_label, sort_order").eq("exam_id", it.exam_id),
   ]);
-  const tutorIds = Array.from(new Set(((reviews as any[]) ?? []).map((r) => r.tutor_id)));
+  // 관리자가 올린 풀이 사진(tutor-review-photos 버킷 admin/<문항 id>/)
+  const { data: photoList } = await createAdminClient()
+    .storage.from("tutor-review-photos")
+    .list(`admin/${it.id}`, { limit: 50, sortBy: { column: "name", order: "asc" } });
+  const photoNames = ((photoList as any[]) ?? [])
+    .map((f) => String(f.name))
+    .filter((n) => /^[0-9]+\.[a-z0-9]{1,5}$/i.test(n));
+  const tutorIds = Array.from(
+    new Set([...((reviews as any[]) ?? []).map((r) => r.tutor_id), ...(it.claimed_by ? [it.claimed_by] : [])])
+  );
   const { data: profs } = tutorIds.length
     ? ((await supabase.from("profiles").select("id, email, display_name, cohort").in("id", tutorIds)) as any)
     : { data: [] };
@@ -99,7 +110,9 @@ export default async function AdminReviewItemPage({ params }: { params: { itemId
             <span className="badge bg-amber-100 text-amber-700">미확정</span>
           )}
           {claimed && !it.review_confirmed && (
-            <span className="badge bg-sky-100 text-sky-700">과외선생님이 풀고 있음 — 확정하면 그 배정은 끝납니다</span>
+            <span className="badge bg-sky-100 text-sky-700">
+              {who.get(it.claimed_by) ?? "과외선생님"} 선생님이 풀고 있음 — 확정하면 그 배정은 끝납니다
+            </span>
           )}
         </div>
         <p className="text-sm text-slate-500">
@@ -171,6 +184,8 @@ export default async function AdminReviewItemPage({ params }: { params: { itemId
           )}
         </div>
       </div>
+
+      <AdminPhotos itemId={it.id} names={photoNames} />
 
       <AdminSolveForm
         itemId={it.id}
