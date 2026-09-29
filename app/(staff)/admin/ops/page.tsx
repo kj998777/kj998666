@@ -25,12 +25,16 @@ const REASON_LABEL: Record<string, string> = {
   review_verify: "사후 검증",
   download_purchase: "기출 구매",
   admin_adjustment: "관리자 지급·조정",
+  dispute_reward: "정답 이의 채택 보상",
 };
 
+// 0037: 정답률 등급
 const TRUST: Record<string, { label: string; cls: string; tip: string }> = {
-  ok: { label: "정상", cls: "bg-emerald-100 text-emerald-700", tip: "" },
-  watch: { label: "주의", cls: "bg-amber-100 text-amber-800", tip: "제출한 문항을 전부 사후 검증합니다" },
-  paused: { label: "정지", cls: "bg-red-100 text-red-700", tip: "새 문항을 배정받지 못합니다" },
+  new: { label: "신규", cls: "bg-sky-100 text-sky-700", tip: "제출 5개 전 — 전부 한 명 더 확인, 판정자는 맡지 않음" },
+  ok: { label: "검증됨", cls: "bg-emerald-100 text-emerald-700", tip: "10%만 무작위 재확인 · 포인트 1배" },
+  top: { label: "우수", cls: "bg-violet-100 text-violet-700", tip: "30건 이상 95%↑ — 5%만 재확인 · 포인트 1.5배" },
+  watch: { label: "주의", cls: "bg-amber-100 text-amber-800", tip: "정답률 70%↓ — 제출 전부 재확인 · 포인트 0.5배" },
+  paused: { label: "정지", cls: "bg-red-100 text-red-700", tip: "정답률 50%↓(또는 수동) — 새 문항을 배정받지 못합니다" },
 };
 
 /** 1000행씩 끝까지 읽기 */
@@ -102,6 +106,21 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
     })
   );
   const trustOf = new Map<string, string>(trustEntries);
+  // 0037: 정답률(최근 50건 판정)
+  const accEntries = await Promise.all(
+    tutors.map(async (t) => {
+      const { data, error } = await admin.rpc("tutor_accuracy", { p_tutor: t.id });
+      return [t.id, error || !data ? null : { judged: Number(data.judged ?? 0), correct: Number(data.correct ?? 0) }] as const;
+    })
+  );
+  const accOf = new Map<string, { judged: number; correct: number } | null>(accEntries);
+  // 0038 포인트 랭킹(문제로 얻은 포인트만, 관리자는 이름 그대로)
+  const [rankAll, rankMonth] = await Promise.all(
+    ["all", "month"].map(async (p) => {
+      const { data, error } = await admin.rpc("tutor_point_ranking", { p_period: p, p_limit: 10 });
+      return error ? null : (data as any);
+    })
+  );
 
   // 남은 검토 문항(지금)
   const pendingIds: string[] = ((pendingExams as any[]) ?? []).map((e) => e.id);
@@ -161,11 +180,14 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
         effFlagged: Math.max(0, flagged - base),
         manualPaused: !!s.review_paused,
         trust: trustOf.get(t.id) ?? "ok",
+        acc: accOf.get(t.id) ?? null,
       };
     })
     .sort(
       (a, b) =>
-        Number(b.trust !== "ok") - Number(a.trust !== "ok") || b.periodReviews - a.periodReviews || b.total - a.total
+        Number(["watch", "paused"].includes(b.trust)) - Number(["watch", "paused"].includes(a.trust)) ||
+        b.periodReviews - a.periodReviews ||
+        b.total - a.total
     );
 
   return (
@@ -247,12 +269,47 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
         </div>
       </div>
 
+      {(rankAll || rankMonth) && (
+        <div className="card space-y-2">
+          <h2 className="font-medium">포인트 랭킹</h2>
+          <p className="text-xs text-slate-500">
+            {rankAll?.startedAt ? `${new Date(rankAll.startedAt).toLocaleDateString("ko-KR")}부터 ` : ""}문제를 풀어 얻은 포인트만(검토·판정 제출) — 보유
+            포인트와 별개. 과외선생님 화면(랭킹)에는 다른 사람 이름이 가려져 보입니다.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {[
+              ["전체", rankAll],
+              ["이번 달", rankMonth],
+            ].map(([title, r]: any) => (
+              <div key={title}>
+                <div className="text-sm font-medium mb-1">{title}</div>
+                {!r?.rows?.length ? (
+                  <p className="text-sm text-slate-400">아직 없음</p>
+                ) : (
+                  <ol className="text-sm space-y-0.5">
+                    {r.rows.map((x: any, i: number) => (
+                      <li key={i} className="flex justify-between gap-2">
+                        <span>
+                          <span className="inline-block w-7 text-slate-400 tabular-nums">{x.rank}.</span>
+                          {x.label}
+                        </span>
+                        <span className="tabular-nums">{x.points}P</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="card space-y-2">
         <h2 className="font-medium">과외선생님별 활동·신뢰도</h2>
         <p className="text-xs text-slate-500">
-          신뢰도는 사후 검증에서 다른 선생님 답과 달랐던 횟수로 정합니다. 2회 이상이면 <b>주의</b>(그 선생님 제출은 전부 사후
-          검증), 4회 이상이면서 검증받은 제출의 30% 이상이면 <b>정지</b>(새 문항 배정 멈춤). 틀린 쪽이 검증한 선생님일 수도
-          있으니, 과외 검토 분쟁에서 내용을 확인한 뒤 &ldquo;신뢰도 초기화&rdquo;로 풀어 줄 수 있습니다.
+          신뢰도는 <b>정답률</b>(최근 판정 50건 — 다수결·원장님 확정·정답 아는 문항·이의제기로 누가 맞았는지 정해진 것)로
+          정합니다. 제출 5개 전은 <b>신규</b>, 70% 미만 <b>주의</b>(전부 재확인·포인트 0.5배), 50% 미만 <b>정지</b>, 30건 이상
+          95% 이상이면 <b>우수</b>(포인트 1.5배). &ldquo;신뢰도 초기화&rdquo;는 지금까지의 판정을 빼고 다시 셉니다.
         </p>
         {tutorRows.length === 0 ? (
           <p className="text-sm text-slate-500">아직 과외선생님이 없습니다.</p>
@@ -266,7 +323,7 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
                   <th className="py-1.5 pr-2 text-right">받은 P</th>
                   <th className="py-1.5 pr-2 text-right">전체 검토</th>
                   <th className="py-1.5 pr-2 text-right">보유 P</th>
-                  <th className="py-1.5 pr-2 text-right">불일치</th>
+                  <th className="py-1.5 pr-2 text-right">정답률</th>
                   <th className="py-1.5 pr-2">신뢰도</th>
                   <th className="py-1.5"></th>
                 </tr>
@@ -283,8 +340,8 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
                     <td className="py-1.5 pr-2 text-right tabular-nums">{r.total}</td>
                     <td className="py-1.5 pr-2 text-right tabular-nums">{r.balance}</td>
                     <td className="py-1.5 pr-2 text-right tabular-nums">
-                      {r.effFlagged}
-                      {r.flagged !== r.effFlagged && <span className="text-xs text-slate-400"> (누적 {r.flagged})</span>}
+                      {r.acc && r.acc.judged ? `${Math.round((r.acc.correct / r.acc.judged) * 100)}%` : "—"}
+                      {r.acc && r.acc.judged ? <span className="text-xs text-slate-400"> ({r.acc.correct}/{r.acc.judged})</span> : null}
                     </td>
                     <td className="py-1.5 pr-2">
                       <span className={"badge " + (TRUST[r.trust] ?? TRUST.ok).cls} title={(TRUST[r.trust] ?? TRUST.ok).tip}>

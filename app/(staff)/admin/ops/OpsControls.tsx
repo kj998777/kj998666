@@ -55,14 +55,14 @@ export function TrustControls({ tutorId, level, manualPaused }: { tutorId: strin
   const [err, setErr] = useState("");
   return (
     <div className="flex flex-wrap items-center gap-1 justify-end">
-      {level !== "ok" && (
+      {(level === "watch" || level === "paused") && (
         <button
           className="btn-secondary py-0.5 px-2 text-xs"
           disabled={pending}
-          title="지금까지의 불일치를 기준점으로 잡고 0부터 다시 셉니다(기록은 남음)"
+          title="지금까지의 판정(정답률)을 빼고 다시 셉니다(기록은 남음)"
           onClick={() =>
             start(async () => {
-              if (!confirm("이 과외선생님의 신뢰도를 초기화할까요? 불일치를 0부터 다시 세고, 정지도 풀립니다.")) return;
+              if (!confirm("이 과외선생님의 신뢰도를 초기화할까요? 정답률을 처음부터 다시 세고, 정지도 풀립니다.")) return;
               setErr("");
               const r = await resetTutorTrust(tutorId);
               if (!r.ok) setErr(r.msg ?? "실패");

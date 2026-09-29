@@ -29,16 +29,22 @@ export async function getBackupUrl(name: string): Promise<Result> {
   return url ? { ok: true, url } : { ok: false, msg: "내려받기 링크를 만들지 못했습니다." };
 }
 
-/** 신뢰도 초기화: 지금까지의 불일치를 기준점으로 잡아 0부터 다시 센다(기록은 그대로). 수동 정지도 푼다. */
+/** 신뢰도 초기화: 지금까지의 판정(정답률, 0037)과 불일치를 빼고 다시 센다(기록은 그대로). 수동 정지도 푼다. */
 export async function resetTutorTrust(tutorId: string): Promise<Result> {
   await requireRole("admin");
   const admin = createAdminClient() as any;
   const { data: st, error } = await admin.from("tutor_stats").select("reviews_flagged").eq("tutor_id", tutorId).maybeSingle();
   if (error || !st) return { ok: false, msg: "과외선생님 정보를 찾지 못했습니다." };
-  const { error: upErr } = await admin
+  let { error: upErr } = await admin
     .from("tutor_stats")
-    .update({ trust_baseline_flagged: st.reviews_flagged, review_paused: false })
+    .update({ trust_baseline_flagged: st.reviews_flagged, review_paused: false, trust_reset_at: new Date().toISOString() })
     .eq("tutor_id", tutorId);
+  if (upErr && /trust_reset_at/.test(String(upErr.message))) {
+    ({ error: upErr } = await admin
+      .from("tutor_stats")
+      .update({ trust_baseline_flagged: st.reviews_flagged, review_paused: false })
+      .eq("tutor_id", tutorId));
+  }
   if (upErr) return { ok: false, msg: "바꾸지 못했습니다: " + upErr.message + " (0025 마이그레이션 확인)" };
   revalidatePath("/admin/ops");
   return { ok: true };
