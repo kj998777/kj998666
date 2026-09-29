@@ -67,7 +67,8 @@ export default async function TutorExamResultsPage({ params }: { params: { code:
         {submitPath && <CopyLink path={submitPath} />}
       </div>
 
-      {submissions.length > 0 && <ReportPanel code={exam.code} examName={exam.name} dataUrl={`/tutor/store/${encodeURIComponent(exam.code)}/report-data`} />}
+      {/* 전체 문제 해설지는 제출 학생이 없어도 받을 수 있어야 하므로 패널은 항상 보인다(2026-09-29). */}
+      <ReportPanel code={exam.code} examName={exam.name} dataUrl={`/tutor/store/${encodeURIComponent(exam.code)}/report-data`} />
 
       <div className="card">
         {error && <p className="text-sm text-red-600">불러오지 못했습니다: {error.message}</p>}
