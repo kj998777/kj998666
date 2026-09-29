@@ -66,3 +66,16 @@ export async function clearLowAlertAction() {
   revalidatePath("/admin/ai");
   return { ok: true as const };
 }
+
+/** 2026-09-29: PDF가 있는데 원본 속 QR을 아직 안 찾은(또는 PDF가 바뀐·오류 난) 시험을 모두 찾게 건다. */
+export async function enqueueAllQrScansAction(): Promise<{ ok: boolean; msg: string }> {
+  await requireRole("admin");
+  const { enqueueAllQrScans } = await import("@/lib/ai/qrMask");
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const n = await enqueueAllQrScans(createAdminClient());
+  revalidatePath("/admin/ai");
+  return {
+    ok: true,
+    msg: n ? `${n}개 시험의 QR 찾기를 걸었습니다. 몇 분마다 조금씩 처리됩니다.` : "새로 찾을 시험이 없습니다(또는 마이그레이션 0031 전).",
+  };
+}

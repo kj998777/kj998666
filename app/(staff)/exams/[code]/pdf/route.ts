@@ -19,6 +19,7 @@ export async function GET(request: Request, { params }: { params: { code: string
   const cover = url.searchParams.get("cover") === "1";
   const addFixPage = url.searchParams.get("addFix") === "1";
   const autoTrim = url.searchParams.get("autoTrim") === "1";
+  const maskQr = url.searchParams.get("maskQr") === "1";
   const excludePages = (url.searchParams.get("exclude") || "")
     .split(",")
     .map((s) => parseInt(s.trim(), 10))
@@ -44,6 +45,7 @@ export async function GET(request: Request, { params }: { params: { code: string
       addFixPage,
       excludePages,
       autoTrimAnswerPages: autoTrim,
+      maskQr,
       examName: exam.name,
       examCode: exam.code,
       submitUrl,

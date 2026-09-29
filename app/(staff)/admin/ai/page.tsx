@@ -7,6 +7,9 @@ import AiSettingsForm from "./AiSettingsForm";
 import CreditPanel from "./CreditPanel";
 import UploadStatusPanel, { type UploadJobRow } from "./UploadStatusPanel";
 import LocateStatusPanel, { type LocateJobRow } from "./LocateStatusPanel";
+import QrScanPanel from "./QrScanPanel";
+import { getQrScanSummary } from "@/lib/ai/qrMask";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 // AI 자동 처리(exam_jobs)와 디지털화(digitize_jobs) 중 아직 끝나지 않은 것들을 모아 온다.
 // review(검수대기) 단계는 시험 목록 폴더 트리의 "검수대기" 표시와 중복되므로 여기서는 뺀다.
@@ -121,6 +124,16 @@ async function LocateSection() {
   );
 }
 
+// 원본 속 QR 가리기 현황(0031) — 나머지 화면이 먼저 뜨고 채워진다
+async function QrSection() {
+  const s = await getQrScanSummary(createAdminClient()).catch(() => null);
+  return (
+    <QrScanPanel
+      s={s ?? { available: false, pdfExams: 0, done: 0, withQr: 0, qrCount: 0, pending: 0, error: 0, notScanned: 0 }}
+    />
+  );
+}
+
 function LocateFallback() {
   return (
     <div className="space-y-2 animate-pulse">
@@ -168,6 +181,12 @@ export default async function AdminAiPage() {
       <div className="card">
         <Suspense fallback={<LocateFallback />}>
           <LocateSection />
+        </Suspense>
+      </div>
+
+      <div className="card">
+        <Suspense fallback={<p className="text-sm text-slate-400">원본 속 QR 가리기 현황을 불러오는 중…</p>}>
+          <QrSection />
         </Suspense>
       </div>
     </div>

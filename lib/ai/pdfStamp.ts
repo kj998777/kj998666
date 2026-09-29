@@ -1,9 +1,10 @@
 import "server-only";
 import { readFile } from "fs/promises";
 import path from "path";
-import { PDFDocument, degrees } from "pdf-lib";
+import { PDFDocument, degrees, rgb, type PDFPage } from "pdf-lib";
 import { getExamPdfBuffer, getExamPdfMeta } from "./pdf";
 import { trailingAnswerPages } from "./answerPages";
+import { enqueueQrScan, getQrBoxes, type QrBox } from "./qrMask";
 import { studentFixes } from "./normalize";
 import { renderCoverPng, renderFixSheetPngs, renderStampPng, renderWatermarkPng } from "./canvasStamp";
 
@@ -43,7 +44,37 @@ export type StampOptions = {
   fixes: Correction[];
   // 과외선생님 다운로드: 모든 쪽 아래 여백에 옅게 찍을 "받은 사람" 문구(없으면 안 찍음)
   watermark?: string;
+  // 2026-09-29: 원본 쪽 안에 인쇄된 QR(학교·다른 학원 등)을 흰 칸으로 가림(AI로 찾아 둔 위치, lib/ai/qrMask.ts)
+  maskQr?: boolean;
 };
+
+/**
+ * 원본 쪽 위의 QR 자리(보이는 방향 기준, 가로세로 1000칸 좌표)를 흰 사각형으로 덮는다.
+ * 스캔본 등 /Rotate가 걸린 쪽과 CropBox가 원점이 아닌 쪽도 "보이는" 위치에 맞게 좌표를 바꿔 그린다.
+ */
+export function maskBoxesOnPage(page: PDFPage, boxes: { x0: number; y0: number; x1: number; y1: number }[]): void {
+  if (!boxes.length) return;
+  const cb = page.getCropBox();
+  const W = cb.width,
+    H = cb.height;
+  const r = (((page.getRotation().angle % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+  const VW = r % 180 === 0 ? W : H; // 보이는 폭
+  const VH = r % 180 === 0 ? H : W; // 보이는 높이
+  // 보이는 좌표(왼쪽 아래 원점) → 쪽 본래 좌표(CropBox 기준)
+  const toPage = (vx: number, vy: number): [number, number] =>
+    r === 90 ? [W - vy, vx] : r === 180 ? [W - vx, H - vy] : r === 270 ? [vy, H - vx] : [vx, vy];
+  for (const b of boxes) {
+    const vx0 = (b.x0 / 1000) * VW,
+      vx1 = (b.x1 / 1000) * VW;
+    const vyTop = VH - (b.y0 / 1000) * VH,
+      vyBot = VH - (b.y1 / 1000) * VH;
+    const [ax, ay] = toPage(vx0, vyBot);
+    const [bx, by] = toPage(vx1, vyTop);
+    const x = Math.min(ax, bx) + cb.x,
+      y = Math.min(ay, by) + cb.y;
+    page.drawRectangle({ x, y, width: Math.abs(bx - ax), height: Math.abs(by - ay), color: rgb(1, 1, 1), borderWidth: 0 });
+  }
+}
 
 /** 원본 PDF(examId 로 저장된)에 표지·정정 페이지·QR 쪽을 붙인 최종 PDF 바이트를 만든다. */
 export async function buildStampedExamPdf(client: Client, examId: string, opts: StampOptions): Promise<Uint8Array> {
@@ -78,6 +109,18 @@ export async function buildStampedExamPdf(client: Client, examId: string, opts: 
     coverPage.drawImage(coverImg, { x: 0, y: 0, width: PW, height: PH });
     out.addPage([PW, PH]); // 백지(앞뒤 인쇄 때 표지 뒷면이 비도록)
   }
+  // 원본 속 QR 가리기(찾아 둔 위치가 있을 때만). 아직 안 찾았거나 PDF가 바뀌었으면 다음을 위해 찾기를 걸어 둔다.
+  let qrBoxes: QrBox[] = [];
+  if (opts.maskQr) {
+    const q = await getQrBoxes(client, examId);
+    qrBoxes = q.boxes;
+    if (q.status === "none" || q.status === "stale") await enqueueQrScan(client, examId, { force: true }).catch(() => false);
+  }
+  copied.forEach((p, i) => {
+    const pageNo = keptIdx[i] + 1; // 원본 쪽 번호
+    const onPage = qrBoxes.filter((b) => b.page === pageNo);
+    if (onPage.length) maskBoxesOnPage(p, onPage);
+  });
   for (const p of copied) out.addPage(p);
 
   // 3) 정정 페이지(정오표) — 로고·QR 쪽 바로 앞. 원본 시험지 쪽은 건드리지 않는다
