@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // 알맞은 권한으로 바꿔줄 때까지는 아무 것도 할 수 없고, 이 안내와 로그아웃 버튼만 볼 수 있다.
 // admin/editor/viewer/tutor 계정이 실수로 여기 들어오면 각자의 홈으로 돌려보낸다.
 // 2026-09-29 원장님 요청: 가입 때 적은 이메일·과·기수(학번)·이름을 원장님 카카오톡으로 보내 달라는 안내 + 복사 버튼,
-// 원장님 카카오톡(QR·ID·링크, 계정 관리에서 설정 — 0033 site_contact)을 함께 보여 준다.
+// 원장님 카카오톡 오픈채팅(링크·링크로 만든 QR, 계정 관리에서 설정 — 0033 site_contact)을 함께 보여 준다.
 export default async function PendingPage() {
   const session = await getSessionAndRole();
   if (!session) redirect("/login");
@@ -57,8 +57,8 @@ export default async function PendingPage() {
         <div className="text-center space-y-2">
           <h1 className="text-lg font-semibold">대기중인 계정입니다</h1>
           <p className="text-sm text-slate-500">
-            아직 이 계정에는 사용 권한이 지정되지 않았습니다. 승인을 받으려면 아래 가입 정보를 <b>원장님 개인 카카오톡</b>으로 보내
-            주세요.
+            아직 이 계정에는 사용 권한이 지정되지 않았습니다. 승인을 받으려면 아래 가입 정보를 <b>원장님 카카오톡 오픈채팅</b>으로
+            보내 주세요.
           </p>
         </div>
 
@@ -73,33 +73,33 @@ export default async function PendingPage() {
         </div>
 
         <div className="rounded-lg border border-yellow-300 bg-[#FEE500]/30 p-3 space-y-3">
-          <p className="text-sm font-medium text-slate-900">② 원장님 카카오톡으로 보내 주세요</p>
+          <p className="text-sm font-medium text-slate-900">② 원장님 오픈채팅에 들어가서 붙여 넣어 보내 주세요</p>
           {hasContact ? (
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
               {qr && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={qr} alt="원장님 카카오톡 QR" className="w-40 h-40 object-contain rounded border border-slate-200 bg-white" />
+                <img src={qr} alt="원장님 카카오톡 오픈채팅 QR" className="w-40 h-40 object-contain rounded border border-slate-200 bg-white" />
               )}
               <div className="space-y-2 text-sm text-center sm:text-left">
+                {contact?.kakao_url && (
+                  <a href={contact.kakao_url} target="_blank" rel="noopener noreferrer" className="inline-block rounded-lg bg-[#FEE500] px-4 py-2 font-medium text-slate-900">
+                    오픈채팅으로 보내기
+                  </a>
+                )}
                 {contact?.kakao_id && (
                   <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
                     <span>
-                      카카오톡 ID <b id="kakao-id" className="font-mono">{contact.kakao_id}</b>
+                      오픈채팅 대신 카카오톡 ID <b id="kakao-id" className="font-mono">{contact.kakao_id}</b>
                     </span>
                     <CopyButton text={contact.kakao_id} label="ID 복사" targetId="kakao-id" />
                   </div>
                 )}
-                {contact?.kakao_url && (
-                  <a href={contact.kakao_url} target="_blank" rel="noopener noreferrer" className="inline-block rounded-lg bg-[#FEE500] px-4 py-2 font-medium text-slate-900">
-                    카카오톡 열기
-                  </a>
-                )}
-                {qr && <p className="text-xs text-slate-500">휴대폰 카메라나 카카오톡 QR 스캔으로 찍으면 친구 추가 화면이 열립니다.</p>}
+                {qr && <p className="text-xs text-slate-500">컴퓨터로 보고 있다면 휴대폰 카메라로 QR을 찍으면 오픈채팅방이 열립니다.</p>}
                 {contact?.note && <p className="text-xs text-slate-600">{contact.note}</p>}
               </div>
             </div>
           ) : (
-            <p className="text-sm text-slate-600">원장님께 개인 카카오톡으로 위 내용을 보내 주세요.</p>
+            <p className="text-sm text-slate-600">원장님께 카카오톡으로 위 내용을 보내 주세요(오픈채팅 링크 준비 중).</p>
           )}
         </div>
 
