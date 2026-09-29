@@ -168,3 +168,77 @@ export async function saveKakaoContact(input: { kakao_id: string; kakao_url: str
   revalidatePath("/pending");
   return { ok: true };
 }
+
+// ── 2026-09-29 학번(학생증 번호) — 0036 student_numbers. 관리자만 읽고 쓴다(평소 화면에는 절대 안 나옴). ──
+
+type StudentNoResult = { ok: true; welcome?: number } | { ok: false; msg: string };
+
+function studentNoError(r: any, error?: any): string {
+  if (error) {
+    const m = String(error.message || error);
+    if (/admin_approve_with_student_no|admin_set_student_no|student_numbers/.test(m) && /does not exist|not find|schema cache/i.test(m)) {
+      return "학번 저장 기능이 아직 DB에 없습니다. 0036 SQL을 먼저 실행해 주세요.";
+    }
+    return "처리하지 못했습니다: " + m;
+  }
+  switch (r?.reason) {
+    case "duplicate": {
+      const who = [r.other_department, r.other_cohort, r.other_name].filter(Boolean).join(" ");
+      return `이 학번은 이미 다른 계정(${who ? who + " · " : ""}${r.other_email ?? "알 수 없음"})에 등록돼 있어 승인할 수 없습니다.`;
+    }
+    case "format":
+      return "학번 형식이 올바르지 않습니다(숫자·영문 4~20자, 예: 2025114055).";
+    case "empty":
+      return "학번을 붙여 넣어 주세요.";
+    case "no_user":
+      return "계정을 찾지 못했습니다.";
+    case "forbidden":
+      return "관리자만 할 수 있습니다.";
+    default:
+      return "처리하지 못했습니다.";
+  }
+}
+
+/** 대기 계정: 학번을 저장하면서 권한을 준다(한 번에 — 학번이 다른 계정에 있으면 둘 다 안 됨). */
+export async function approveWithStudentNo(userId: string, studentNo: string, role: Role): Promise<StudentNoResult> {
+  await requireRole("admin");
+  if (!isRole(role)) return { ok: false, msg: "역할 값이 올바르지 않습니다." };
+  const supabase = await createClient();
+  const { data, error } = await (supabase.rpc as any)("admin_approve_with_student_no", {
+    p_user_id: userId,
+    p_student_no: String(studentNo ?? "").slice(0, 60),
+    p_role: role,
+  });
+  if (error || !data?.ok) return { ok: false, msg: studentNoError(data, error) };
+
+  let welcome = 0;
+  if (role === "tutor") {
+    await ensureTutorStats(userId);
+    welcome = await grantWelcomePoints(userId);
+  }
+  revalidatePath("/admin/users");
+  revalidatePath("/", "layout");
+  return { ok: true, welcome };
+}
+
+/** 이미 승인된 계정에 학번을 넣거나 고친다(빈 값이면 지움). */
+export async function setStudentNo(userId: string, studentNo: string): Promise<StudentNoResult> {
+  await requireRole("admin");
+  const supabase = await createClient();
+  const { data, error } = await (supabase.rpc as any)("admin_set_student_no", {
+    p_user_id: userId,
+    p_student_no: String(studentNo ?? "").slice(0, 60),
+  });
+  if (error || !data?.ok) return { ok: false, msg: studentNoError(data, error) };
+  revalidatePath("/admin/users");
+  return { ok: true };
+}
+
+/** "보기"를 눌렀을 때만 학번 하나를 읽어 온다(페이지 HTML에는 학번이 들어가지 않게). */
+export async function revealStudentNo(userId: string): Promise<{ ok: true; studentNo: string | null } | { ok: false; msg: string }> {
+  await requireRole("admin");
+  const supabase = await createClient();
+  const { data, error } = await (supabase.from("student_numbers") as any).select("student_no").eq("user_id", userId).maybeSingle();
+  if (error) return { ok: false, msg: studentNoError(null, error) };
+  return { ok: true, studentNo: data?.student_no ?? null };
+}
