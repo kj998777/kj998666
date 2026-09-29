@@ -117,7 +117,7 @@ function loadJsZip(): Promise<any> {
 // 글·수식 렌더링 ($...$ 는 KaTeX, <b>/<br> 만 허용하고 그 밖의 홑화살괄호는 이스케이프)
 // ---------------------------------------------------------------------
 
-function esc(s: unknown): string {
+export function esc(s: unknown): string {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -129,7 +129,7 @@ function sanitizeAllowed(s: string): string {
   return out.replace(/&lt;(\/?)(b|br)\s*\/?&gt;/gi, (_m, slash, tag) => `<${slash}${String(tag).toLowerCase()}>`);
 }
 
-function mathHtml(katex: any, text: string | null | undefined): string {
+export function mathHtml(katex: any, text: string | null | undefined): string {
   // $ 가 홀수 개면(마지막 수식이 닫히지 않음) 마지막 조각만 글자 그대로 두고(먹힌 $ 복원),
   // 그 앞의 정상 수식은 그대로 렌더링한다 — 문자열 전체를 통째로 포기하면 문항 하나에 $ 가
   // 하나만 빠져도 그 문항의 모든 수식이 명령어 글자 그대로 남는 문제가 생긴다
@@ -266,7 +266,7 @@ function statusMark(r: Status): string {
 function rowClass(r: Status): string {
   return r === "wrong" ? "rpt-rbad" : r === "blank" ? "rpt-rblk" : "";
 }
-function badge(d: string): string {
+export function badge(d: string): string {
   return `<span class="rpt-bd ${DIFF_CLASS[d] || "rpt-d3"}">${esc(d)}</span>`;
 }
 
@@ -854,9 +854,22 @@ class Paginator {
   }
 
   private breakPage(chain: Element[]) {
+    // 2026-09-30: 표의 첫 줄부터 다음 쪽으로 넘어가면 이 쪽에 머리줄만 남은 빈 표가 생겼다 → 지우고,
+    // 그 바로 앞이 제목이면 제목도 표와 함께 다음 쪽으로 넘긴다.
+    let removedEmpty = false;
+    for (const t of Array.from(this.cur.querySelectorAll("table"))) {
+      const tb = t.querySelector(":scope > tbody");
+      if (tb && tb.children.length === 0) {
+        t.remove();
+        this.shells.forEach((v, k) => {
+          if (v === t) this.shells.delete(k);
+        });
+        removedEmpty = true;
+      }
+    }
     // 맨 위 단계에서 쪽을 넘길 때, 이 쪽 마지막이 제목이면 다음 쪽으로 함께 넘긴다.
     let carry: Element | null = null;
-    if (chain.length === 0 && this.placed > 1) {
+    if ((chain.length === 0 || removedEmpty) && this.cur.children.length > 1) {
       const last = this.cur.lastElementChild;
       if (last && /^H[1-3]$/.test(last.tagName)) {
         carry = last;
