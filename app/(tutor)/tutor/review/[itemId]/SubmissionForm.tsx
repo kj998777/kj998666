@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { submitPrimaryReview, submitVerification, releaseReviewClaim, claimNextReviewItem } from "../actions";
 
@@ -70,6 +70,38 @@ export default function SubmissionForm({
   const [result, setResult] = useState<{ pointsEarned: number; isMatch?: boolean } | null>(null);
   const [nextMsg, setNextMsg] = useState("");
 
+  // 2026-09-29: 휴대폰에서 다른 앱에 갔다 오면 화면이 새로 열리며 적던 답·풀이가 사라졌다 → 이 기기에 임시 저장해 두고 되살린다.
+  const draftKey = `mc-review-draft:${itemExplanationId}`;
+  const [restored, setRestored] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (typeof d?.a === "string") setAnswerDisplay(d.a);
+        if (typeof d?.s === "string") setSolution(d.s);
+        if (d?.a || d?.s) setRestored(true);
+      }
+    } catch {
+      /* 저장소를 못 쓰는 환경이면 그냥 넘어감 */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey]);
+  useEffect(() => {
+    try {
+      if (answerDisplay || solution) localStorage.setItem(draftKey, JSON.stringify({ a: answerDisplay, s: solution, t: Date.now() }));
+    } catch {
+      /* 무시 */
+    }
+  }, [draftKey, answerDisplay, solution]);
+  function clearDraft() {
+    try {
+      localStorage.removeItem(draftKey);
+    } catch {
+      /* 무시 */
+    }
+  }
+
   // "다음 문항 받기"/"포기하고 다른 문항 받기" 공통 로직 — 큐 페이지로 보내고 사용자가 버튼을 한
   // 번 더 누르게 하지 않고, 여기서 바로 claimNextReviewItem을 불러 배정된 문항으로 즉시 이동한다.
   function goToNextItem() {
@@ -121,6 +153,11 @@ export default function SubmissionForm({
 
   return (
     <div className="card space-y-3">
+      {restored && (
+        <p className="text-xs text-emerald-700">
+          이 기기에 임시 저장해 둔 답·풀이를 불러왔습니다(사진은 다시 올려 주세요).
+        </p>
+      )}
       <div>
         <label className="label">정답</label>
         <input
@@ -182,6 +219,7 @@ export default function SubmissionForm({
                 setErr(r.msg ?? "제출하지 못했습니다.");
                 return;
               }
+              clearDraft();
               setResult({
                 pointsEarned: r.pointsEarned,
                 isMatch: "isMatch" in r ? (r as { isMatch: boolean }).isMatch : undefined,
@@ -197,6 +235,7 @@ export default function SubmissionForm({
           onClick={() =>
             start(async () => {
               await releaseReviewClaim(itemExplanationId);
+              clearDraft();
               goToNextItem();
             })
           }
