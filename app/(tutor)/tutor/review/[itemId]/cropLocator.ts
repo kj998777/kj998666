@@ -10,9 +10,10 @@
 // 모든 좌표는 그 쪽을 가로·세로 1000칸으로 본 값(DB와 같은 규칙).
 
 export type Box = { x0: number; y0: number; x1: number; y1: number };
-export type Region = { page: number; bbox: Box; source: "text" | "ai" };
+// labelBox(2026-09-30): 글자 정보로 찾은 문항 번호("12.")가 인쇄된 자리 — 문항 은행 시험지에서 원래 번호를 지우고 새 번호를 쓰는 데 씀
+export type Region = { page: number; bbox: Box; source: "text" | "ai"; labelBox?: Box };
 
-type Anchor = { page: number; col: number; top: number; x: number; off: number; kind: "main" | "sa"; n: number };
+type Anchor = { page: number; col: number; top: number; x: number; off: number; kind: "main" | "sa"; n: number; w: number; h: number };
 type PageText = { cols: { x0: number; x1: number }[]; bottoms: number[]; anchors: Anchor[]; hasText: boolean };
 
 // ---------------------------------------------------------------------
@@ -100,13 +101,15 @@ export async function readPageText(pdfjsLib: any, pg: any, pageNo: number): Prom
     const ci = colOf(t.x);
     const off = t.x - cols[ci].x0;
     if (off > 60) continue; // 줄 맨 앞(그 단의 왼쪽 끝 근처)에 있는 번호만
+    // 번호 부분의 폭: 줄 조각 폭을 글자 수 비율로 나눈 어림값
+    const wOf = (len: number) => ((t.x1 - t.x) * Math.min(len, t.s.length)) / Math.max(1, t.s.length);
     let m = SA_RE.exec(t.s);
     if (m) {
-      anchors.push({ page: pageNo, col: ci, top: t.top, x: t.x, off, kind: "sa", n: Number(m[1]) });
+      anchors.push({ page: pageNo, col: ci, top: t.top, x: t.x, off, kind: "sa", n: Number(m[1]), w: wOf(m[0].length), h: t.bot - t.top });
       continue;
     }
     m = MAIN_RE.exec(t.s);
-    if (m) anchors.push({ page: pageNo, col: ci, top: t.top, x: t.x, off, kind: "main", n: Number(m[1]) });
+    if (m) anchors.push({ page: pageNo, col: ci, top: t.top, x: t.x, off, kind: "main", n: Number(m[1]), w: wOf(m[0].length), h: t.bot - t.top });
   }
   return { cols, bottoms, anchors, hasText: true };
 }
@@ -184,6 +187,7 @@ async function regionFromText(pdfjsLib: any, doc: any, label: string): Promise<(
     page: a.page,
     bbox: { x0: Math.max(0, xa), y0, x1: Math.min(1000, xb), y1 },
     source: "text",
+    labelBox: { x0: Math.max(0, a.x - 2), y0: Math.max(0, a.top - 2), x1: Math.min(1000, a.x + a.w + 2), y1: Math.min(1000, a.top + a.h + 2) },
     open: nextTop === null, // 그 단의 마지막 문항(아래 끝을 글자로는 확실히 모름)
   };
 }
@@ -392,7 +396,7 @@ export async function resolveRegion(
   try {
     const fromText = await regionFromText(pdfjsLib, doc, label);
     if (fromText) {
-      const region: Region = { page: fromText.page, bbox: fromText.bbox, source: "text" };
+      const region: Region = { page: fromText.page, bbox: fromText.bbox, source: "text", labelBox: fromText.labelBox };
       if (!fromText.open) return region; // 번호~다음 번호 사이: 그대로
       // 단의 마지막 문항이면 글줄 아래의 그림까지 들어가도록 잉크로 아래쪽만 한 번 더 넓힌다.
       const ink = await inkOf(await doc.getPage(fromText.page));
