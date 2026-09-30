@@ -34,6 +34,8 @@ export type Difficulty = "하" | "중하" | "중" | "중상" | "상";
 export const DIFFS: Difficulty[] = ["하", "중하", "중", "중상", "상"];
 
 export type ItemMeta = {
+  /** item_explanations.id — 문항 은행 복습지 만들기에 쓴다 */
+  id?: string;
   exam_id: string;
   label: string;
   sort_order: number;
