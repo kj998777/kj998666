@@ -5,6 +5,8 @@ import { toKeyAnswer } from "@/lib/review/confirm";
 import ProblemPageImage from "@/app/(tutor)/tutor/review/[itemId]/ProblemPageImage";
 import AdminSolveForm from "./AdminSolveForm";
 import AdminPhotos from "./AdminPhotos";
+import RedigitizeBox from "./RedigitizeBox";
+import { findDigitizedItem } from "@/lib/digitize/itemEdit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +46,12 @@ export default async function AdminReviewItemPage({ params }: { params: { itemId
     supabase.from("item_explanations").select("id, item_label, review_confirmed").eq("exam_id", it.exam_id),
     supabase.from("answer_key").select("item_label, sort_order").eq("exam_id", it.exam_id),
   ]);
+  // 2026-09-30: 디지털화된 시험이면 이 문항의 디지털 시험지 글을 여기서 바로 고친다(RedigitizeBox)
+  const [{ data: dgPages }, { data: pdfMeta }]: any[] = await Promise.all([
+    supabase.from("digitized_pages").select("page_no, data").eq("exam_id", it.exam_id),
+    supabase.from("exam_pdf_meta").select("replaced_with_digitized").eq("exam_id", it.exam_id).maybeSingle(),
+  ]);
+  const dgAt = dgPages?.length ? findDigitizedItem(dgPages as any[], String(it.item_label ?? "")) : null;
   // 관리자가 올린 풀이 사진(tutor-review-photos 버킷 admin/<문항 id>/)
   const { data: photoList } = await createAdminClient()
     .storage.from("tutor-review-photos")
@@ -140,6 +148,17 @@ export default async function AdminReviewItemPage({ params }: { params: { itemId
         )}
       </div>
 
+      {dgAt && exam?.code && (
+        <RedigitizeBox
+          code={exam.code}
+          examId={it.exam_id}
+          examName={exam.name ?? "시험"}
+          pageNo={dgAt.pageNo}
+          itemIndex={dgAt.itemIndex}
+          applied={!!pdfMeta?.replaced_with_digitized}
+        />
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="card space-y-2 text-sm">
           <h2 className="font-medium">지금 정답표·해설</h2>
@@ -193,6 +212,7 @@ export default async function AdminReviewItemPage({ params }: { params: { itemId
         initialDisplay={primary?.answer_display ?? it.answer_display ?? ""}
         initialSolution={primary?.solution ?? it.solution ?? ""}
         nextHref={nextHref}
+        answerType={key?.type === "객관식" ? "객관식" : "주관식"}
       />
     </div>
   );

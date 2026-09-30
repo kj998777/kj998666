@@ -11,7 +11,7 @@ import { changedFields, changedNumbers, cleanItemText, FIELD_LABEL, textOf, type
 import { saveDigitizedItem } from "./digitize-actions";
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
-type Entry = { pageNo: number; itemIndex: number; item: any };
+export type Entry = { pageNo: number; itemIndex: number; item: any };
 
 const pct = (v: number) => `${v / 10}%`;
 const CIRC = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧"];
@@ -186,7 +186,7 @@ function cropJpeg(cv: HTMLCanvasElement, b: Box, long: number): string {
   return c.toDataURL("image/jpeg", 0.88).split(",")[1];
 }
 
-function ItemEditor({ code, doc, entry, onSaved }: { code: string; doc: any; entry: Entry; onSaved: (item: any) => void }) {
+export function ItemEditor({ code, doc, entry, onSaved }: { code: string; doc: any; entry: Entry; onSaved: (item: any) => void }) {
   // 비교 기준은 저장된 글을 같은 규칙으로 다듬은 것(끝 공백 같은 차이로 "고침"이 켜지지 않게)
   const saved = useMemo(() => {
     const t = textOf(entry.item);
