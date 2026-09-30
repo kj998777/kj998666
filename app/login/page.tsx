@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { DEPARTMENTS, normalizeCohort, normalizeStudentNo, type Department } from "@/lib/profile/label";
+import { LEGAL } from "@/lib/legal";
 
 type Mode = "login" | "signup" | "forgot";
 
@@ -42,6 +43,9 @@ export default function LoginPage() {
   const isMed = department === "의대";
   const cohortValue = isMed ? normalizeCohort(cohort) : normalizeStudentNo(cohort);
   const [displayName, setDisplayName] = useState("");
+  // 2026-09-30: 개인정보처리방침·이용약관 동의(공개 전 LEGAL.PUBLISHED=false면 칸이 안 보이고 검사도 안 함)
+  const [agree, setAgree] = useState(false);
+  const needAgree = LEGAL.PUBLISHED;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
@@ -135,11 +139,24 @@ export default function LoginPage() {
       setErr(isMed ? "기수와 이름을 입력해 주세요." : "학번과 이름을 입력해 주세요.");
       return;
     }
+    if (needAgree && !agree) {
+      setBusy(false);
+      setErr("개인정보 수집·이용과 이용약관에 동의해 주세요.");
+      return;
+    }
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       // 이름·기수만 보낸다. 권한(role)은 가입 트리거(0021)가 항상 '대기'로 정하고, 관리자가 승인한다.
-      options: { data: { display_name: displayName.trim().slice(0, 30), cohort: cohortValue, department } },
+      // 동의한 방침 판(version)과 시각은 가입 기록(auth.users의 raw_user_meta_data)에 함께 남는다.
+      options: {
+        data: {
+          display_name: displayName.trim().slice(0, 30),
+          cohort: cohortValue,
+          department,
+          ...(needAgree ? { legal_consent_version: LEGAL.EFFECTIVE_DATE || LEGAL.VERSION, legal_consent_at: new Date().toISOString() } : {}),
+        },
+      },
     });
     setBusy(false);
     if (error) {
@@ -306,13 +323,29 @@ export default function LoginPage() {
               )}
             </div>
           )}
+          {mode === "signup" && needAgree && (
+            <label className="flex items-start gap-2 text-sm text-slate-700">
+              <input type="checkbox" className="mt-1" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+              <span>
+                (필수){" "}
+                <a href="/privacy" target="_blank" className="link-accent">
+                  개인정보 수집·이용
+                </a>
+                과{" "}
+                <a href="/terms" target="_blank" className="link-accent">
+                  이용약관
+                </a>
+                을 읽었고 동의합니다.
+              </span>
+            </label>
+          )}
           {err && <p className="text-sm text-red-600 whitespace-pre-line">{err}</p>}
           {msg && <p className="text-sm text-green-600 whitespace-pre-line">{msg}</p>}
           <button
             type="submit"
             className="btn-primary w-full"
             disabled={
-              busy || !email || (mode !== "forgot" && !password) || (mode === "signup" && (!department || !cohort.trim() || !displayName.trim() || !password2 || password !== password2))
+              busy || !email || (mode !== "forgot" && !password) || (mode === "signup" && (!department || !cohort.trim() || !displayName.trim() || !password2 || password !== password2 || (needAgree && !agree)))
             }
           >
             {busy ? "처리 중…" : mode === "login" ? "로그인" : mode === "signup" ? "회원가입" : "재설정 메일 보내기"}
@@ -360,6 +393,17 @@ export default function LoginPage() {
             </button>
           )}
         </div>
+        {LEGAL.PUBLISHED && (
+          <p className="mt-4 text-xs text-slate-400">
+            <a href="/privacy" className="hover:underline">
+              개인정보처리방침
+            </a>{" "}
+            ·{" "}
+            <a href="/terms" className="hover:underline">
+              이용약관
+            </a>
+          </p>
+        )}
       </div>
     </div>
   );
