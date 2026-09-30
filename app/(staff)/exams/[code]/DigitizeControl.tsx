@@ -254,6 +254,11 @@ export default function DigitizeControl({
               </button>
             )}
             {job.stage === "dg_done" && (
+              <a className="text-slate-500 hover:underline" href="/admin/digitize-check">
+                전체 시험 디지털화 점검
+              </a>
+            )}
+            {job.stage === "dg_done" && (
               <a className="text-slate-500 hover:underline" href={`/exams/${encodeURIComponent(code)}/digitized`} target="_blank">
                 원자료 JSON 내려받기
               </a>

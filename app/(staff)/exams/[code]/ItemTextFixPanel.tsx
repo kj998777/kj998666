@@ -23,6 +23,8 @@ export default function ItemTextFixPanel({ code, onSaved }: { code: string; onSa
   const [scanErr, setScanErr] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
   const [sel, setSel] = useState(-1);
+  // 2026-09-30: 디지털화 의심 문항(숫자가 처음 읽은 요약·풀이와 어긋남) — "페이지:순서" → 이유
+  const [suspects, setSuspects] = useState<Record<string, { score: number; reasons: string[] }>>({});
   const docRef = useRef<any>(null);
 
   async function openPanel() {
@@ -41,8 +43,22 @@ export default function ItemTextFixPanel({ code, onSaved }: { code: string; onSa
         });
       }
       setEntries(list);
+      let sus: Record<string, { score: number; reasons: string[] }> = {};
+      try {
+        const sRes = await fetch(`/exams/${encodeURIComponent(code)}/digitize-suspects`, { credentials: "same-origin", cache: "no-store" });
+        const sj = sRes.ok ? await sRes.json() : null;
+        sus = sj?.suspects ?? {};
+      } catch {
+        /* 의심 표시는 없어도 고치기는 됨 */
+      }
+      setSuspects(sus);
+      // 가장 의심스러운 문항부터, 없으면 AI가 흐리다고 남긴 문항, 없으면 첫 문항
+      const byScore = list
+        .map((e, i) => ({ i, s: sus[`${e.pageNo}:${e.itemIndex}`]?.score ?? 0 }))
+        .filter((x) => x.s > 0)
+        .sort((a, b) => b.s - a.s);
       const firstUnsure = list.findIndex((e) => String(e.item.unsure || "").trim());
-      setSel(firstUnsure >= 0 ? firstUnsure : list.length ? 0 : -1);
+      setSel(byScore.length ? byScore[0].i : firstUnsure >= 0 ? firstUnsure : list.length ? 0 : -1);
       // 스캔본(없어도 직접 고치기는 됨)
       try {
         const pRes = await fetch(`/exams/${encodeURIComponent(code)}/original-pdf?scan=1`, { credentials: "same-origin", cache: "no-store" });
@@ -98,30 +114,49 @@ export default function ItemTextFixPanel({ code, onSaved }: { code: string; onSa
           <div className="flex flex-wrap items-center gap-1">
             {entries.map((e, i) => {
               const unsure = !!String(e.item.unsure || "").trim();
+              const sus = suspects[`${e.pageNo}:${e.itemIndex}`];
+              const strong = !!sus && sus.score >= 3;
               return (
                 <button
                   key={i}
-                  title={unsure ? `AI가 확실히 못 읽었다고 한 곳: ${e.item.unsure}` : `${e.pageNo}쪽`}
+                  title={sus ? `의심: ${sus.reasons.join(" / ")}` : unsure ? `AI가 확실히 못 읽었다고 한 곳: ${e.item.unsure}` : `${e.pageNo}쪽`}
                   className={
                     "rounded border px-2 py-1 text-xs " +
-                    (i === sel ? "border-slate-900 bg-slate-900 text-white" : unsure ? "border-amber-400 bg-amber-50 text-amber-900" : "border-slate-300 bg-white")
+                    (i === sel
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : strong
+                        ? "border-red-400 bg-red-50 text-red-800"
+                        : unsure || sus
+                          ? "border-amber-400 bg-amber-50 text-amber-900"
+                          : "border-slate-300 bg-white")
                   }
                   onClick={() => setSel(i)}
                 >
-                  {e.item.label || "?"}번{e.item.edited ? " ✓" : unsure ? " ?" : ""}
+                  {e.item.label || "?"}번{e.item.edited ? " ✓" : strong ? " !" : unsure || sus ? " ?" : ""}
                 </button>
               );
             })}
           </div>
-          <p className="text-[11px] text-slate-400">노란 칸(?) = AI가 &ldquo;흐려서 확실히 못 읽었다&rdquo;고 남긴 문항 · ✓ = 고친 문항</p>
+          <p className="text-[11px] text-slate-400">
+            빨간 칸(!) = 숫자가 처음 AI가 읽은 문제 요약·풀이와 어긋나는 문항 · 노란 칸(?) = AI가 &ldquo;흐려서 확실히 못 읽었다&rdquo;고 남긴 문항 · ✓ = 고친 문항
+          </p>
           {sel >= 0 && entries[sel] && (
             <ItemEditor
               key={`${entries[sel].pageNo}-${entries[sel].itemIndex}`}
               code={code}
               doc={docRef.current}
               entry={entries[sel]}
+              reasons={suspects[`${entries[sel].pageNo}:${entries[sel].itemIndex}`]?.reasons}
               onSaved={(item) => {
                 setEntries((list) => list.map((e, i) => (i === sel ? { ...e, item } : e)));
+                // 고친 문항은 의심 표시를 내린다(다음에 열 때 새 글로 다시 살핌)
+                setSuspects((m) => {
+                  const k = `${entries[sel].pageNo}:${entries[sel].itemIndex}`;
+                  if (!m[k]) return m;
+                  const n = { ...m };
+                  delete n[k];
+                  return n;
+                });
                 onSaved?.();
               }}
             />
@@ -192,7 +227,10 @@ export function ItemEditor({
   entry,
   onSaved,
   savedNote = "저장했습니다. 다 고친 뒤 '디지털 시험지를 원본으로 적용'을 다시 누르세요.",
+  reasons,
 }: {
+  /** 디지털화 점검에서 찾은 의심 이유(lib/digitize/suspect.ts) */
+  reasons?: string[];
   code: string;
   doc: any;
   entry: Entry;
@@ -389,7 +427,17 @@ export function ItemEditor({
 
       {/* 고치기 */}
       <div className="space-y-2 text-sm min-w-0">
-        {String(entry.item.unsure || "").trim() && (
+        {!!reasons?.length && (
+          <div className="rounded bg-red-50 border border-red-200 px-2 py-1 text-xs text-red-800">
+            <b>숫자 확인 필요</b> — 처음 AI가 읽은 문제 요약·풀이와 다릅니다(어느 쪽이 맞는지 원본으로 확인):
+            <ul className="list-disc pl-4">
+              {reasons.map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+                {String(entry.item.unsure || "").trim() && (
           <p className="rounded bg-amber-50 border border-amber-200 px-2 py-1 text-xs text-amber-900">AI 메모(확실히 못 읽은 곳): {entry.item.unsure}</p>
         )}
         {entry.item.edited && (
