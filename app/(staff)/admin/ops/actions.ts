@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { backupDownloadUrl, runBackup } from "@/lib/ops/backup";
+import { rejudgeJudgments } from "@/lib/ops/rejudge";
 
 // 운영 현황(/admin/ops) 화면의 버튼들 — 관리자 확인 뒤 서비스롤로 처리한다.
 
@@ -58,4 +59,29 @@ export async function setTutorPaused(tutorId: string, paused: boolean): Promise<
   if (error) return { ok: false, msg: "바꾸지 못했습니다: " + error.message + " (0025 마이그레이션 확인)" };
   revalidatePath("/admin/ops");
   return { ok: true };
+}
+
+/**
+ * 정답률 기록 다시 맞추기(2026-09-30): 객관식 답 모양("④"·"4번") 차이로 "틀림"이 된 기록을 지금 비교 방법으로 다시 본다.
+ * apply=false면 몇 건이 바뀌는지만 알려 준다.
+ */
+export async function rejudgeNow(apply: boolean): Promise<Result & { flips?: number; tutors?: number; checked?: number }> {
+  await requireRole("admin");
+  const r = await rejudgeJudgments(createAdminClient(), apply);
+  if (!r.ok || !r.plan) return { ok: false, msg: r.msg ?? "실패했습니다." };
+  const flips = r.plan.flips.length;
+  const tutors = Object.keys(r.plan.byTutor).length;
+  if (apply) revalidatePath("/admin/ops");
+  const tail = r.plan.skippedUnconfirmed ? ` (정답이 아직 확정 전이라 그대로 둔 ${r.plan.skippedUnconfirmed}건)` : "";
+  return {
+    ok: true,
+    flips,
+    tutors,
+    checked: r.plan.checked,
+    msg: !flips
+      ? `"틀림" 기록 ${r.plan.checked}건을 살펴봤고 고칠 것이 없습니다.` + tail
+      : apply
+        ? `${tutors}명의 기록 ${flips}건을 "맞음"으로 고쳤습니다. 정답률·등급에 바로 반영됩니다.` + tail
+        : `"틀림" 기록 ${r.plan.checked}건 중 ${flips}건(${tutors}명)이 사실은 맞은 답입니다.` + tail,
+  };
 }

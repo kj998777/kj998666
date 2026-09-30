@@ -125,6 +125,7 @@ export async function loadStudentDetail(supabase: Client, index: StudentIndex, k
   const items: ItemMeta[] = ((akRes.data as any[]) ?? []).map((k) => {
     const e = expl.get(`${k.exam_id}|${k.item_label}`) ?? {};
     return {
+      id: e.id ? String(e.id) : undefined,
       exam_id: k.exam_id,
       label: String(k.item_label),
       sort_order: Number(k.sort_order) || 0,

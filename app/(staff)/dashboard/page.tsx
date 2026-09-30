@@ -102,6 +102,13 @@ export default async function DashboardPage({
       desc: "학생별 시험 점수 추이, 영역·단원별 정답률, 우선 복습할 단원과 다시 풀 문항을 보고 학부모 상담용 누적 보고서 PDF를 받습니다.",
     },
   ];
+  if (isAdmin || session.role === "editor") {
+    cards.push({
+      href: "/bank",
+      title: "문항 은행",
+      desc: "모든 시험의 문항을 단원·난이도·학교·글자로 찾아 담고, 새 시험지 PDF와 정답·해설지 PDF를 만듭니다(원래 시험지 모양 그대로).",
+    });
+  }
   if (isAdmin) {
     cards.push(
       {
