@@ -9,6 +9,7 @@ const REASON_LABEL: Record<string, string> = {
   download_purchase: "기출 다운로드",
   admin_adjustment: "관리자 조정",
   dispute_reward: "정답 이의 채택 보상",
+  worksheet_purchase: "맞춤 시험지",
 };
 
 export default async function TutorDashboardPage() {
@@ -119,6 +120,9 @@ export default async function TutorDashboardPage() {
         </Link>
         <Link href="/tutor/store" className="btn-secondary">
           기출 스토어 보기
+        </Link>
+        <Link href="/tutor/worksheet" className="btn-secondary">
+          맞춤 시험지 만들기
         </Link>
         <Link href="/tutor/ranking" className="btn-secondary">
           랭킹{myRank ? ` · 내 순위 ${myRank.rank}위` : ""}
