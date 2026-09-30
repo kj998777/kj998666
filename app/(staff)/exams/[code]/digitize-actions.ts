@@ -7,6 +7,7 @@ import { cancelDigitizeJob, startDigitizeJob, tickDigitizeJob } from "@/lib/ai/d
 import { backupScanBeforeDigitizedApply, finalizePdfUpload, restoreScanPdf } from "@/lib/ai/pdf";
 import { applyNewPdfLocations } from "@/lib/ai/relocate";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { cleanItemText, mergeItemText } from "@/lib/digitize/itemEdit";
 
 // 스캔 시험지 디지털화(Feature 1) 관련 서버 액션. AI 비용이 드는 관리자 전용 기능이므로 전부 admin만.
 
@@ -164,4 +165,41 @@ export async function restoreScanPdfAction(code: string, uploadedPath: string) {
     } catch (e: any) {
         return { ok: false, msg: String(e?.message ?? e) };
     }
+}
+
+/**
+ * 2026-09-30 원장님 요청: 디지털화 때 숫자·글자를 잘못 옮겨 적은 문항 하나를 고친다(ItemTextFixPanel.tsx).
+ * source: "manual" = 직접 고침, "ai" = 그 문항만 AI로 다시 읽은 결과로 덮어씀, "revert" = AI가 처음 읽은 글로 되돌림.
+ * 글 부분만 바꾸고 그림 자리(figures)는 그대로 둔다. 처음 고칠 때 AI 원래 글을 orig에 남긴다(lib/digitize/itemEdit.ts).
+ * 반영하려면 "디지털 시험지를 원본으로 적용"을 다시 누른다(그림 자리 고치기와 같음).
+ */
+export async function saveDigitizedItem(code: string, pageNo: number, itemIndex: number, fields: unknown, source: "manual" | "ai" | "revert") {
+    await requireRole("admin");
+    const exam = await getExamByCode(code);
+    if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
+    if (!Number.isInteger(pageNo) || pageNo < 1 || !Number.isInteger(itemIndex) || itemIndex < 0) return { ok: false, msg: "문항 정보가 올바르지 않습니다." };
+    if (!["manual", "ai", "revert"].includes(source)) return { ok: false, msg: "알 수 없는 저장 방식입니다." };
+    const supabase = await createClient();
+    const { data: row, error } = (await supabase
+        .from("digitized_pages")
+        .select("id, data")
+        .eq("exam_id", exam.id)
+        .eq("page_no", pageNo)
+        .maybeSingle()) as any;
+    if (error || !row) return { ok: false, msg: "디지털화된 쪽을 찾지 못했습니다." };
+    const data = row.data && typeof row.data === "object" ? row.data : {};
+    const items = Array.isArray(data.items) ? [...data.items] : [];
+    const cur = items[itemIndex];
+    if (!cur || cur.type !== "question") return { ok: false, msg: "문항을 찾지 못했습니다. 새로고침해 주세요." };
+    let input: unknown = fields;
+    if (source === "revert") {
+        if (!cur.orig) return { ok: false, msg: "되돌릴 AI 원래 글이 없습니다." };
+        input = cur.orig;
+    }
+    const c = cleanItemText(input);
+    if (!c.ok) return { ok: false, msg: c.msg };
+    items[itemIndex] = mergeItemText(cur, c.text, source, new Date().toISOString());
+    const { error: upErr } = await (supabase.from("digitized_pages") as any).update({ data: { ...data, items } }).eq("id", row.id);
+    if (upErr) return { ok: false, msg: "저장하지 못했습니다: " + upErr.message };
+    return { ok: true, item: items[itemIndex] };
 }

@@ -282,3 +282,54 @@ export function dgPrompt(n: number, total: number): string {
     "- unsure: 글자가 흐리거나 잘려서 확실히 읽지 못한 부분이 있으면 무엇이 불확실한지 짧게(없으면 빈 문자열).",
   ].join("\n");
 }
+
+// ---- 디지털화 문항 하나만 다시 읽기 (2026-09-30) ----
+// 숫자·글자를 잘못 옮겨 적은 문항만 AI에게 다시 읽힌다(lib/ai/digitizeItem.ts). 옮겨 적는 규칙은 dgPrompt와 같고,
+// 그림 자리는 다시 받지 않는다(관리자가 고친 그림 자리를 그대로 두려고).
+export const DG_ITEM_TOOL = {
+  name: "submit_item",
+  description: "시험지의 문항 하나를 글자·수식으로 다시 옮겨 제출한다.",
+  input_schema: {
+    type: "object",
+    properties: {
+      label: { type: "string" },
+      points: { type: ["number", "null"] },
+      stem: { type: "string" },
+      box_title: { type: "string" },
+      box_lines: { type: "array", items: { type: "string" } },
+      choices: { type: "array", items: { type: "string" } },
+      unsure: { type: "string" },
+      changes: { type: "string", description: "지금 옮겨 적은 내용과 비교해 고친 곳을 짧게(없으면 빈 문자열)" },
+    },
+    required: ["label", "stem", "choices"],
+  },
+} as const;
+
+export function dgItemPrompt(opts: { label: string; pageNo: number; current: string; hint: string; zoom: "box" | "halves" }): string {
+  const zoomLine =
+    opts.zoom === "box"
+      ? "첫 번째 그림은 시험지 그 쪽 전체이고, 두 번째 그림은 선생님이 이 문항 자리를 네모로 지정해 크게 확대한 것입니다. 글자·숫자는 확대한 그림을 기준으로 읽으세요."
+      : "첫 번째 그림은 시험지 그 쪽 전체이고, 두 번째·세 번째 그림은 같은 쪽의 왼쪽 절반·오른쪽 절반을 크게 확대한 것입니다. 글자·숫자는 확대한 그림을 기준으로 읽으세요.";
+  return [
+    `첨부한 그림은 스캔(그림)으로 된 한국 고등학교 수학 시험지의 ${opts.pageNo}쪽입니다. ${zoomLine}`,
+    `이 쪽에 있는 "${opts.label}번" 문항 하나만 다시 정확히 옮겨 적어 submit_item 도구로 제출하세요. 글로 답하지 말고 반드시 도구로 제출합니다.`,
+    "",
+    "아래는 지금 옮겨 적어 둔 내용입니다. 숫자·부호·지수·분수·글자를 잘못 읽은 곳이 있어서 다시 읽는 것이니, 이 글을 그대로 베끼지 말고 그림을 한 글자씩 직접 보고 새로 옮기세요. 맞게 읽은 부분은 같아도 됩니다.",
+    "<<<지금 옮겨 적은 내용",
+    opts.current,
+    ">>>",
+    opts.hint ? `선생님 메모(틀린 곳에 대한 설명 — 참고해서 그 부분을 특히 꼼꼼히 확인): ${opts.hint}` : "",
+    "",
+    "규칙",
+    "- 문제를 풀지 말고 인쇄된 그대로 옮기세요. 정답·풀이·힌트를 새로 쓰거나 덧붙이지 않습니다. 손글씨·체크·낙서는 옮기지 않습니다.",
+    '- label = 인쇄된 문항 번호("." 과 "번" 은 뺌). points = 인쇄된 배점 숫자(없으면 null; "[3점]" 표기는 stem 에 넣지 않음). stem = 문제 본문 전체(선택지 제외). 서술형의 (1)(2) 소문항은 stem 의 줄로 함께 적습니다.',
+    "- 수식은 LaTeX 를 달러 기호 하나로 여닫는 $...$ 안에 쓰고 KaTeX 가 지원하는 명령만 씁니다(\\frac, \\sqrt, 첨자, \\le \\ge \\lt \\gt, \\cdot, \\times, \\begin{cases} 등). $$...$$, \\[...\\] 는 쓰지 않고, $ 밖에는 백슬래시 명령이 남지 않게 하세요. 글 속에 < > & 를 직접 쓰지 말고 \\lt \\gt 를 쓰세요.",
+    "- 줄바꿈은 \\n 으로 쓰되, 인쇄 때문에 줄이 바뀐 문장은 이어서 쓰고 (가)(나) 조건처럼 따로 줄에 인쇄된 것만 줄을 나눕니다.",
+    '- box_title/box_lines: 테두리 상자로 인쇄된 <보기>·조건·[자료] 가 있으면 box_title(예 "<보기>")과 box_lines(한 줄에 한 항목, ㄱ. ㄴ. ㄷ. 도 그대로)에 옮기고 stem 에는 넣지 않습니다. 없으면 빈 문자열·빈 배열.',
+    '- choices: 선택지 ①~⑤ 의 내용만 순서대로(원문자 기호는 빼기). 객관식이 아니면 빈 배열. 선택지가 그림이면 "(그림)" 으로 적습니다.',
+    "- 그림·그래프·표 안의 글자는 옮기지 않습니다(그림은 따로 오려 붙입니다).",
+    "- unsure: 그래도 확실히 읽지 못한 부분이 있으면 짧게(없으면 빈 문자열). changes: 지금 옮겨 적은 내용과 비교해 고친 곳을 짧게.",
+  ]
+    .filter((l) => l !== "")
+    .join("\n");
+}

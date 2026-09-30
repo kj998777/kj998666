@@ -15,10 +15,18 @@ import {
     uploadPdfFile,
 } from "./anthropic";
 import { DG_TOOL, dgPrompt } from "./prompts";
-import { getExamPdfBuffer } from "./pdf";
+import { getScanPdfBuffer, hasScanPdf } from "./pdf";
 import { claimJobLease } from "./job";
 import { countPdfPages } from "./pdfMeta";
 import { clearLowBalanceAlert, getAiCreds, recordLowBalanceAlert, recordUsage } from "./settings";
+
+// 2026-09-30: AI가 읽는 PDF는 늘 스캔본(getScanPdfBuffer)이다. 전에는 "지금 원본"을 읽어서, 디지털 시험지를 원본으로 적용한 뒤
+// "다시 시작"하면 AI가 새로 조판한 PDF를 읽었다 — 그림 자리는 스캔본에서 오리므로 쪽·좌표가 어긋났다.
+async function scanBuffer(client: Client, examId: string): Promise<Buffer> {
+    const buf = await getScanPdfBuffer(client, examId);
+    if (!buf) throwErr("스캔본 PDF가 없습니다. 디지털화 칸의 '스캔본 다시 올리기'로 처음 올렸던 스캔 PDF를 넣어 주세요.", true);
+    return buf;
+}
 
 // 스캔 시험지 디지털화(Feature 1). exam_jobs/pipeline.ts와 같은 "lazy tick" 상태 기계 패턴을
 // digitize_jobs/digitized_pages 테이블에 그대로 적용한 것 — 다만 문항 단위가 아니라 쪽(page) 단위로
@@ -117,7 +125,7 @@ async function createBatchesChunked(
         }
   }
 
-  const buf = await getExamPdfBuffer(client, examId);
+  const buf = await scanBuffer(client, examId);
     const b64 = buf.toString("base64");
     const doc = inlineDoc(b64);
     const per = Math.max(1, Math.floor(30_000_000 / (b64.length + 4000)));
@@ -152,6 +160,8 @@ export async function startDigitizeJob(client: Client, examId: string): Promise<
 
   const { data: meta } = (await client.from("exam_pdf_meta").select("exam_id").eq("exam_id", examId).maybeSingle()) as any;
     if (!meta) return { ok: false, msg: "먼저 시험지 PDF를 올려 주세요." };
+    if (!(await hasScanPdf(client, examId)))
+        return { ok: false, msg: "원본으로 적용하면서 스캔본이 지워진 시험입니다. 아래 '스캔본 다시 올리기'로 처음 올렸던 스캔 PDF를 먼저 넣어 주세요." };
 
   // 다시 시작하면 이전 결과는 더 이상 맞지 않으므로(쪽수가 바뀌었을 수도 있음) 지우고 새로 만든다.
   await client.from("digitized_pages").delete().eq("exam_id", examId);
@@ -176,7 +186,7 @@ export async function cancelDigitizeJob(client: Client, examId: string): Promise
 // ---------------------------------------------------------------------
 
 async function stepUpload(client: Client, examId: string, state: State): Promise<void> {
-    const buf = await getExamPdfBuffer(client, examId);
+    const buf = await scanBuffer(client, examId);
     const { apiKey } = await getAiCreds(client);
     if (!apiKey) throwErr("AI API 키가 아직 저장되지 않았습니다.", true);
 

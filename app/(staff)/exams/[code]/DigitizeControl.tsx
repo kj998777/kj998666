@@ -1,6 +1,7 @@
 "use client";
 
 import FigureFixPanel from "./FigureFixPanel";
+import ItemTextFixPanel from "./ItemTextFixPanel";
 import ScanRestoreBox from "./ScanRestoreBox";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -57,6 +58,9 @@ export default function DigitizeControl({
   const [applyBusy, setApplyBusy] = useState(false);
   const [applyMsg, setApplyMsg] = useState("");
   const [pdfMsg, setPdfMsg] = useState("");
+  // 2026-09-30: 문제 글·그림 자리를 고친 뒤 아직 원본에 반영 안 함 / 다시 시작 확인
+  const [needApply, setNeedApply] = useState(false);
+  const [confirmRestart, setConfirmRestart] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const busy = useRef(false);
 
@@ -101,12 +105,26 @@ export default function DigitizeControl({
           (built.figErrors ? ` · 그림 오류 ${built.figErrors}곳` : "") + figNote(built)
         }). 이제 이 디지털 시험지가 원본 PDF입니다 — 원본과 대조해 확인해 주세요.`
       );
+      setNeedApply(false);
       router.refresh();
     } catch (e: any) {
       setApplyMsg("실패: " + (e && e.message ? e.message : String(e)));
     } finally {
       setApplyBusy(false);
     }
+  }
+
+  function restart() {
+    setConfirmRestart(false);
+    start(async () => {
+      setMsg("");
+      const r = await startDigitizeAction(code);
+      if (!r.ok) setMsg(r.msg);
+      else {
+        setNeedApply(false);
+        setJob({ stage: "dg_upload", message: "시험지를 AI에 올리는 중…", updatedAt: new Date().toISOString(), progress: null });
+      }
+    });
   }
 
   useEffect(() => {
@@ -204,21 +222,26 @@ export default function DigitizeControl({
                 취소
               </button>
             )}
-            {!active && (
-              <button
-                className="btn-secondary text-sm px-2 py-1"
-                disabled={pending}
-                onClick={() =>
-                  start(async () => {
-                    setMsg("");
-                    const r = await startDigitizeAction(code);
-                    if (!r.ok) setMsg(r.msg);
-                    else setJob({ stage: "dg_upload", message: "시험지를 AI에 올리는 중…", updatedAt: new Date().toISOString(), progress: null });
-                  })
-                }
+            {!active && !confirmRestart && (
+              <button className="btn-secondary text-sm px-2 py-1" disabled={pending} onClick={() => {
+                  // 끝난 디지털화(고친 내용이 있을 수 있음)는 한 번 더 확인, 오류로 멈춘 것은 바로
+                  if (job.stage === "dg_done") setConfirmRestart(true);
+                  else restart();
+                }}
               >
                 다시 시작
               </button>
+            )}
+            {!active && confirmRestart && (
+              <span className="flex flex-wrap items-center gap-2 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-800">
+                처음부터 다시 옮겨 적으면 직접 고친 문제 글·그림 자리가 모두 지워집니다.
+                <button className="font-semibold underline" disabled={pending} onClick={restart}>
+                  그래도 다시 시작
+                </button>
+                <button className="text-slate-600 hover:underline" onClick={() => setConfirmRestart(false)}>
+                  취소
+                </button>
+              </span>
             )}
             {job.stage === "dg_done" && (
               <button className="btn-primary text-sm px-2 py-1" disabled={applyBusy || pdfBusy} onClick={onApplyAsOriginal}>
@@ -237,10 +260,19 @@ export default function DigitizeControl({
             )}
           </div>
           {job.stage === "dg_done" && scanMissing && <ScanRestoreBox code={code} examId={examId} />}
-          {job.stage === "dg_done" && !scanMissing && (
-            <div className="space-y-1">
-              <FigureFixPanel code={code} />
-              {appliedAsOriginal && <ScanRestoreBox code={code} examId={examId} mode="replace" />}
+          {job.stage === "dg_done" && (
+            <div className="flex flex-wrap gap-2">
+              <ItemTextFixPanel code={code} onSaved={() => setNeedApply(true)} />
+              {!scanMissing && <FigureFixPanel code={code} onSaved={() => setNeedApply(true)} />}
+            </div>
+          )}
+          {job.stage === "dg_done" && !scanMissing && appliedAsOriginal && <ScanRestoreBox code={code} examId={examId} mode="replace" />}
+          {job.stage === "dg_done" && needApply && (
+            <div className="flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              고친 내용은 아직 원본 PDF에 반영되지 않았어요.
+              <button className="btn-primary text-sm px-2 py-1" disabled={applyBusy || pdfBusy} onClick={onApplyAsOriginal}>
+                {applyBusy ? "적용하는 중…" : "지금 원본으로 다시 적용"}
+              </button>
             </div>
           )}
           {applyMsg && <p className={applyMsg.indexOf("실패") === 0 ? "text-red-600" : "text-slate-500"}>{applyMsg}</p>}
