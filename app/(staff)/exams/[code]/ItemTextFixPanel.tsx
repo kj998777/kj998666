@@ -186,7 +186,20 @@ function cropJpeg(cv: HTMLCanvasElement, b: Box, long: number): string {
   return c.toDataURL("image/jpeg", 0.88).split(",")[1];
 }
 
-export function ItemEditor({ code, doc, entry, onSaved }: { code: string; doc: any; entry: Entry; onSaved: (item: any) => void }) {
+export function ItemEditor({
+  code,
+  doc,
+  entry,
+  onSaved,
+  savedNote = "저장했습니다. 다 고친 뒤 '디지털 시험지를 원본으로 적용'을 다시 누르세요.",
+}: {
+  code: string;
+  doc: any;
+  entry: Entry;
+  onSaved: (item: any) => void;
+  /** 저장한 뒤 보여 줄 안내(쓰는 화면마다 다음 할 일이 달라서) */
+  savedNote?: string;
+}) {
   // 비교 기준은 저장된 글을 같은 규칙으로 다듬은 것(끝 공백 같은 차이로 "고침"이 켜지지 않게)
   const saved = useMemo(() => {
     const t = textOf(entry.item);
@@ -317,7 +330,7 @@ export function ItemEditor({ code, doc, entry, onSaved }: { code: string; doc: a
       onSaved(r.item);
       setAi(null);
       if (source === "revert") setDraft(toDraft(textOf(r.item)));
-      setMsg({ ok: true, text: "저장했습니다. 다 고친 뒤 '디지털 시험지를 원본으로 적용'을 다시 누르세요." });
+      setMsg({ ok: true, text: savedNote });
     });
   }
 
