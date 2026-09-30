@@ -16,6 +16,8 @@ export type WsOptions = {
   showSource: boolean;
   /** 한 단에 넣을 최대 문항 수(풀이 공간): 3 = 보통, 2 = 넉넉히 */
   perCol: 2 | 3;
+  /** 문항 그림을 오릴 PDF 주소(기본: 직원용 원본). 과외선생님 맞춤 시험지는 그 문항이 있는 쪽 하나만 주는 주소를 쓴다 */
+  pdfUrlOf?: (it: BankDetail) => string;
 };
 
 type Progress = (m: string) => void;
@@ -49,14 +51,17 @@ function eraseEdgeLines(cv: HTMLCanvasElement): void {
     ctx.fillStyle = "#fff";
     ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
   };
+  // 가장자리 10% 안: 높이의 절반 넘는 세로줄, 10~20%: 거의 끝까지 이어진 세로줄(단 구분선 옆 여백이 넓게 잘린 경우 — 2026-09-30)
+  const edge2 = Math.max(edgeX, Math.round(w * 0.2));
   for (const xs of [
-    [0, edgeX],
-    [w - edgeX, w],
+    [0, edge2],
+    [w - edge2, w],
   ]) {
     for (let x = xs[0]; x < xs[1]; x++) {
       let n = 0;
       for (let y = 0; y < h; y++) if (dark(x, y)) n++;
-      if (n > h * 0.5) clear(Math.max(0, x - 2), 0, Math.min(w, x + 3), h);
+      const inner = x >= edgeX && x < w - edgeX;
+      if (n > h * (inner ? 0.85 : 0.5)) clear(Math.max(0, x - 2), 0, Math.min(w, x + 3), h);
     }
   }
   for (const ys of [
@@ -104,8 +109,125 @@ function trimCanvas(cv: HTMLCanvasElement): HTMLCanvasElement {
   return c2;
 }
 
+/**
+ * 2026-09-30: 오린 문항 맨 앞의 원래 번호("12.")를 지운다(새 시험지는 위에 새 번호를 따로 쓴다).
+ * 글자 정보로 찾은 번호 자리(labelBox)의 줄 높이 안에서, 왼쪽부터 잉크가 이어지는 곳(숫자·점)을 따라가다
+ * 글자 사이 빈칸이 나오면 멈추고 거기까지만 흰색으로 덮는다 — 폭을 어림으로 잡으면 뒤의 글자까지 지울 수 있어서.
+ */
+function eraseLabel(cv: HTMLCanvasElement, box: { x0: number; y0: number; x1: number; y1: number }): boolean {
+  const ctx = cv.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
+  const y0 = Math.max(0, Math.floor(box.y0));
+  const y1 = Math.min(cv.height, Math.ceil(box.y1));
+  const bandH = y1 - y0;
+  if (bandH < 4) return false;
+  const xStart = Math.max(0, Math.floor(box.x0));
+  const xMax = Math.min(cv.width, Math.ceil(xStart + Math.min(box.x1 - box.x0 + bandH, bandH * 4)));
+  if (xMax - xStart < 3) return false;
+  const d = ctx.getImageData(xStart, y0, xMax - xStart, bandH).data;
+  const w = xMax - xStart;
+  const colDark = (x: number) => {
+    for (let y = 0; y < bandH; y++) {
+      const p = (y * w + x) * 4;
+      if (d[p] * 0.3 + d[p + 1] * 0.59 + d[p + 2] * 0.11 < 170) return true;
+    }
+    return false;
+  };
+  let first = -1;
+  for (let x = 0; x < w; x++) if (colDark(x)) { first = x; break; }
+  if (first < 0) return false;
+  const gap = Math.max(3, Math.round(bandH * 0.3));
+  let last = first;
+  let white = 0;
+  for (let x = first; x < w; x++) {
+    if (colDark(x)) {
+      last = x;
+      white = 0;
+    } else if (++white >= gap) break;
+  }
+  if (white < gap) return false; // 빈칸을 못 찾음 = 번호와 글이 붙어 있음 → 지우지 않는다(글을 지울 수 있어서)
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(xStart + first - 1, y0, last - first + 3, bandH);
+  return true;
+}
+
+/**
+ * 글자 정보가 없는 스캔본에서 오린 문항: 맨 윗줄 왼쪽 끝의 "숫자+점"("3.", "12.")을 잉크 모양으로 찾아 지운다.
+ * 틀리게 지우면 문제 글이 사라지므로 아주 좁게 본다 — 첫 줄 맨 앞 덩어리가 줄 높이의 0.3~1.7배 폭이고, 뒤에 뚜렷한 빈칸이 있고,
+ * 그 덩어리의 마지막 조각이 "점"(좁고 줄 아래쪽에만 잉크)일 때만.
+ */
+function eraseLeadingNumberByInk(cv: HTMLCanvasElement): boolean {
+  const w = cv.width;
+  const h = cv.height;
+  const ctx = cv.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const dark = (x: number, y: number) => {
+    const p = (y * w + x) * 4;
+    return d[p] * 0.3 + d[p + 1] * 0.59 + d[p + 2] * 0.11 < 170;
+  };
+  const xLim = Math.round(w * 0.4);
+  const isRule = (x: number) => {
+    let n = 0;
+    for (let y = 0; y < h; y += 2) if (dark(x, y)) n++;
+    return n > h * 0.3; // 2칸마다 셌으므로 0.6 기준
+  };
+  const ruleCols = new Set<number>();
+  for (let x = 0; x < Math.round(w * 0.2); x++) if (isRule(x)) ruleCols.add(x);
+  const rowInk = (y: number) => {
+    for (let x = 0; x < xLim; x++) if (!ruleCols.has(x) && dark(x, y)) return true;
+    return false;
+  };
+  let top = -1;
+  for (let y = 0; y < Math.min(h, Math.round(h * 0.5)); y++) if (rowInk(y)) { top = y; break; }
+  if (top < 0) return false;
+  let bot = top;
+  let gapRows = 0;
+  for (let y = top; y < h; y++) {
+    if (rowInk(y)) {
+      bot = y;
+      gapRows = 0;
+    } else if (++gapRows >= 3) break;
+  }
+  const H = bot - top + 1;
+  if (H < 8 || H > h * 0.25) return false;
+  // 세로줄(원래 시험지의 단 구분선·상자 테두리)은 번호가 아니므로 빈칸으로 본다
+  const colInk = (x: number) => {
+    if (ruleCols.has(x)) return false;
+    for (let y = top; y <= bot; y++) if (dark(x, y)) return true;
+    return false;
+  };
+  let x0 = -1;
+  for (let x = 0; x < Math.round(w * 0.2); x++) if (colInk(x)) { x0 = x; break; } // 단 구분선 옆 여백이 넓을 수 있음
+  if (x0 < 0) return false;
+  // 덩어리를 조각(1px 이상 빈 세로줄로 나뉨)으로 나눠 따라가다가, 줄 높이의 0.35배 넘는 빈칸이 나오면 멈춤
+  const parts: [number, number][] = [];
+  let a = x0;
+  let white = 0;
+  let x = x0;
+  for (; x < w; x++) {
+    if (colInk(x)) {
+      if (white > 0) {
+        parts.push([a, x - white - 1]);
+        a = x;
+      }
+      white = 0;
+    } else if (++white >= Math.max(3, H * 0.35)) break;
+  }
+  if (white < Math.max(3, H * 0.35)) return false;
+  parts.push([a, x - white]);
+  const xEnd = parts[parts.length - 1][1];
+  const W = xEnd - x0 + 1;
+  if (W < H * 0.3 || W > H * 1.7 || parts.length < 2) return false;
+  // 마지막 조각이 점인가: 좁고, 잉크가 줄 아래쪽 40% 안에만
+  const [p0, p1] = parts[parts.length - 1];
+  if (p1 - p0 + 1 > H * 0.3) return false;
+  for (let y = top; y < top + Math.round(H * 0.6); y++) for (let xx = p0; xx <= p1; xx++) if (dark(xx, y)) return false;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(Math.max(0, x0 - 1), Math.max(0, top - 1), W + 2, H + 2);
+  return true;
+}
+
 /** 오린 그림과, 그 그림 폭이 원래 쪽 폭에서 차지하던 비율(글자 크기를 원래와 비슷하게 맞추는 데 씀) */
-async function cropItem(lib: any, doc: any, it: BankDetail): Promise<{ cv: HTMLCanvasElement; frac: number } | null> {
+export async function cropItem(lib: any, doc: any, it: BankDetail): Promise<{ cv: HTMLCanvasElement; frac: number } | null> {
   const region = await resolveRegion(lib, doc, it.label, it.sourcePage, it.bbox);
   if (!region) return null;
   const pg = await doc.getPage(region.page);
@@ -133,7 +255,18 @@ async function cropItem(lib: any, doc: any, it: BankDetail): Promise<{ cv: HTMLC
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, cw, ch);
   ctx.drawImage(full, cx, cy, cw, ch, 0, 0, cw, ch);
-  eraseEdgeLines(cv);
+  eraseEdgeLines(cv); // 단 구분선을 먼저 지워야 스캔본 번호 찾기가 선을 번호로 잘못 보지 않는다
+  if (!region.labelBox) {
+    eraseLeadingNumberByInk(cv); // 스캔본(글자 정보 없음)
+  } else {
+    const lb = region.labelBox;
+    eraseLabel(cv, {
+      x0: (lb.x0 / 1000) * full.width - cx,
+      y0: (lb.y0 / 1000) * full.height - cy,
+      x1: (lb.x1 / 1000) * full.width - cx,
+      y1: (lb.y1 / 1000) * full.height - cy,
+    });
+  }
   const t = trimCanvas(cv);
   return { cv: t, frac: t.width / full.width };
 }
@@ -143,7 +276,15 @@ async function textItem(katex: any, it: BankDetail): Promise<HTMLCanvasElement> 
   const h2c = (window as any).html2canvas;
   const el = document.createElement("div");
   el.style.cssText = `position:absolute;left:-100000px;top:0;width:${Math.round(CW / 1.6)}px;background:#fff;color:#111827;font-family:${FONT};font-size:14px;line-height:1.8;padding:4px`;
-  el.innerHTML = mathHtml(katex, it.statement || "(문제 글이 없습니다 — 원래 시험지에서 확인해 주세요)");
+  if (it.dg && it.dg.stem) {
+    // 2026-09-30: 디지털화한 시험이면 옮겨 적은 문제(<보기>·선택지까지)를 디지털 시험지와 같은 모양으로 — 문제 요약보다 원래 문제에 가깝다.
+    // 그림은 자리만 표시(원래 시험지에서 오릴 자리를 못 찾은 문항이라).
+    const { renderDgItemPreview } = await import("@/app/(staff)/exams/[code]/buildDigitizedPdf");
+    const figs = Array.from({ length: Math.min(3, it.dg.figures) }, () => ({ x0: 0, y0: 0, x1: 1, y1: 1, where: "stem" as const }));
+    el.innerHTML = await renderDgItemPreview({ type: "question", label: "", stem: it.dg.stem, box_title: it.dg.box_title, box_lines: it.dg.box_lines, choices: it.dg.choices, figures: figs });
+  } else {
+    el.innerHTML = mathHtml(katex, it.statement || "(문제 글이 없습니다 — 원래 시험지에서 확인해 주세요)");
+  }
   document.body.appendChild(el);
   try {
     return await h2c(el, { scale: 1.6, backgroundColor: "#ffffff", logging: false });
@@ -169,18 +310,19 @@ export async function buildWorksheetPdf(
   const [{ katex }, lib] = await Promise.all([ensureReportTools(), loadPdfJs()]);
 
   const docs = new Map<string, Promise<any>>();
-  const docOf = (code: string) => {
-    if (!docs.has(code)) {
+  const urlOf = (it: BankDetail) => (opts.pdfUrlOf ? opts.pdfUrlOf(it) : `/exams/${encodeURIComponent(it.examCode)}/original-pdf`);
+  const docOf = (url: string) => {
+    if (!docs.has(url)) {
       docs.set(
-        code,
+        url,
         (async () => {
-          const r = await fetch(`/exams/${encodeURIComponent(code)}/original-pdf`, { credentials: "same-origin", cache: "no-store" });
+          const r = await fetch(url, { credentials: "same-origin", cache: "no-store" });
           if (!r.ok) throw new Error("원본 PDF를 불러오지 못했습니다.");
           return lib.getDocument({ data: new Uint8Array(await r.arrayBuffer()) }).promise;
         })()
       );
     }
-    return docs.get(code)!;
+    return docs.get(url)!;
   };
 
   const blocks: Block[] = [];
@@ -191,7 +333,7 @@ export async function buildWorksheetPdf(
     let img: HTMLCanvasElement | null = null;
     let w = CW;
     try {
-      const c = await cropItem(lib, await docOf(it.examCode), it);
+      const c = await cropItem(lib, await docOf(urlOf(it)), it);
       if (c) {
         img = c.cv;
         // 원래 시험지에서의 크기 그대로(원래 쪽 본문 폭 ≈ 이 시험지 본문 폭) — 단보다 넓으면 단에 맞춰 줄임.
