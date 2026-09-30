@@ -1,6 +1,7 @@
 import "server-only";
 import { isCorrect } from "@/lib/grading";
 import { mcDigitOf, shortAnswerOf } from "@/lib/ai/normalize";
+import { mcChoices, mcMatchesKeyCell } from "@/lib/review/mcAnswer";
 
 // #3 (2026-09-28): 문항별 "정답 확정"과 시험 자동 열기. 자세한 배경은
 // supabase/migrations/0016_review_status_confirm.sql 머리말 참고.
@@ -20,6 +21,9 @@ type Client = any;
 export function toKeyAnswer(type: string, s: string): string {
   const raw = String(s ?? "");
   if (type === "객관식") {
+    // 2026-09-30: "①③"이 "1"로, "④ 12"가 엉뚱하게 바뀌던 것 → 고른 번호 모음으로(lib/review/mcAnswer.ts)
+    const c = mcChoices(raw);
+    if (c) return c;
     const d = mcDigitOf(raw);
     if (d) return d;
   }
@@ -44,7 +48,12 @@ export function toKeyAnswer(type: string, s: string): string {
 /** 과외선생님 답(정답 표시)이 정답표와 같은가. */
 export function tutorAnswerMatches(type: string, tutorAnswer: string, keyCell: string): boolean {
   if (!tutorAnswer || !keyCell) return false;
-  return isCorrect(toKeyAnswer(type, tutorAnswer), keyCell) || isCorrect(tutorAnswer, keyCell);
+  // 객관식은 모양("④"·"4번"·"④ 12"·"$4$")이 달라도 고른 번호가 같으면 같은 답(2026-09-30 제보: 번호가 같은데 "AI와 다름")
+  if (type === "객관식") {
+    const m = mcMatchesKeyCell(tutorAnswer, keyCell);
+    if (m !== null) return m;
+  }
+  return isCorrect(toKeyAnswer(type, tutorAnswer), keyCell, type) || isCorrect(tutorAnswer, keyCell, type);
 }
 
 /**
