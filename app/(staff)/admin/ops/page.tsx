@@ -3,7 +3,11 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { personLabel } from "@/lib/profile/label";
 import { listBackups } from "@/lib/ops/backup";
-import { BackupDownloadButton, BackupNowButton, TrustControls } from "./OpsControls";
+import { BackupDownloadButton, BackupNowButton, RejudgeButton, TrustControls } from "./OpsControls";
+import { hasScanPdf } from "@/lib/ai/pdf";
+import { buildHealthChecks, STALE_SECOND_DAYS, worstLevel, type HealthCheck } from "@/lib/ops/health";
+import { dailyFlow } from "@/lib/ops/flow";
+import FlowChart from "./FlowChart";
 
 // 운영 현황(2026-09-28 원장님 요청 8·9·10) — 과외선생님 검토·포인트·기출 구매 흐름을 한눈에 보고,
 // 신뢰도(사후 검증 불일치) 관리와 정기 백업 확인까지 한 화면에서 한다. 관리자 전용, 집계는 서비스롤로 읽어
@@ -56,6 +60,35 @@ function Stat({ label, value, sub }: { label: string; value: string | number; su
       <div className="text-xl font-semibold tabular-nums">{value}</div>
       {sub && <div className="text-xs text-slate-400">{sub}</div>}
     </div>
+  );
+}
+
+const LEVEL_CLS: Record<string, string> = {
+  ok: "bg-emerald-50 text-emerald-800 border-emerald-200",
+  warn: "bg-amber-50 text-amber-900 border-amber-200",
+  bad: "bg-red-50 text-red-800 border-red-200",
+};
+const LEVEL_DOT: Record<string, string> = { ok: "bg-emerald-500", warn: "bg-amber-500", bad: "bg-red-500" };
+
+function HealthItem({ c }: { c: HealthCheck }) {
+  const body = (
+    <div className={"rounded-lg border px-3 py-2 h-full " + LEVEL_CLS[c.level]}>
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="flex items-center gap-1.5">
+          <span className={"inline-block w-2 h-2 rounded-full " + LEVEL_DOT[c.level]} />
+          {c.label}
+        </span>
+        <span className="font-semibold tabular-nums text-sm">{c.value}</span>
+      </div>
+      {c.level !== "ok" && <div className="text-[11px] mt-0.5 opacity-80">{c.hint}</div>}
+    </div>
+  );
+  return c.href && c.level !== "ok" ? (
+    <Link href={c.href} className="block hover:opacity-90">
+      {body}
+    </Link>
+  ) : (
+    body
   );
 }
 
@@ -121,6 +154,11 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
       return error ? null : (data as any);
     })
   );
+  // 0041 기수별(전체 기간)
+  const rankCohort = await (async () => {
+    const { data, error } = await admin.rpc("tutor_cohort_ranking", { p_period: "all" });
+    return error ? null : (data as any);
+  })();
 
   // 남은 검토 문항(지금)
   const pendingIds: string[] = ((pendingExams as any[]) ?? []).map((e) => e.id);
@@ -135,6 +173,62 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
       .eq("review_confirmed", false);
     queueLeft += count ?? 0;
   }
+
+  // 운영 점검(2026-09-30): 지금 손봐야 할 것 — 표가 없는 예전 DB면 0으로 둔다
+  const since30 = new Date(Date.now() - 30 * 86400_000).toISOString();
+  const headCount = async (q: any) => {
+    const { count, error } = await q;
+    return error ? 0 : count ?? 0;
+  };
+  const [adminStage, secondItems, pendingEdits, openBugs, pdfMeta, itemExamRows, flowReviews, flowLedger] = await Promise.all([
+    headCount(admin.from("item_explanations").select("id", { count: "exact", head: true }).eq("review_stage", "admin").eq("review_confirmed", false)),
+    fetchAll((a, b) => admin.from("item_explanations").select("id").eq("review_stage", "second").eq("review_confirmed", false).order("id").range(a, b)),
+    headCount(admin.from("tutor_edit_requests").select("id", { count: "exact", head: true }).eq("status", "pending")),
+    headCount(admin.from("bug_reports").select("id", { count: "exact", head: true }).in("status", ["접수", "확인 중"])),
+    fetchAll((a, b) => admin.from("exam_pdf_meta").select("exam_id, replaced_with_digitized").order("exam_id").range(a, b)),
+    fetchAll((a, b) => admin.from("item_explanations").select("exam_id").order("id").range(a, b)),
+    fetchAll((a, b) => admin.from("tutor_item_reviews").select("kind, created_at").gte("created_at", since30).order("created_at").range(a, b)),
+    fetchAll((a, b) => admin.from("tutor_points_ledger").select("delta, created_at").gte("created_at", since30).order("created_at").range(a, b)),
+  ]);
+  let staleSecond = 0;
+  {
+    const ids = secondItems.map((r: any) => r.id);
+    const latest = new Map<string, string>();
+    for (let i = 0; i < ids.length; i += 150) {
+      const { data } = await admin
+        .from("tutor_item_reviews")
+        .select("item_explanation_id, created_at")
+        .in("item_explanation_id", ids.slice(i, i + 150))
+        .eq("kind", "primary");
+      for (const r of (data as any[]) ?? []) {
+        const cur = latest.get(r.item_explanation_id);
+        if (!cur || r.created_at > cur) latest.set(r.item_explanation_id, r.created_at);
+      }
+    }
+    const cut = Date.now() - STALE_SECOND_DAYS * 86400_000;
+    for (const t of latest.values()) if (new Date(t).getTime() <= cut) staleSecond++;
+  }
+  const withPdf = new Set(pdfMeta.map((m: any) => m.exam_id));
+  const noPdf = new Set(itemExamRows.map((r: any) => r.exam_id).filter((id: string) => !withPdf.has(id))).size;
+  const replaced = pdfMeta.filter((m: any) => m.replaced_with_digitized).map((m: any) => m.exam_id as string);
+  const scanOk = await Promise.all(replaced.slice(0, 40).map((id) => hasScanPdf(admin, id).catch(() => true)));
+  const scanMissing = scanOk.filter((x) => !x).length;
+  const trustVals = Array.from(trustOf.values());
+  const health = buildHealthChecks({
+    now: Date.now(),
+    adminStage,
+    staleSecond,
+    pendingEditRequests: pendingEdits,
+    openBugs,
+    waitingAccounts: profiles.filter((p) => p.role === "대기").length,
+    watchTutors: trustVals.filter((v) => v === "watch").length,
+    pausedTutors: trustVals.filter((v) => v === "paused").length,
+    lastBackupName: backups[0]?.name ?? null,
+    scanMissing,
+    noPdf,
+  });
+  const healthWorst = worstLevel(health);
+  const flow = dailyFlow(flowReviews, flowLedger, 30, Date.now());
 
   // 요약
   const primaries = reviews.filter((r) => r.kind === "primary");
@@ -210,6 +304,20 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
         </div>
       </div>
 
+      <div className="card space-y-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-medium">운영 점검</h2>
+          <span className={"text-xs " + (healthWorst === "ok" ? "text-emerald-700" : healthWorst === "warn" ? "text-amber-700" : "text-red-700")}>
+            {healthWorst === "ok" ? "손볼 것 없음" : `손볼 것 ${health.filter((c) => c.level !== "ok").length}가지 — 눌러서 바로 가기`}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {health.map((c) => (
+            <HealthItem key={c.key} c={c} />
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <Stat label="문항 검토 제출" value={primaries.length} sub={period.label} />
         <Stat label="사후 검증" value={verifies.length} sub={mismatches ? `불일치 ${mismatches}건` : "불일치 없음"} />
@@ -219,6 +327,12 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
         <Stat label="승인 대기 계정" value={waiting} sub={waiting ? "계정 관리에서 승인" : "없음"} />
         <Stat label="새 가입" value={newSignups} sub={period.label} />
         <Stat label="과외선생님" value={tutors.length} sub="명" />
+      </div>
+
+      <div className="card space-y-2">
+        <h2 className="font-medium">최근 30일 흐름</h2>
+        <FlowChart days={flow} />
+        <p className="text-xs text-slate-400">한국 날짜 기준 · 막대에 손가락(마우스)을 올리면 그날 숫자가 보입니다.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -276,10 +390,13 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
             {rankAll?.startedAt ? `${new Date(rankAll.startedAt).toLocaleDateString("ko-KR")}부터 ` : ""}문제를 풀어 얻은 포인트만(검토·판정 제출) — 보유
             포인트와 별개. 과외선생님 화면(랭킹)에는 다른 사람 이름이 가려져 보입니다.
           </p>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className={"grid gap-4 " + (rankCohort ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
             {[
               ["전체", rankAll],
               ["이번 달", rankMonth],
+              ...(rankCohort
+                ? [["기수별(전체)", { rows: (rankCohort.rows ?? []).slice(0, 10).map((g: any) => ({ ...g, label: `${g.label} · ${g.members}명` })) }]]
+                : []),
             ].map(([title, r]: any) => (
               <div key={title}>
                 <div className="text-sm font-medium mb-1">{title}</div>
@@ -361,6 +478,16 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
         <p className="text-xs text-slate-400">
           불일치 내용은 <Link href="/admin/tutor-disputes" className="link-accent">과외 검토 분쟁</Link>에서 볼 수 있습니다.
         </p>
+      </div>
+
+      <div className="card space-y-2">
+        <h2 className="font-medium">정답률 기록 다시 맞추기</h2>
+        <p className="text-xs text-slate-500">
+          예전에는 객관식 답을 &ldquo;④&rdquo;와 &ldquo;4번&rdquo;처럼 다르게 적으면 다른 답으로 봐서, 맞게 푼 선생님이 &ldquo;틀림&rdquo;으로 기록된
+          경우가 있었습니다(9월 30일 고침). 이 버튼은 &ldquo;틀림&rdquo; 기록을 확정된 정답과 다시 비교해, 사실은 맞은 것만 &ldquo;맞음&rdquo;으로
+          바꿉니다(반대로는 바꾸지 않음). 먼저 몇 건인지 보고 고를 수 있어요. 여러 번 눌러도 안전합니다.
+        </p>
+        <RejudgeButton />
       </div>
 
       <div className="card space-y-2">

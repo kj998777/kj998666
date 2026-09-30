@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { backupNow, getBackupUrl, resetTutorTrust, setTutorPaused } from "./actions";
+import { backupNow, getBackupUrl, rejudgeNow, resetTutorTrust, setTutorPaused } from "./actions";
 
 export function BackupNowButton() {
   const [pending, start] = useTransition();
@@ -86,6 +86,35 @@ export function TrustControls({ tutorId, level, manualPaused }: { tutorId: strin
         {manualPaused ? "검토 재개" : "검토 정지"}
       </button>
       {err && <span className="text-xs text-red-600">{err}</span>}
+    </div>
+  );
+}
+
+/** 정답률 기록 다시 맞추기 — 먼저 몇 건인지 보고, 그다음 고친다(2026-09-30) */
+export function RejudgeButton() {
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [ready, setReady] = useState(0);
+  const run = (apply: boolean) =>
+    start(async () => {
+      setMsg(null);
+      const r = await rejudgeNow(apply);
+      setMsg({ ok: r.ok, text: r.msg ?? (r.ok ? "끝났습니다." : "실패했습니다.") });
+      setReady(!apply && r.ok ? r.flips ?? 0 : 0);
+    });
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="btn-secondary py-1 px-3 text-sm" disabled={pending} onClick={() => run(false)}>
+          {pending && !ready ? "살펴보는 중…" : "몇 건인지 보기"}
+        </button>
+        {ready > 0 && (
+          <button type="button" className="btn-primary py-1 px-3 text-sm" disabled={pending} onClick={() => run(true)}>
+            {pending ? "고치는 중…" : `${ready}건 "맞음"으로 고치기`}
+          </button>
+        )}
+      </div>
+      {msg && <p className={"text-xs " + (msg.ok ? "text-emerald-700" : "text-red-600")}>{msg.text}</p>}
     </div>
   );
 }
