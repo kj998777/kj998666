@@ -1,6 +1,6 @@
 // 디지털화 문항 고치기(lib/digitize/itemEdit.ts) 테스트. `tsx test/itemEdit.test.ts`
 import assert from "node:assert/strict";
-import { changedFields, changedNumbers, cleanItemText, mergeItemText, textOf } from "../lib/digitize/itemEdit";
+import { changedFields, changedNumbers, cleanItemText, findDigitizedItem, mergeItemText, textOf } from "../lib/digitize/itemEdit";
 
 let n = 0;
 const check = (name: string, fn: () => void) => {
@@ -82,6 +82,19 @@ check("바뀐 칸·숫자", () => {
   assert.deepEqual(changedNumbers(ch[0].before, ch[0].after), { removed: ["8"], added: ["6"] });
   assert.deepEqual(changedNumbers("x=12, y=12", "x=12, y=21"), { removed: ["12"], added: ["21"] });
   assert.deepEqual(changedFields(a, a), []);
+});
+
+check("채점 번호로 디지털화 문항 찾기", () => {
+  const pages = [
+    { page_no: 2, data: { items: [{ type: "question", label: "서답형 1" }, { type: "question", label: "27" }] } },
+    { page_no: 1, data: { items: [{ type: "text", label: "", stem: "※" }, { type: "question", label: "1" }, { type: "question", label: "2." }] } },
+  ];
+  assert.deepEqual(findDigitizedItem(pages, "2"), { pageNo: 1, itemIndex: 2 });
+  assert.deepEqual(findDigitizedItem(pages, "서답형1"), { pageNo: 2, itemIndex: 0 });
+  assert.deepEqual(findDigitizedItem(pages, "27-(2)"), { pageNo: 2, itemIndex: 1 });
+  assert.equal(findDigitizedItem(pages, "3"), null);
+  assert.equal(findDigitizedItem(pages, ""), null);
+  assert.equal(findDigitizedItem([{ page_no: 1, data: { items: [{ type: "question", label: "서술형 3" }] } }], "서3")?.itemIndex, 0);
 });
 
 console.log(`\n${n}개 통과`);
