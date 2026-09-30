@@ -7,8 +7,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // PDF의 원본 바이트가 필요해서 추가한 라우트. buildDigitizedPdf.ts 가 pdf.js로 이 바이트를
 // 직접 읽어 쪽을 그림으로 렌더링한다. 시험지 원본 자체를 그대로 내려주므로(정답·해설 쪽이 남아
 // 있을 수 있음) 디지털화 기능과 같은 admin 전용으로 막는다(DigitizeControl도 admin에게만 보임).
+// 2026-09-30: 문항 은행 시험지 만들기(문항을 원본에서 오려 붙임)는 편집자도 쓰므로, 지금 원본(scan 없음)은 편집자 이상으로 연다.
+// 편집자는 원래 정답표·해설을 고칠 수 있는 직원이라 뒤쪽 답지가 보여도 새는 것이 아니다. 스캔본(?scan=1)은 그대로 관리자만.
 export async function GET(request: Request, { params }: { params: { code: string } }) {
-  const auth = await requireApiRole("admin");
+  const wantScan = new URL(request.url).searchParams.get("scan") === "1";
+  const auth = await requireApiRole(wantScan ? "admin" : "editor");
   if (auth.error) return auth.error;
 
   const code = decodeURIComponent(params.code);
