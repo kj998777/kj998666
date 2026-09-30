@@ -3,6 +3,7 @@ import { requireTutor } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
 import SignOutButton from "@/app/(staff)/SignOutButton";
 import { getMyActiveClaims } from "@/lib/tutor/claims";
+import { ClaimBadge, PointsBadge } from "./TutorHeaderStats";
 
 // 과외선생님 전용 트랙 — admin/editor/viewer 계층(app/(staff)/layout.tsx)과 완전히 분리된 화면.
 // requireTutor()는 requireRole() 계층을 전혀 쓰지 않으므로, 직원 화면 URL을 직접 쳐도 이 레이아웃
@@ -31,9 +32,8 @@ export default async function TutorLayout({ children }: { children: React.ReactN
             <img src="/academy-logo.png" alt="메딕수학 로고" className="h-4 w-auto" />
           </Link>
           <div className="flex items-center gap-2 sm:gap-3 text-sm text-slate-500 sm:order-3">
-            <span className="badge bg-amber-100 text-amber-700 whitespace-nowrap">
-              포인트 {(stats as any)?.points_balance ?? 0}
-            </span>
+            {/* 2026-09-30: 제출·이동 뒤에도 숫자가 바뀌도록 브라우저 쪽 칸으로(TutorHeaderStats) */}
+            <PointsBadge points={Number((stats as any)?.points_balance ?? 0)} claims={claimCount} />
             <span className="hidden md:inline">{session.email}</span>
             <SignOutButton />
           </div>
@@ -43,7 +43,7 @@ export default async function TutorLayout({ children }: { children: React.ReactN
             <Link href="/tutor/review" className="nav-link">검토하기</Link>
             <Link href="/tutor/assigned" className="nav-link">
               맡은 문제
-              {claimCount > 0 && <span className="ml-1 badge bg-red-100 text-red-700">{claimCount}</span>}
+              <ClaimBadge points={Number((stats as any)?.points_balance ?? 0)} claims={claimCount} />
             </Link>
             <Link href="/tutor/store" className="nav-link">기출 스토어</Link>
             <Link href="/tutor/ranking" className="nav-link">랭킹</Link>

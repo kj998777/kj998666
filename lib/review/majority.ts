@@ -3,6 +3,7 @@ import { isCorrect } from "@/lib/grading";
 import { mcDigitOf } from "@/lib/ai/normalize";
 import { openExamIfAllConfirmed, toKeyAnswer, tutorAnswerMatches } from "@/lib/review/confirm";
 import { regradeExam } from "@/lib/review/regrade";
+import { mcChoices, sameMcChoice } from "@/lib/review/mcAnswer";
 
 // 0037 검토 신뢰성(프로젝트 문서 claude/reliability-design.md) — 다수결 확정·정답률 기록.
 //
@@ -24,6 +25,10 @@ export function sameAnswer(type: string, a: string, b: string): boolean {
   const ea = isErrorAnswer(a);
   const eb = isErrorAnswer(b);
   if (ea || eb) return ea && eb;
+  if (type === "객관식") {
+    const m = sameMcChoice(a, b); // "④"와 "4번"·"④ 12"는 같은 답
+    if (m !== null) return m;
+  }
   const ka = keyFromTutor(type, a);
   const kb = keyFromTutor(type, b);
   return isCorrect(ka, kb, type) || isCorrect(a, b, type) || isCorrect(kb, ka, type);
@@ -39,12 +44,9 @@ export function matchesKey(type: string, answer: string, keyCell: string): boole
 export function keyFromTutor(type: string, display: string): string {
   const raw = String(display ?? "");
   if (type === "객관식") {
-    const circ: Record<string, string> = { "①": "1", "②": "2", "③": "3", "④": "4", "⑤": "5" };
-    const digits = Array.from(raw)
-      .map((ch) => circ[ch] ?? (/[1-5]/.test(ch) ? ch : ""))
-      .filter(Boolean);
-    const uniq = Array.from(new Set(digits)).sort();
-    if (uniq.length) return uniq.join("");
+    // 예전에는 글자 속 1~5를 전부 모아 "④ 13"이 "134"가 됐다 → 고른 번호만(lib/review/mcAnswer.ts)
+    const c = mcChoices(raw);
+    if (c) return c;
     const d = mcDigitOf(raw);
     if (d) return d;
   }

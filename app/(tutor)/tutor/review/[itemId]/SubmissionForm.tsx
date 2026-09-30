@@ -5,6 +5,7 @@ import { compressImage, MAX_UPLOAD_BYTES } from "@/lib/image/compress";
 import { useRouter } from "next/navigation";
 // 2026-09-29: 서버 액션 대신 고정 주소(/api/tutor/review) — 사이트가 업데이트돼도 열어 둔 화면에서 그대로 제출된다
 import { callReviewApi } from "@/lib/tutor/reviewApi";
+import { refreshTutorStats } from "@/app/(tutor)/TutorHeaderStats";
 import { MathPreview, MathToolbar } from "@/app/_components/MathTools";
 
 // 정답·풀이 칸의 수식 도구(2026-09-29): 관리자 화면과 같은 MathToolbar(분수·루트·경우 나누기 같은 수식 틀과 기호)와
@@ -312,6 +313,7 @@ export default function SubmissionForm({
               }
               clearDraft();
               setResult({ pointsEarned: r.pointsEarned ?? 0 });
+              refreshTutorStats(); // 위쪽 포인트·맡은 문제 숫자 바로 새로(2026-09-30)
             })
           }
         >
