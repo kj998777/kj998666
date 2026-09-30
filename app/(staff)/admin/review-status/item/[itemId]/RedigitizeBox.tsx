@@ -158,6 +158,16 @@ export default function RedigitizeBox({
           }}
         />
       )}
+      {/* 예전에 고쳐 두고 아직 원본에 안 넣은 글도 여기서 바로 반영할 수 있게 */}
+      {entry && applied && !dirtySaved && !applyBusy && !applyMsg && (
+        <p className="text-xs text-slate-500">
+          전에 고쳐 둔 글이 아직 위 문제 그림에 안 보이면{" "}
+          <button className="text-sky-700 hover:underline" onClick={applyNow}>
+            원본 PDF 지금 다시 만들기
+          </button>
+          (30초~1분)
+        </p>
+      )}
       {(dirtySaved || applyMsg) && (
         <div
           className={
