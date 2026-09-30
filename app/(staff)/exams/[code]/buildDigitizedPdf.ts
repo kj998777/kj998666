@@ -196,6 +196,10 @@ const DG_CSS = `
 #dg-measure *{box-sizing:border-box}
 .dgtall{display:inline-block;padding:9px 0;line-height:1.5;text-indent:0}
 .dgslot{overflow:hidden}
+.dgprev{width:338px;max-width:100%;background:#fff;color:#111827;font-family:'Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR','Noto Sans CJK KR',sans-serif;font-size:13.5px;line-height:1.8}
+.dgprev *{box-sizing:border-box}
+.dgprev .dgq{padding-bottom:4px}
+.dgfph{margin-top:10px;border:1px dashed #9ca3af;color:#6b7280;font-size:11px;text-align:center;padding:10px 0}
 `;
 
 let stylesInjected = false;
@@ -340,6 +344,20 @@ function dgItemHtml(katex: any, it: DgItem, imgs: CroppedImg[]): string {
   }
   h += fig("end");
   return h + "</div>";
+}
+
+/**
+ * 2026-09-30: 문항 한 개를 디지털 시험지와 같은 모양으로 미리 보기(ItemTextFixPanel — 글 고치기 화면).
+ * 그림은 자리 표시만(실제 그림은 원본으로 적용할 때 스캔본에서 오려 붙임). 단 폭(338px)이 실제 조판과 같다.
+ */
+export async function renderDgItemPreview(it: DgItem): Promise<string> {
+  const katex = await loadKatex();
+  injectDigitizeStyles();
+  const ph = (w: "stem" | "end") =>
+    (it.figures ?? []).filter((f) => (f.where === "end" ? "end" : "stem") === w).map(() => ({ src: "", dw: 0, dh: 0, w }));
+  let html = dgItemHtml(katex, it, [...ph("stem"), ...ph("end")]);
+  html = html.replace(/<div class="dgf([^"]*)"><img src="" style="width:0px;height:0px"><\/div>/g, '<div class="dgf$1"><div class="dgfph">그림</div></div>');
+  return `<div class="dgprev">${html}</div>`;
 }
 
 // ---------------------------------------------------------------------

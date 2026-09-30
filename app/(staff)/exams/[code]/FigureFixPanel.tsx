@@ -14,7 +14,7 @@ type Entry = { pageNo: number; itemIndex: number; label: string; figures: Fig[] 
 
 const pct = (v: number) => `${v / 10}%`;
 
-export default function FigureFixPanel({ code }: { code: string }) {
+export default function FigureFixPanel({ code, onSaved }: { code: string; onSaved?: () => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -121,7 +121,10 @@ export default function FigureFixPanel({ code }: { code: string }) {
               code={code}
               doc={docRef.current}
               entry={entries[sel]}
-              onSaved={(figs) => setEntries((list) => list.map((e, i) => (i === sel ? { ...e, figures: figs } : e)))}
+              onSaved={(figs) => {
+                setEntries((list) => list.map((e, i) => (i === sel ? { ...e, figures: figs } : e)));
+                onSaved?.();
+              }}
             />
           )}
         </>
