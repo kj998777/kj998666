@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Analysis } from "@/lib/students/analysis";
 import { mergeStudents, saveStudentMemo, setStudentHidden, unmergeStudent } from "../actions";
+import { addToCart } from "@/lib/bank/cart";
 
 type Candidate = { key: string; id: string; classText: string; nExams: number; lastAt: string };
 
@@ -17,6 +18,7 @@ export default function StudentTools({
   canEdit,
   candidates,
   members,
+  canBank = false,
 }: {
   studentKey: string;
   name: string;
@@ -27,6 +29,8 @@ export default function StudentTools({
   canEdit: boolean;
   candidates: Candidate[];
   members: { key: string; label: string }[];
+  /** 문항 은행(편집자 이상)으로 복습지 만들기 */
+  canBank?: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -90,6 +94,21 @@ export default function StudentTools({
           {busy ? "만드는 중…" : "누적 보고서 PDF 받기"}
         </button>
         {dirty && <p className="text-xs text-amber-700">상담 메모를 아직 저장하지 않았어도 지금 적힌 내용이 PDF에 들어갑니다.</p>}
+        {canBank && analysis.review.some((r) => r.item.id) && (
+          <div className="border-t border-slate-100 pt-3 space-y-1">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                addToCart(analysis.review.map((r) => r.item.id).filter((x): x is string => !!x));
+                router.push("/bank");
+              }}
+            >
+              다시 풀 문항으로 복습지 만들기 →
+            </button>
+            <p className="text-xs text-slate-500">아래 &ldquo;다시 풀어 볼 문항&rdquo;을 문항 은행에 담고 넘어갑니다. 거기서 새 시험지와 정답·해설지 PDF를 받을 수 있어요.</p>
+          </div>
+        )}
         {pdfMsg && <p className="text-sm text-slate-600">{pdfMsg}</p>}
       </div>
 

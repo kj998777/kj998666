@@ -145,6 +145,7 @@ export default async function StudentPage({ params }: { params: { key: string } 
         canEdit={canEdit && idx.keysAvailable}
         candidates={candidates.map((c) => ({ ...c, id: encodeKey(c.key) }))}
         members={members}
+        canBank={canEdit}
       />
 
       <div className="card space-y-3">
@@ -249,7 +250,14 @@ export default async function StudentPage({ params }: { params: { key: string } 
               <tbody>
                 {a.weakUnits.map((u) => (
                   <tr key={u.name} className="border-b border-slate-100 align-top">
-                    <td className="py-2 pr-2 font-medium">{u.name}</td>
+                    <td className="py-2 pr-2 font-medium">
+                      {u.name}
+                      {canEdit && (
+                        <Link href={`/bank?unit=${encodeURIComponent(u.name)}`} className="block text-xs font-normal link-accent">
+                          비슷한 문제 찾기 →
+                        </Link>
+                      )}
+                    </td>
                     <td className="py-2 pr-2 text-right tabular-nums whitespace-nowrap">
                       {u.ok} / {u.n}
                     </td>
