@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { tickExamJob } from "@/lib/ai/pipeline";
 import { isActiveStage } from "@/lib/ai/job";
@@ -25,7 +26,10 @@ function checkSecret(request: Request): boolean {
   if (!secret) return false;
   const url = new URL(request.url);
   const provided = request.headers.get("x-cron-secret") ?? url.searchParams.get("secret") ?? "";
-  return provided === secret;
+  // 2026-09-30: 글자를 앞에서부터 비교하다 멈추는 시간 차로 비밀값을 알아내지 못하게 길이·내용을 한꺼번에 비교
+  const a = Buffer.from(provided);
+  const b = Buffer.from(secret);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 async function handle(request: Request) {
