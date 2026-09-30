@@ -46,6 +46,7 @@ export default async function TutorLayout({ children }: { children: React.ReactN
               <ClaimBadge points={Number((stats as any)?.points_balance ?? 0)} claims={claimCount} />
             </Link>
             <Link href="/tutor/store" className="nav-link">기출 스토어</Link>
+            <Link href="/tutor/worksheet" className="nav-link">맞춤 시험지</Link>
             <Link href="/tutor/ranking" className="nav-link">랭킹</Link>
             <Link href="/tutor/guide" className="nav-link">사용법</Link>
             <Link href="/tutor/bugs" className="nav-link">버그 신고</Link>
