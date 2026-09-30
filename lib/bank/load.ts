@@ -1,6 +1,7 @@
 import "server-only";
 import { fetchAllIn, fetchAllPages } from "@/lib/supabase/fetchAll";
 import type { BankItem } from "@/lib/bank/search";
+import { findDigitizedItem } from "@/lib/digitize/itemEdit";
 
 // 문항 은행 읽기(직원 세션 — RLS가 직원만 허용). 문항 수가 수천 개여도 필요한 칸만 읽어 서버에서 거른다.
 type Client = any;
@@ -57,6 +58,8 @@ export type BankDetail = BankItem & {
   solution: string;
   sourcePage: number | null;
   bbox: { x0: number; y0: number; x1: number; y1: number } | null;
+  /** 디지털화한 시험이면 옮겨 적은 문제 글(원래 자리를 못 찾을 때 시험지에 대신 넣음). figures = 그림 개수 */
+  dg?: { stem: string; box_title: string; box_lines: string[]; choices: string[]; figures: number } | null;
 };
 
 /** 담은 문항의 자세한 내용(풀이·자리) — 시험지·해설지를 만들 때 */
@@ -119,4 +122,38 @@ export async function loadBankDetails(supabase: Client, ids: string[]): Promise<
   }
   // 담은 순서 그대로
   return uniq.map((id) => byId.get(id)).filter((x): x is BankDetail => !!x);
+}
+
+/**
+ * 2026-09-30: 디지털화한 시험의 문항에 옮겨 적은 문제 글을 붙인다(시험지에서 원래 자리를 못 찾을 때 대신 쓰려고).
+ * digitized_pages는 관리자만 읽을 수 있어 서비스롤 클라이언트로 부른다 — 부르는 쪽이 권한을 먼저 확인할 것.
+ */
+export async function attachDigitized(admin: Client, items: BankDetail[]): Promise<BankDetail[]> {
+  const examIds = Array.from(new Set(items.map((x) => x.examId)));
+  if (!examIds.length) return items;
+  const { data } = await fetchAllIn(examIds, (chunk, a, b) =>
+    admin.from("digitized_pages").select("exam_id, page_no, data").in("exam_id", chunk).order("id").range(a, b), 40
+  );
+  const byExam = new Map<string, { page_no: number; data: any }[]>();
+  for (const p of (data as any[]) ?? []) {
+    const arr = byExam.get(p.exam_id) ?? [];
+    arr.push({ page_no: p.page_no, data: p.data });
+    byExam.set(p.exam_id, arr);
+  }
+  return items.map((it) => {
+    const pages = byExam.get(it.examId);
+    const at = pages ? findDigitizedItem(pages, it.label) : null;
+    const d = at ? pages!.find((p) => p.page_no === at.pageNo)?.data?.items?.[at.itemIndex] : null;
+    if (!d) return it;
+    return {
+      ...it,
+      dg: {
+        stem: String(d.stem ?? ""),
+        box_title: String(d.box_title ?? ""),
+        box_lines: Array.isArray(d.box_lines) ? d.box_lines.map(String) : [],
+        choices: Array.isArray(d.choices) ? d.choices.map(String) : [],
+        figures: Array.isArray(d.figures) ? d.figures.length : 0,
+      },
+    };
+  });
 }

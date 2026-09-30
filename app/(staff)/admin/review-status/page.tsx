@@ -281,7 +281,12 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
       {editBlock}
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold">검토현황</h1>
+          <h1 className="text-lg font-semibold">
+            검토현황{" "}
+            <Link href="/admin/digitize-check" className="ml-2 align-middle text-xs font-normal link-accent">
+              디지털화 점검(숫자 오류 찾기) →
+            </Link>
+          </h1>
           <p className="text-sm text-slate-500">
             시험 {exams.length}개 · 미확정 {totalUnconfirmed}문항
             {totalMismatch > 0 && <span className="text-red-600"> · AI와 다른 제출 {totalMismatch}문항</span>}

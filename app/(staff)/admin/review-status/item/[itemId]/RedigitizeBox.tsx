@@ -8,7 +8,7 @@
 // 원본이 아직 스캔본인 시험은 그 사실을 알리고 "원본을 디지털 시험지로 바꾸기"를 고를 수 있게 한다.
 // (문제 그림이 예전 PDF를 계속 보여 주던 것은 page.tsx가 PDF 주소에 올린 시각(?v=)을 붙여 해결)
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ItemEditor, type Entry } from "@/app/(staff)/exams/[code]/ItemTextFixPanel";
 import { applyDigitizedPdfAsOriginal } from "@/app/(staff)/exams/[code]/digitize-actions";
@@ -21,7 +21,13 @@ export default function RedigitizeBox({
   pageNo,
   itemIndex,
   applied,
+  autoOpen = false,
+  reasons = [],
 }: {
+  /** 디지털화 점검 화면의 "고치러 가기"로 들어오면 바로 연다 */
+  autoOpen?: boolean;
+  /** 디지털화 점검에서 찾은 의심 이유(lib/digitize/suspect.ts) */
+  reasons?: string[];
   code: string;
   examId: string;
   examName: string;
@@ -41,6 +47,10 @@ export default function RedigitizeBox({
   const [applyMsg, setApplyMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [confirmConvert, setConfirmConvert] = useState(false);
   const docRef = useRef<any>(null);
+  useEffect(() => {
+    if (autoOpen) void openBox();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function openBox() {
     setOpen(true);
@@ -106,6 +116,7 @@ export default function RedigitizeBox({
     return (
       <div className="card flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm">
+          {reasons.length > 0 && <span className="badge bg-red-100 text-red-700 mr-2">숫자 확인 필요</span>}
           <b>디지털 시험지의 이 문제</b>
           <span className="text-slate-500">
             {" "}
@@ -149,6 +160,7 @@ export default function RedigitizeBox({
           code={code}
           doc={docRef.current}
           entry={entry}
+          reasons={reasons}
           savedNote={applied ? "저장했습니다. 원본 PDF에 반영하는 중이에요(아래)." : "저장했습니다(디지털화 자료). 아래 안내를 봐 주세요."}
           onSaved={(item) => {
             setEntry((e) => (e ? { ...e, item } : e));

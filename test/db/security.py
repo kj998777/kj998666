@@ -66,7 +66,7 @@ exam_jobs              0/0/0 1/1/1 0/0/0 0/0/0 0/0/0 0/0/0 0/0/0
 exam_notes             0/0/0 1/0/1 1/0/1 1/0/0 0/0/0 0/0/0 0/0/0
 exam_pdf_meta          0/0/0 1/1/1 1/1/0 1/0/0 0/0/0 0/0/0 0/0/0
 exam_qr_scans          0/0/0 1/0/0 1/0/0 1/0/0 0/0/0 0/0/0 0/0/0
-exams                  1/0/0 3/3/3 3/3/0 3/0/0 2/0/0 2/0/0 0/0/0
+exams                  1/0/0 3/3/3 3/3/0 3/0/0 3/0/0 3/0/0 0/0/0
 grading_results        0/0/0 3/0/0 3/0/0 3/0/0 1/0/0 1/0/0 0/0/0
 item_checks            0/0/0 1/1/1 1/0/0 1/0/0 0/0/0 0/0/0 0/0/0
 item_explanations      0/0/0 3/3/3 3/3/3 3/0/0 0/0/0 0/0/0 0/0/0
@@ -86,6 +86,8 @@ tutor_points_ledger    0/0/0 2/0/0 0/0/0 0/0/0 1/0/0 1/0/0 0/0/0
 tutor_ranking_settings 0/0/0 1/0/0 1/0/0 1/0/0 1/0/0 1/0/0 1/0/0
 tutor_review_skips     0/0/0 0/0/0 0/0/0 0/0/0 0/0/0 0/0/0 0/0/0
 tutor_stats            0/0/0 2/0/0 0/0/0 0/0/0 1/0/0 1/0/0 0/0/0
+tutor_worksheet_items  x/x/x x/x/x x/x/x x/x/x x/x/x x/x/x x/x/x
+tutor_worksheets       x/x/x 1/x/x 0/x/x 0/x/x 0/x/x 1/x/x 0/x/x
 """
 
 
@@ -146,10 +148,18 @@ ATTACKS = [
     ("과외 구매 안 한 시험 수정요청", "tutor1", "insert into tutor_edit_requests(exam_id,item_label,tutor_id,note) values ('e0000000-0000-0000-0000-00000000000c','1',auth.uid(),'메모메모메모메모메모');", "deny"),
     ("과외 근거 없는 정답 변경 요청", "tutor1", f"insert into tutor_edit_requests(exam_id,item_label,tutor_id,proposed_answer) values ({EA},'1',auth.uid(),'2');", "deny"),
     ("과외 판정 결과 뒤집기", "tutor2", "select public.resolve_tutor_verification('70000000-0000-0000-0000-000000000001', true);", "deny"),
+    ("비로그인 맞춤 시험지", "anon", "select public.tutor_create_worksheet(array['10000000-0000-0000-0000-00000000000c']::uuid[], 'x');", "deny"),
+    ("대기 맞춤 시험지", "wait", "select public.tutor_create_worksheet(array['10000000-0000-0000-0000-00000000000c']::uuid[], 'x');", "deny"),
+    ("과외 검토 중 문항으로 시험지", "tutor1", "select public.tutor_create_worksheet(array['10000000-0000-0000-0000-00000000000b']::uuid[], 'x');", "deny"),
+    ("과외 같은 문항 두 번", "tutor1", "select public.tutor_create_worksheet(array['10000000-0000-0000-0000-00000000000c','10000000-0000-0000-0000-00000000000c']::uuid[], 'x');", "deny"),
+    ("과외 시험지 직접 넣기", "tutor1", "insert into tutor_worksheets(tutor_id,item_ids) values (auth.uid(), array['10000000-0000-0000-0000-00000000000b']::uuid[]);", "deny"),
+    ("과외 남의 시험지 읽기", "tutor1", "select 1 from tutor_worksheets where tutor_id='00000000-0000-0000-0000-000000000012';", "null"),
+    ("과외 받은 문항 기록 읽기", "tutor1", "select 1 from tutor_worksheet_items limit 1;", "deny"),
     ("관리자 포인트 조정(정상)", "admin", f"select public.admin_adjust_tutor_points({T1}, 1, 'ok');", "ok"),
     ("과외 구매(정상, 이미 구매)", "tutor1", f"select public.purchase_exam_download({EA});", "ok"),
     ("과외 문항 배정(정상)", "tutor1", "select public.claim_next_review_item();", "ok"),
     ("과외 자기 등급(정상)", "tutor1", f"select public.tutor_trust_level({T1});", "ok"),
+    ("과외 맞춤 시험지(정상)", "tutor1", "select public.tutor_create_worksheet(array['10000000-0000-0000-0000-00000000000a','10000000-0000-0000-0000-00000000000c']::uuid[], '복습');", "ok"),
 ]
 
 

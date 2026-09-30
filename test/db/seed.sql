@@ -49,3 +49,8 @@ insert into site_contact(id,kakao_id) values (true,'kid') on conflict (id) do up
 insert into ai_settings(model, api_key) select 'm','sk-secret' where not exists (select 1 from ai_settings);
 update ai_settings set api_key='sk-secret';
 insert into ai_usage(spent_usd) select 1 where not exists (select 1 from ai_usage);
+-- 0042 맞춤 시험지: 스토어 가격(열린시험 3P·닫힌시험 4P, 검토 중 시험은 판매 안 함), tutor2의 시험지 하나
+update exams set tutor_download_cost=3 where code='OPEN1';
+update exams set tutor_download_cost=4 where code='CLOSED1';
+insert into tutor_worksheets(tutor_id,title,item_ids,points_spent) values ('00000000-0000-0000-0000-000000000012','t2시험지',array['10000000-0000-0000-0000-00000000000c']::uuid[],1);
+insert into tutor_worksheet_items(tutor_id,item_explanation_id) values ('00000000-0000-0000-0000-000000000012','10000000-0000-0000-0000-00000000000c');

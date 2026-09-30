@@ -7,13 +7,14 @@ import AdminSolveForm from "./AdminSolveForm";
 import AdminPhotos from "./AdminPhotos";
 import RedigitizeBox from "./RedigitizeBox";
 import { findDigitizedItem } from "@/lib/digitize/itemEdit";
+import { inspectItem, textHash } from "@/lib/digitize/suspect";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
 // 2026-09-29 원장님 요청: 검토현황에서 관리자가 문제(원본 시험지의 그 문항 부분)를 보면서 정답·해설을 직접 등록·확정.
 // 과외선생님 화면과 같은 문항 잘라 보기(ProblemPageImage)를 쓰되, PDF는 관리자 전용 원본 경로로 읽는다.
-export default async function AdminReviewItemPage({ params }: { params: { itemId: string } }) {
+export default async function AdminReviewItemPage({ params, searchParams }: { params: { itemId: string }; searchParams?: { fix?: string } }) {
   await requireRole("admin");
   const supabase = await createClient();
 
@@ -52,6 +53,8 @@ export default async function AdminReviewItemPage({ params }: { params: { itemId
     supabase.from("exam_pdf_meta").select("replaced_with_digitized, uploaded_at, storage_path").eq("exam_id", it.exam_id).maybeSingle(),
   ]);
   const dgAt = dgPages?.length ? findDigitizedItem(dgPages as any[], String(it.item_label ?? "")) : null;
+  // 디지털화 점검(lib/digitize/suspect.ts): 옮겨 적은 글의 숫자가 이 문항의 요약·풀이·정답과 어긋나는지
+  const dgItem = dgAt ? (dgPages as any[]).find((p) => p.page_no === dgAt.pageNo)?.data?.items?.[dgAt.itemIndex] : null;
   // 관리자가 올린 풀이 사진(tutor-review-photos 버킷 admin/<문항 id>/)
   const { data: photoList } = await createAdminClient()
     .storage.from("tutor-review-photos")
@@ -157,6 +160,17 @@ export default async function AdminReviewItemPage({ params }: { params: { itemId
           pageNo={dgAt.pageNo}
           itemIndex={dgAt.itemIndex}
           applied={!!pdfMeta?.replaced_with_digitized}
+          autoOpen={searchParams?.fix === "1"}
+          reasons={
+            dgItem && !(dgItem.ok_hash && dgItem.ok_hash === textHash(dgItem))
+              ? inspectItem({
+                  item: dgItem,
+                  summary: [it.problem_statement ?? ""],
+                  solution: [it.solution ?? ""],
+                  mcAnswerDisplay: key?.type === "객관식" ? it.answer_display : null,
+                }).reasons.map((r) => r.text)
+              : []
+          }
         />
       )}
 

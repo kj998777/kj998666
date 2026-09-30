@@ -8,6 +8,7 @@ import { backupScanBeforeDigitizedApply, finalizePdfUpload, restoreScanPdf } fro
 import { applyNewPdfLocations } from "@/lib/ai/relocate";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cleanItemText, mergeItemText } from "@/lib/digitize/itemEdit";
+import { textHash } from "@/lib/digitize/suspect";
 
 // 스캔 시험지 디지털화(Feature 1) 관련 서버 액션. AI 비용이 드는 관리자 전용 기능이므로 전부 admin만.
 
@@ -202,4 +203,40 @@ export async function saveDigitizedItem(code: string, pageNo: number, itemIndex:
     const { error: upErr } = await (supabase.from("digitized_pages") as any).update({ data: { ...data, items } }).eq("id", row.id);
     if (upErr) return { ok: false, msg: "저장하지 못했습니다: " + upErr.message };
     return { ok: true, item: items[itemIndex] };
+}
+
+/**
+ * 2026-09-30: 디지털화 의심 문항(lib/digitize/suspect.ts)에서 원장님이 확인하고 "문제없음"을 누른 문항.
+ * 그때의 글 지문(ok_hash)을 남겨, 글이 바뀌기 전까지는 의심 목록에 다시 띄우지 않는다. ok=false면 표시를 지운다.
+ */
+export async function markDigitizedOk(code: string, pageNo: number, itemIndex: number, ok = true) {
+    await requireRole("admin");
+    const exam = await getExamByCode(code);
+    if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
+    if (!Number.isInteger(pageNo) || pageNo < 1 || !Number.isInteger(itemIndex) || itemIndex < 0) return { ok: false, msg: "문항 정보가 올바르지 않습니다." };
+    const supabase = await createClient();
+    const { data: row, error } = (await supabase
+        .from("digitized_pages")
+        .select("id, data")
+        .eq("exam_id", exam.id)
+        .eq("page_no", pageNo)
+        .maybeSingle()) as any;
+    if (error || !row) return { ok: false, msg: "디지털화된 쪽을 찾지 못했습니다." };
+    const data = row.data && typeof row.data === "object" ? row.data : {};
+    const items = Array.isArray(data.items) ? [...data.items] : [];
+    const cur = items[itemIndex];
+    if (!cur || cur.type !== "question") return { ok: false, msg: "문항을 찾지 못했습니다. 새로고침해 주세요." };
+    const next: any = { ...cur };
+    if (ok) {
+        next.ok_hash = textHash(cur);
+        next.ok_at = new Date().toISOString();
+    } else {
+        delete next.ok_hash;
+        delete next.ok_at;
+    }
+    items[itemIndex] = next;
+    const { error: upErr } = await (supabase.from("digitized_pages") as any).update({ data: { ...data, items } }).eq("id", row.id);
+    if (upErr) return { ok: false, msg: "저장하지 못했습니다: " + upErr.message };
+    revalidatePath("/admin/digitize-check");
+    return { ok: true };
 }
