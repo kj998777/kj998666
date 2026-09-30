@@ -30,6 +30,7 @@ const REASON_LABEL: Record<string, string> = {
   download_purchase: "기출 구매",
   admin_adjustment: "관리자 지급·조정",
   dispute_reward: "정답 이의 채택 보상",
+  worksheet_purchase: "맞춤 시험지(과외)",
 };
 
 // 0037: 정답률 등급
