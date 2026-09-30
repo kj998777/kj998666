@@ -49,7 +49,7 @@ export default async function AdminReviewItemPage({ params }: { params: { itemId
   // 2026-09-30: 디지털화된 시험이면 이 문항의 디지털 시험지 글을 여기서 바로 고친다(RedigitizeBox)
   const [{ data: dgPages }, { data: pdfMeta }]: any[] = await Promise.all([
     supabase.from("digitized_pages").select("page_no, data").eq("exam_id", it.exam_id),
-    supabase.from("exam_pdf_meta").select("replaced_with_digitized").eq("exam_id", it.exam_id).maybeSingle(),
+    supabase.from("exam_pdf_meta").select("replaced_with_digitized, uploaded_at, storage_path").eq("exam_id", it.exam_id).maybeSingle(),
   ]);
   const dgAt = dgPages?.length ? findDigitizedItem(dgPages as any[], String(it.item_label ?? "")) : null;
   // 관리자가 올린 풀이 사진(tutor-review-photos 버킷 admin/<문항 id>/)
@@ -130,7 +130,8 @@ export default async function AdminReviewItemPage({ params }: { params: { itemId
         </p>
         {exam?.code ? (
           <ProblemPageImage
-            pdfUrl={`/exams/${encodeURIComponent(exam.code)}/original-pdf`}
+            /* 2026-09-30: 원본을 다시 적용하면 주소가 바뀌게(?v=) — 문제 그림 칸은 같은 주소의 PDF를 한 번 받아 두고 계속 써서, 반영해도 예전 그림이 남았다 */
+            pdfUrl={`/exams/${encodeURIComponent(exam.code)}/original-pdf?v=${encodeURIComponent(String(pdfMeta?.storage_path ?? "") + "_" + String(pdfMeta?.uploaded_at ?? ""))}`}
             label={String(it.item_label ?? "")}
             page={it.source_page ?? null}
             bbox={
