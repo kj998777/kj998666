@@ -131,3 +131,30 @@ export const FIELD_LABEL: Record<keyof ItemText, string> = {
   choices: "선택지",
   unsure: "불확실한 부분",
 };
+
+/**
+ * 채점용 문항 번호(item_explanations.item_label, 예: "7", "서답형1", "27-(1)")로 디지털화된 문항 자리를 찾는다(2026-09-30,
+ * 관리자 검토 문항 화면의 "이 문제 다시 디지털화"). 띄어쓰기·"번"·"."는 무시하고, 소문항 표시 "-(1)"은 떼고 큰 문항으로 찾는다.
+ * 같은 번호가 여러 개면(드묾) 첫 번째.
+ */
+export function findDigitizedItem(
+  pages: { page_no: number; data: any }[],
+  label: string
+): { pageNo: number; itemIndex: number } | null {
+  const norm = (s: unknown) =>
+    String(s ?? "")
+      .replace(/\s+/g, "")
+      .replace(/[.번]/g, "")
+      .replace(/^\[|\]$/g, "")
+      .replace(/-?\(\d+\)$/, "")
+      .replace(/^서(\d+)$/, "서술형$1");
+  const want = norm(label);
+  if (!want) return null;
+  for (const p of [...pages].sort((a, b) => a.page_no - b.page_no)) {
+    const items = Array.isArray(p?.data?.items) ? p.data.items : [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i]?.type === "question" && norm(items[i].label) === want) return { pageNo: p.page_no, itemIndex: i };
+    }
+  }
+  return null;
+}
