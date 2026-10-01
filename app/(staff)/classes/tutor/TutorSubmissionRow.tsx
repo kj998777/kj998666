@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { deleteSubmission } from "../../exams/[code]/results/actions";
 import { actionErrorMessage } from "@/lib/actionError";
 
-type Row = { id: string; tutor: string; student_name: string; total_score: number; submitted_at: string };
+type Row = { id: string; tutor: string; student_name: string; total_score: number; real_score?: number; submitted_at: string };
 
 export default function TutorSubmissionRow({ code, row, canDelete }: { code: string; row: Row; canDelete: boolean }) {
   const [pending, start] = useTransition();
@@ -16,6 +16,9 @@ export default function TutorSubmissionRow({ code, row, canDelete }: { code: str
       <td className="py-2 pr-2 text-slate-600">{row.tutor}</td>
       <td className="py-2 pr-2">{row.student_name}</td>
       <td className="py-2 pr-2 font-medium">{row.total_score}</td>
+      <td className={"py-2 pr-2 font-medium " + (row.real_score != null && row.real_score !== row.total_score ? "text-amber-700" : "")}>
+        {row.real_score ?? row.total_score}
+      </td>
       <td className="py-2 pr-2 text-slate-500">{new Date(row.submitted_at).toLocaleString("ko-KR")}</td>
       <td className="py-2 pr-2 text-right whitespace-nowrap">
         {canDelete &&
