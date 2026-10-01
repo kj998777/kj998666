@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { requireTutor } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
+import { FIRST_BONUS_COUNT } from "@/lib/tutor/points";
+import InviteCard from "./InviteCard";
 
 const REASON_LABEL: Record<string, string> = {
   // 0037: 새 문항·판정 문항을 구분해 보여 주지 않는다(블라인드)
@@ -11,6 +13,7 @@ const REASON_LABEL: Record<string, string> = {
   dispute_reward: "정답 이의 채택 보상",
   worksheet_purchase: "맞춤 시험지",
   first_bonus: "처음 제출 보너스",
+  referral_bonus: "친구 초대 보너스",
 };
 
 export default async function TutorDashboardPage() {
@@ -51,6 +54,22 @@ export default async function TutorDashboardPage() {
     paused: { label: "정지", cls: "text-red-700", note: "새 문항 배정 멈춤" },
   };
   const lv = LEVEL[String(trust ?? "ok")] ?? LEVEL.ok;
+
+  // 2026-10-01 다음 목표(참여율): 지금 포인트로 받을 수 있는 기출 수, 모자라면 몇 문항 더 풀면 되는지
+  const [{ data: storeExams }, { data: buys }, { data: inviteCode }, { data: refs }] = await Promise.all([
+    supabase.from("exams").select("id, tutor_download_cost").neq("status", "검수대기").not("tutor_download_cost", "is", null),
+    supabase.from("tutor_exam_purchases").select("exam_id").eq("tutor_id", session.userId),
+    (supabase.rpc as any)("tutor_my_invite_code"),
+    (supabase.from("tutor_referrals") as any).select("invitee_id, rewarded_at").eq("inviter_id", session.userId),
+  ]);
+  const owned = new Set(((buys as any[]) ?? []).map((b) => b.exam_id));
+  const notOwned = ((storeExams as any[]) ?? []).filter((e) => !owned.has(e.id)).map((e) => Number(e.tutor_download_cost) || 0);
+  const balance = Number(s.points_balance ?? 0);
+  const affordable = notOwned.filter((c) => c <= balance).length;
+  const minCost = notOwned.length ? Math.min(...notOwned) : 0;
+  const need = Math.max(0, minCost - balance);
+  const bonusLeft = Math.max(0, FIRST_BONUS_COUNT - Number(s.reviews_submitted ?? 0));
+  const refRows = ((refs as any[]) ?? []) as { invitee_id: string; rewarded_at: string | null }[];
 
   return (
     <div className="space-y-6">
@@ -115,6 +134,29 @@ export default async function TutorDashboardPage() {
         </div>
       </div>
 
+      {notOwned.length > 0 && (
+        <div className="card border-emerald-200 bg-emerald-50/60 space-y-1">
+          <h2 className="font-medium text-emerald-900">다음 목표</h2>
+          {affordable > 0 ? (
+            <p className="text-sm text-emerald-900">
+              지금 <b>{balance}P</b>로 받을 수 있는 기출이 <b>{affordable}개</b> 있어요(아직 안 산 기출 {notOwned.length}개).{" "}
+              <Link href="/tutor/store" className="link-accent">
+                기출 스토어로 →
+              </Link>
+            </p>
+          ) : (
+            <p className="text-sm text-emerald-900">
+              기출 1개까지 <b>{need}P</b> 남았어요 — 난이도 &lsquo;상&rsquo; 문항 <b>{Math.ceil(need / 3)}개</b>
+              {need > 1 ? ` 또는 '하·중' 문항 ${need}개` : ""}면 받을 수 있어요.
+            </p>
+          )}
+          <p className="text-xs text-emerald-800/80">
+            {bonusLeft > 0 ? `처음 3문항 보너스가 ${bonusLeft}문항 남았어요(문항마다 +1P). ` : ""}
+            맞춤 시험지는 시험마다 문항 2개에 1P예요.
+          </p>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-3">
         <Link href="/tutor/review" className="btn-primary">
           검토하러 가기
@@ -129,6 +171,8 @@ export default async function TutorDashboardPage() {
           랭킹{myRank ? ` · 내 순위 ${myRank.rank}위` : ""}
         </Link>
       </div>
+
+      <InviteCard code={typeof inviteCode === "string" ? inviteCode : null} invited={refRows.length} rewarded={refRows.filter((r) => r.rewarded_at).length} />
 
       <div className="card">
         <h2 className="font-medium mb-3">최근 포인트 내역</h2>
