@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import SubmissionForm from "./SubmissionForm";
 import ProblemPageImage from "./ProblemPageImage";
 import { blindExamLabel } from "@/lib/tutor/claims";
+import { basePointsFor, FIRST_BONUS_COUNT, FIRST_BONUS_POINTS } from "@/lib/tutor/points";
 
 // 편향 방지: answer_display/solution/difficulty_reason/exam_error_* 는 절대 select하지 않는다.
 // primary 문항도 AI가 만든 초안(정답·풀이)이 낮은 확신/오답이라서 검토 큐에 온 것이므로, 그 초안을
@@ -16,7 +17,7 @@ export default async function ReviewItemPage({
   params: { itemId: string };
   searchParams: { kind?: string };
 }) {
-  await requireTutor();
+  const session = await requireTutor();
 
   // 0037: 과외선생님 세션은 item_explanations를 직접 읽지 못한다(행 전체 — AI 답·앞사람 답까지 — 가 보이던 구멍을 막음).
   // 지금 이 문항을 배정받았는지만 DB 함수로 확인하고, 화면에 필요한 열만 서버가 읽어 보여 준다.
@@ -43,11 +44,14 @@ export default async function ReviewItemPage({
     );
   }
 
-  const [{ data: exam }, { data: keyRow }] = await Promise.all([
+  const [{ data: exam }, { data: keyRow }, { data: stats }] = await Promise.all([
     admin.from("exams").select("school_level, folder_grade").eq("id", item.exam_id).maybeSingle() as any,
     // 정답 입력 방식(객관식 ①~⑤ / 주관식)을 정하려고 "유형"만 읽는다 — 정답 값은 읽지 않는다
     admin.from("answer_key").select("type").eq("exam_id", item.exam_id).eq("item_label", item.item_label).maybeSingle() as any,
+    supabase.from("tutor_stats").select("reviews_submitted").eq("tutor_id", session.userId).maybeSingle() as any,
   ]);
+  // 0043: 처음 3문항 보너스(사후 판정 문항에는 없다 — 신규 선생님은 판정 문항을 받지 않으므로 화면 차이로 드러나지 않음)
+  const firstBonus = kind === "primary" && Number(stats?.reviews_submitted ?? 0) < FIRST_BONUS_COUNT;
 
   return (
     <div className="space-y-4">
@@ -66,8 +70,13 @@ export default async function ReviewItemPage({
           난이도 {item.difficulty}
           {/* 0028: 난이도별 적립 — 하·중하·중 1P, 중상·상 2P (DB review_points_for_item과 같은 규칙) */}
           <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-            기본 +{item.difficulty === "중상" || item.difficulty === "상" ? 2 : 1}P
+            기본 +{basePointsFor(item.difficulty)}P
           </span>
+          {firstBonus && (
+            <span className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+              처음 제출 보너스 +{FIRST_BONUS_POINTS}P
+            </span>
+          )}
         </p>
         <div className="border-t border-slate-100 pt-2">
           <ProblemPageImage

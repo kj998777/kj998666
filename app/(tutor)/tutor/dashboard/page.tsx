@@ -10,6 +10,7 @@ const REASON_LABEL: Record<string, string> = {
   admin_adjustment: "관리자 조정",
   dispute_reward: "정답 이의 채택 보상",
   worksheet_purchase: "맞춤 시험지",
+  first_bonus: "처음 제출 보너스",
 };
 
 export default async function TutorDashboardPage() {

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { requireTutor } from "@/lib/auth/requireTutor";
 import { getMyActiveClaims } from "@/lib/tutor/claims";
 import ReviewQueueClient from "./ReviewQueueClient";
+import { createClient } from "@/lib/supabase/server";
+import { FIRST_BONUS_COUNT } from "@/lib/tutor/points";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +11,12 @@ export const dynamic = "force-dynamic";
 // 돌아갈 수 있게 보여 준다(맡은 문제 탭과 같은 목록, lib/tutor/claims.ts).
 export default async function ReviewQueuePage() {
   const session = await requireTutor();
-  const claims = await getMyActiveClaims(session.userId).catch(() => []);
+  const supabase = await createClient();
+  const [claims, { data: stats }] = await Promise.all([
+    getMyActiveClaims(session.userId).catch(() => []),
+    supabase.from("tutor_stats").select("reviews_submitted").eq("tutor_id", session.userId).maybeSingle(),
+  ]);
+  const done = Number((stats as any)?.reviews_submitted ?? 0);
   return (
     <div className="space-y-4">
       {claims.length > 0 && (
@@ -29,7 +36,7 @@ export default async function ReviewQueuePage() {
           </ul>
         </div>
       )}
-      <ReviewQueueClient />
+      <ReviewQueueClient bonusLeft={Math.max(0, FIRST_BONUS_COUNT - done)} />
     </div>
   );
 }
