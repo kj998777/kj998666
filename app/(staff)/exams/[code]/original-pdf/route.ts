@@ -2,6 +2,7 @@ import { requireApiRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { getExamPdfBuffer, getExamPdfMeta, getScanPdfBuffer } from "@/lib/ai/pdf";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { pageResponse, pdfPageOf } from "@/lib/bank/singlePage";
 
 // "디지털 시험지 PDF" 를 브라우저에서 만들 때(그림을 원본 쪽에서 오려 내야 함) 원본 시험지
 // PDF의 원본 바이트가 필요해서 추가한 라우트. buildDigitizedPdf.ts 가 pdf.js로 이 바이트를
@@ -26,6 +27,13 @@ export async function GET(request: Request, { params }: { params: { code: string
       cur = await getExamPdfBuffer(supabase, exam.id);
     } catch (e: any) {
       return Response.json({ ok: false, msg: e?.message || "시험지 PDF를 불러오지 못했습니다." }, { status: 400 });
+    }
+    // 2026-10-01: ?page=N 이면 그 쪽 하나만(검토 문항 화면·문항 은행 미리 보기가 시험지 전체를 받지 않게)
+    const pageParam = new URL(request.url).searchParams.get("page");
+    if (pageParam) {
+      const one = await pdfPageOf(cur, Number(pageParam)).catch(() => null);
+      if (!one) return Response.json({ ok: false, msg: "그 쪽이 없습니다." }, { status: 404 });
+      return pageResponse(one);
     }
     return new Response(cur as any, { headers: { "Content-Type": "application/pdf", "Cache-Control": "no-store" } });
   }
