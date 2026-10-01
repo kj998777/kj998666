@@ -162,7 +162,7 @@ export async function restoreScanPdfAction(code: string, uploadedPath: string) {
     try {
         const r = await restoreScanPdf(createAdminClient(), exam.id, path);
         revalidatePath(`/exams/${code}`);
-        return { ok: true, pages: r.pages };
+        return { ok: true, pages: r.pages, warning: r.warning };
     } catch (e: any) {
         return { ok: false, msg: String(e?.message ?? e) };
     }

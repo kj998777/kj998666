@@ -78,7 +78,10 @@ export default function ScanRestoreBox({ code, examId, mode = "missing" }: { cod
       const r: any = await restoreScanPdfAction(code, path);
       if (!r.ok) throw new Error(r.msg || "넣지 못했습니다.");
       setPreview(null);
-      setMsg({ ok: true, text: `스캔본(${r.pages}쪽)을 넣었습니다. 이제 디지털 시험지를 다시 만들면 그림을 이 스캔본에서 오립니다.` });
+      setMsg({
+        ok: true,
+        text: `스캔본(${r.pages}쪽)을 넣었습니다. 이제 디지털 시험지를 다시 만들면 그림을 이 스캔본에서 오립니다.` + (r.warning ? ` (참고: ${r.warning})` : ""),
+      });
       router.refresh();
     } catch (e: any) {
       setMsg({ ok: false, text: e?.message || String(e) });
