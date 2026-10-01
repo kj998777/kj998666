@@ -426,7 +426,13 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
       )}
 
       <div className="card space-y-2">
-        <h2 className="font-medium">과외선생님별 활동·신뢰도</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-medium">과외선생님별 활동·신뢰도</h2>
+          {/* 2026-10-01: 선생님들이 어떤 문제를 풀었는지(낸 답·맞음/틀림·포인트·풀이) */}
+          <Link href="/admin/ops/solves" className="btn-secondary py-1 px-3 text-sm">
+            과외선생님이 푼 문제 보기 →
+          </Link>
+        </div>
         <p className="text-xs text-slate-500">
           신뢰도는 <b>정답률</b>(최근 판정 50건 — 다수결·원장님 확정·정답 아는 문항·이의제기로 누가 맞았는지 정해진 것)로
           정합니다. 제출 5개 전은 <b>신규</b>, 70% 미만 <b>주의</b>(전부 재확인·포인트 0.5배), 50% 미만 <b>정지</b>, 30건 이상
@@ -453,7 +459,9 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
                 {tutorRows.map((r) => (
                   <tr key={r.t.id} className="border-b border-slate-100 align-middle">
                     <td className="py-1.5 pr-2">
-                      <div>{personLabel(r.t)}</div>
+                      <Link href={`/admin/ops/solves?tutor=${r.t.id}`} className="link-accent" title="이 선생님이 푼 문제 보기">
+                        {personLabel(r.t)}
+                      </Link>
                       {(r.t.display_name || r.t.cohort) && <div className="text-xs text-slate-400">{r.t.email}</div>}
                     </td>
                     <td className="py-1.5 pr-2 text-right tabular-nums">{r.periodReviews}</td>
