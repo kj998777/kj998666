@@ -1,5 +1,6 @@
 "use client";
 
+import ContentKindBadge from "@/app/(tutor)/tutor/store/ContentKindBadge";
 import { useState } from "react";
 import type { BankDetail } from "@/lib/bank/load";
 
@@ -74,7 +75,14 @@ export default function WsBuilder({ id, defaultTitle }: { id: string; defaultTit
         </button>
       </div>
       {msg && <p className="text-xs text-slate-600">{msg}</p>}
-      <p className="text-xs text-slate-400">받은 시험지·해설은 본인 과외 수업에만 써 주세요(다시 나눠 주거나 올리면 안 됩니다).</p>
+      {/* 2026-10-01: 시험지 = 학교 기출 원본을 오려 붙인 것, 정답·해설지 = 메딕 해설(lib/content/kinds.ts) */}
+      <p className="text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
+        <span>시험지</span>
+        <ContentKindBadge kind="original" />
+        <span>· 정답·해설지</span>
+        <ContentKindBadge kind="medic" />
+      </p>
+      <p className="text-xs text-slate-400">받은 시험지·해설은 본인 과외 수업에만 써 주세요(다른 선생님에게 넘기거나 인터넷에 올리면 안 됩니다).</p>
     </div>
   );
 }
