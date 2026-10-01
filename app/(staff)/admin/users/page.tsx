@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import InviteForm from "./InviteForm";
 import UserRow from "./UserRow";
 import KakaoContactForm from "./KakaoContactForm";
+import { personLabel } from "@/lib/profile/label";
 
 export default async function AdminUsersPage() {
   const session = await requireRole("admin");
@@ -38,6 +39,20 @@ export default async function AdminUsersPage() {
     if (!snErr) studentNoIds = new Set((sn ?? []).map((r: any) => r.user_id));
   }
   const hasNo = (id: string) => (studentNoIds ? studentNoIds.has(id) : undefined);
+
+  // 2026-10-01 친구 초대(0046): 누가 초대했는지(승인할 때 참고). 표가 없으면(0046 전) 비워 둔다.
+  const invitedBy: Record<string, string> = {};
+  {
+    const { data: refs, error: refErr } = (await (supabase.from("tutor_referrals") as any).select("invitee_id, inviter_id, rewarded_at")) as { data: any[] | null; error: any };
+    if (!refErr) {
+      const byId = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+      for (const r of refs ?? []) {
+        const inv: any = byId.get(r.inviter_id);
+        const who = inv ? personLabel({ display_name: inv.display_name, cohort: inv.cohort }) || inv.email : "?";
+        invitedBy[r.invitee_id] = `${who} 초대${r.rewarded_at ? " · 보너스 지급" : ""}`;
+      }
+    }
+  }
 
   let tutorStatsById: Record<string, { points_balance: number; reviews_submitted: number; reviews_flagged: number }> = {};
   if (tutorProfiles.length > 0) {
@@ -92,7 +107,7 @@ export default async function AdminUsersPage() {
             </thead>
             <tbody>
               {pendingProfiles.map((p: any) => (
-                <UserRow key={p.id} profile={p} isMe={p.id === session.userId} approveAsTutor hasStudentNo={hasNo(p.id)} />
+                <UserRow key={p.id} profile={p} isMe={p.id === session.userId} approveAsTutor hasStudentNo={hasNo(p.id)} invitedBy={invitedBy[p.id]} />
               ))}
             </tbody>
           </table>
@@ -141,7 +156,7 @@ export default async function AdminUsersPage() {
             </thead>
             <tbody>
               {tutorProfiles.map((p: any) => (
-                <UserRow key={p.id} profile={p} isMe={p.id === session.userId} tutorStats={tutorStatsById[p.id]} hasStudentNo={hasNo(p.id)} />
+                <UserRow key={p.id} profile={p} isMe={p.id === session.userId} tutorStats={tutorStatsById[p.id]} hasStudentNo={hasNo(p.id)} invitedBy={invitedBy[p.id]} />
               ))}
             </tbody>
           </table>

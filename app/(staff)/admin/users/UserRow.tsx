@@ -21,6 +21,7 @@ export default function UserRow({
   tutorStats,
   approveAsTutor,
   hasStudentNo,
+  invitedBy,
 }: {
   profile: Profile;
   isMe: boolean;
@@ -29,6 +30,8 @@ export default function UserRow({
   approveAsTutor?: boolean;
   // 2026-09-29: 학번(0036)이 저장돼 있는지(숫자 자체는 페이지에 싣지 않음 — "보기"를 눌러야 불러옴). undefined = 0036 전
   hasStudentNo?: boolean;
+  // 2026-10-01: 친구 초대로 가입했으면 "○○ 초대"(0046)
+  invitedBy?: string;
 }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
@@ -78,6 +81,7 @@ export default function UserRow({
         )}
         <span className={profile.display_name || profile.cohort ? "text-slate-500" : ""}>{profile.email}</span>{" "}
         {isMe && <span className="text-slate-400">(나)</span>}
+        {invitedBy && <div className="text-xs text-sky-700 mt-0.5">{invitedBy}</div>}
         {isPendingRow && !isMe && (
           <div className="mt-1.5">
             <input
