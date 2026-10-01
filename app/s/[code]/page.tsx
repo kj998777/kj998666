@@ -85,7 +85,7 @@ export default async function StudentSubmitPage({
       examName={exam.name}
       classes={classes ?? []}
       tutorToken={tutorToken}
-      promo={!tutorToken}
+      promo /* 2026-10-01: 과외선생님 학생도 제출 완료에 메딕수학 배너 */
       items={items.map((it) => ({ item_label: it.item_label, type: it.type }))}
     />
   );

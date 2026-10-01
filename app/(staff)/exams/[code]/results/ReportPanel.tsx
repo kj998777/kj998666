@@ -111,7 +111,7 @@ export default function ReportPanel({
       if (students.length === 1) {
         const s = students[0];
         setProgress(`${s.student_name} 보고서를 그리는 중…`);
-        const html = buildIndividualHtml(katex, d, s, { promo: !dataUrl });
+        const html = buildIndividualHtml(katex, d, s, { promo: true });
         setProgress("PDF로 만드는 중…");
         const bytes = await htmlToPdfBytes(html);
         downloadBytes(bytes, `${examName}_${s.class_label}_${s.student_name}.pdf`);
@@ -120,7 +120,7 @@ export default function ReportPanel({
         for (let i = 0; i < students.length; i++) {
           const s = students[i];
           setProgress(`(${i + 1}/${students.length}) ${s.student_name} 보고서 만드는 중…`);
-          const html = buildIndividualHtml(katex, d, s, { promo: !dataUrl });
+          const html = buildIndividualHtml(katex, d, s, { promo: true });
           const bytes = await htmlToPdfBytes(html);
           files.push({ name: `${s.class_label}_${s.student_name}.pdf`, bytes });
         }

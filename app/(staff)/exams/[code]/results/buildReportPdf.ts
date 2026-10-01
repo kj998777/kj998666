@@ -596,7 +596,7 @@ function buildAdvice(items: ReportItem[], student: ReportStudent, idx: Map<strin
   return s;
 }
 
-/** opts.promo: 학원 학생 보고서면 맨 끝에 메딕수학 홍보 상자(과외선생님 화면에서 만들 때는 안 붙임 — ReportPanel) */
+/** opts.promo: 맨 끝에 메딕수학 홍보 상자(2026-10-01부터 학원·과외선생님 보고서 모두 — ReportPanel) */
 export function buildIndividualHtml(katex: any, data: ReportData, student: ReportStudent, opts: { promo?: boolean } = {}): string {
   const items = data.items;
   const idx = indexPerItem(student);

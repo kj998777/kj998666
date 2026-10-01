@@ -24,7 +24,7 @@ export default async function PlacementSubmitPage({ params }: { params: { code: 
       examName={test.title || "입학테스트"}
       classes={[]}
       endpoint={`/api/placement-submit/${encodeURIComponent(test.code)}`}
-      promo={test.owner_kind === "staff"}
+      promo /* 2026-10-01: 학원·과외선생님 입학테스트 모두 제출 완료에 메딕수학 배너 */
       items={details.map((d, i) => ({ item_label: String(i + 1), type: d.type === "객관식" ? "객관식" : "주관식" }))}
     />
   );
