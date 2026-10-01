@@ -1,4 +1,5 @@
 import { normalizeTex } from "@/lib/math/normalizeTex";
+import { needsSvgMath, svgifyKatex } from "@/lib/math/svgMath";
 import { guessSummary } from "@/lib/grading";
 import { guessStatsByItem, guessTotals, manyGuessed, pctOf } from "@/lib/report/guessStats";
 import { CONTENT_KIND_LABEL, MEDIC_PDF_CREDIT } from "@/lib/content/kinds";
@@ -1045,6 +1046,14 @@ async function pageToCanvas(el: HTMLElement): Promise<HTMLCanvasElement> {
 }
 
 async function renderPagesToPdfBytes(pages: HTMLElement[]): Promise<Uint8Array> {
+  // 2026-10-01: Safari 계열은 html2canvas가 KaTeX 분수·첨자를 어긋나게 그리므로 수식을 SVG로 바꿔 끼운다(lib/math/svgMath.ts)
+  if (needsSvgMath()) {
+    try {
+      for (const el of pages) await svgifyKatex(el);
+    } catch (err) {
+      console.warn("수식 SVG 바꾸기 실패 — 그대로 그립니다.", err);
+    }
+  }
   const JsPDF = (window as any).jspdf.jsPDF;
   const pdf = new JsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
