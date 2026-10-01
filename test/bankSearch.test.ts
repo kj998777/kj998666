@@ -48,4 +48,13 @@ check("고를 값 개수(자기 칸은 풀고 셈)", () => {
   assert.equal(fc.diffs["상"], 1);
   assert.deepEqual(fc.years, ["2026", "2025"]);
 });
+check("범위(과목·단원 체크) — 주소 course·u", () => {
+  const f = parseFilter({ level: "고", grade: "1", course: "c1", u: "c1.2.1,bad" });
+  assert.equal(f.course, "c1");
+  assert.deepEqual(f.units, ["c1.2.1"]);
+  assert.deepEqual(search(items, f).map((x) => x.id), ["a"]); // 근과 계수 → 복소수와 이차방정식, b(이차함수)는 다른 중단원
+  assert.deepEqual(search(items, { ...f, units: ["c1.2.2"] }).map((x) => x.id), ["b"]);
+  assert.equal(search(items, parseFilter({ level: "고", grade: "1", u: "none" })).length, 0); // 모두 해제
+  assert.equal(parseFilter({ course: "zz" }).course, undefined);
+});
 console.log(`\n${n}개 통과`);
