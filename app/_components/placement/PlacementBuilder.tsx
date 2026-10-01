@@ -48,12 +48,17 @@ export default function PlacementBuilder({
   const scope: Scope | null = opt ? { level: opt.level, grade: opt.grade, subject } : null;
   const label = scope ? scopeLabel(scope) : "";
 
-  function draw(nextSeed = seed) {
+  const FAIL = "잠시 연결이 고르지 않았습니다. 한 번 더 눌러 주세요.";
+
+  function draw() {
     if (!scope) return;
+    // 처음 뽑기는 지금 seed, 다시 뽑기는 새 seed(같은 조건이어도 다른 조합)
+    const nextSeed = items ? Math.floor(Math.random() * 1e9) : seed;
+    setSeed(nextSeed);
     setMsg("");
     setConfirming(false);
     start(async () => {
-      const r = await previewPlacement(scope, n, nextSeed);
+      const r = await previewPlacement(scope, n, nextSeed).catch(() => ({ ok: false, msg: FAIL }) as Awaited<ReturnType<typeof previewPlacement>>);
       if (!r.ok || !r.items) {
         setItems(null);
         setMsg(r.msg || "뽑지 못했습니다.");
@@ -71,7 +76,9 @@ export default function PlacementBuilder({
     const s = seed + i * 7919 + rejected.length * 104729;
     const ex = [...rejected, items[i].id];
     start(async () => {
-      const r = await replacePlacementItem(scope, items.map((x) => x.id), i, s, ex);
+      const r = await replacePlacementItem(scope, items.map((x) => x.id), i, s, ex).catch(
+        () => ({ ok: false, msg: FAIL }) as Awaited<ReturnType<typeof replacePlacementItem>>
+      );
       if (!r.ok || !r.item) {
         setMsg(r.msg || "바꾸지 못했습니다.");
         return;
@@ -90,10 +97,8 @@ export default function PlacementBuilder({
     }
     setConfirming(false);
     start(async () => {
-      const r = await createPlacement(
-        items.map((x) => x.id),
-        title.trim() || `입학테스트 · ${label}`,
-        label
+      const r = await createPlacement(items.map((x) => x.id), title.trim() || `입학테스트 · ${label}`, label).catch(
+        () => ({ ok: false, msg: FAIL }) as Awaited<ReturnType<typeof createPlacement>>
       );
       if (!r.ok || !r.id) {
         setMsg(r.msg || "만들지 못했습니다.");
@@ -166,22 +171,8 @@ export default function PlacementBuilder({
             </select>
           </label>
           <button type="button" className="btn-primary" disabled={pending || !scope} onClick={() => draw()}>
-            {pending && !items ? "뽑는 중…" : items ? "이 조건으로 다시 뽑기" : "문항 뽑기"}
+            {pending && !items ? "뽑는 중…" : items ? "다시 뽑기" : "문항 뽑기"}
           </button>
-          {items && (
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={pending}
-              onClick={() => {
-                const s = Math.floor(Math.random() * 1e9);
-                setSeed(s);
-                draw(s);
-              }}
-            >
-              전부 새로 뽑기
-            </button>
-          )}
         </div>
         <p className="text-xs text-slate-500">
           쉬운 문항(하)부터 어려운 문항(상)까지 고르게(10문항이면 하 2 · 중하 2 · 중 3 · 중상 2 · 상 1), 단원이 겹치지 않게 뽑아 쉬운 순서로
