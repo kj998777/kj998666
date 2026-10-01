@@ -1091,6 +1091,11 @@ export async function htmlToPdfBytes(html: string): Promise<Uint8Array> {
   src.innerHTML = html;
   stageWrap.appendChild(src);
   await new Promise((r) => setTimeout(r, 60));
+  // 2026-10-01: 그림(홍보 상자의 학원 로고 등)이 다 읽힌 뒤 높이를 재고 그린다(최대 3초).
+  await Promise.race([
+    Promise.all([...src.querySelectorAll("img")].map((im) => (im.complete ? null : im.decode().catch(() => null)))),
+    new Promise((r) => setTimeout(r, 3000)),
+  ]);
   try {
     const root = src.firstElementChild as HTMLElement;
     const pager = new Paginator(stageWrap, root);
