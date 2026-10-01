@@ -55,7 +55,7 @@ export async function buildReportData(
       student_name: r.student_name as string,
       submitted_at: r.submitted_at as string,
       total_score: Number(gr?.total_score ?? 0),
-      per_item: (gr?.per_item ?? []) as { item_label: string; given: string; correct: boolean; points: number }[],
+      per_item: (gr?.per_item ?? []) as { item_label: string; given: string; correct: boolean; points: number; guessed?: boolean }[],
     };
   });
 
