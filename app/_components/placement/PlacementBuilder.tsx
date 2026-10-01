@@ -3,11 +3,14 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createPlacement, previewPlacement, replacePlacementItem } from "@/lib/placement/actions";
-import { PLACEMENT_DEFAULT_N, scopeLabel, type Scope, type ScopeOption } from "@/lib/placement/pick";
+import { PLACEMENT_DEFAULT_N, scopeLabel, type Scope } from "@/lib/placement/pick";
+import type { TreeGrade } from "@/lib/curriculum/units";
+import ScopePicker, { firstScope, type ScopeValue } from "@/app/_components/ScopePicker";
 import type { PreviewItem } from "@/lib/placement/server";
 import { useKatex } from "@/app/_components/MathTools";
 import { renderMathHtml } from "@/lib/math/renderMathHtml";
 
+// 2026-10-01: 범위는 학교급 → 학년 → 과목 → 출제할 단원(대단원·중단원 체크)으로 고른다(ScopePicker).
 // 입학테스트 만들기(0047): 학년·과목을 고르면 쉬운 문항부터 어려운 문항까지 고르게 뽑아 보여 주고,
 // 마음에 안 드는 문항은 하나씩 바꾸거나 통째로 다시 뽑은 뒤 만든다. 학원·과외선생님 화면이 같이 쓴다.
 const DIFF_CLS: Record<string, string> = {
@@ -19,22 +22,20 @@ const DIFF_CLS: Record<string, string> = {
 };
 
 export default function PlacementBuilder({
-  options,
+  tree,
   kind,
   cost,
   balance,
   detailBase,
 }: {
-  options: ScopeOption[];
+  tree: TreeGrade[];
   kind: "staff" | "tutor";
   cost: number;
   balance?: number;
   detailBase: string;
 }) {
   const router = useRouter();
-  const [pick, setPick] = useState<string>(options[0] ? `${options[0].level}${options[0].grade}` : "");
-  const opt = useMemo(() => options.find((o) => `${o.level}${o.grade}` === pick) ?? null, [options, pick]);
-  const [subject, setSubject] = useState("");
+  const [sv, setSv] = useState<ScopeValue>(() => firstScope(tree));
   const [n, setN] = useState(PLACEMENT_DEFAULT_N);
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 1e9));
   const [items, setItems] = useState<PreviewItem[] | null>(null);
@@ -45,8 +46,12 @@ export default function PlacementBuilder({
   const [pending, start] = useTransition();
   const katex = useKatex();
 
-  const scope: Scope | null = opt ? { level: opt.level, grade: opt.grade, subject } : null;
+  const scope: Scope | null = useMemo(
+    () => (sv.level && sv.grade ? { level: sv.level, grade: sv.grade, course: sv.course, units: sv.units } : null),
+    [sv]
+  );
   const label = scope ? scopeLabel(scope) : "";
+  const noUnits = !!scope?.units && scope.units.length === 0;
 
   const FAIL = "잠시 연결이 고르지 않았습니다. 한 번 더 눌러 주세요.";
 
@@ -108,57 +113,22 @@ export default function PlacementBuilder({
     });
   }
 
-  if (!options.length) {
+  if (!tree.length) {
     return <div className="card text-sm text-slate-500">아직 입학테스트에 쓸 수 있는 문항(정답이 확정된 기출)이 없습니다.</div>;
   }
 
   return (
     <div className="card space-y-4">
       <div className="space-y-2">
-        <p className="label">학년</p>
-        <div className="flex flex-wrap gap-2">
-          {options.map((o) => {
-            const k = `${o.level}${o.grade}`;
-            const on = k === pick;
-            return (
-              <button
-                key={k}
-                type="button"
-                onClick={() => {
-                  setPick(k);
-                  setSubject("");
-                  setItems(null);
-                }}
-                className={"rounded-full border px-3 py-1 text-sm " + (on ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white")}
-              >
-                {k} <span className={on ? "text-slate-300" : "text-slate-400"}>({o.n})</span>
-              </button>
-            );
-          })}
-        </div>
-        {opt && opt.subjects.length > 0 && (
-          <>
-            <p className="label">과목</p>
-            <div className="flex flex-wrap gap-2">
-              {[{ name: "", n: opt.n }, ...opt.subjects].map((s) => (
-                <button
-                  key={s.name || "all"}
-                  type="button"
-                  onClick={() => {
-                    setSubject(s.name);
-                    setItems(null);
-                  }}
-                  className={
-                    "rounded-full border px-3 py-1 text-sm " +
-                    (subject === s.name ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white")
-                  }
-                >
-                  {s.name || "전체"} <span className={subject === s.name ? "text-slate-300" : "text-slate-400"}>({s.n})</span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
+        <ScopePicker
+          tree={tree}
+          value={sv}
+          onChange={(v) => {
+            setSv(v);
+            setItems(null);
+            if (title.startsWith("입학테스트 · ")) setTitle(""); // 범위를 바꾸면 자동 제목도 새로
+          }}
+        />
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <label className="text-sm text-slate-600 flex items-center gap-2">
             문항 수
@@ -170,7 +140,7 @@ export default function PlacementBuilder({
               ))}
             </select>
           </label>
-          <button type="button" className="btn-primary" disabled={pending || !scope} onClick={() => draw()}>
+          <button type="button" className="btn-primary" disabled={pending || !scope || noUnits} onClick={() => draw()}>
             {pending && !items ? "뽑는 중…" : items ? "다시 뽑기" : "문항 뽑기"}
           </button>
         </div>

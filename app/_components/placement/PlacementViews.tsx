@@ -74,7 +74,7 @@ export function PlacementDetailView({
       <div className="card space-y-2">
         <h2 className="font-medium">시험지·정답지 받기</h2>
         <p className="text-sm text-slate-500">
-          시험지는 원래 기출 시험지에서 문항 자리를 오려 붙이고(쉬운 문항부터), <b>맨 뒤 쪽에 답 제출 QR</b>이 붙습니다. 학생이 다 풀고 QR을 찍어
+          시험지는 맨 앞에 <b>입학 진단 평가 표지</b>를 붙이고 원래 기출 시험지에서 문항 자리를 오려 붙이며(쉬운 문항부터), <b>맨 뒤 쪽에 답 제출 QR</b>(학원 로고)이 붙습니다. 학생이 다 풀고 QR을 찍어
           답을 내면 바로 채점돼 아래 &ldquo;제출한 학생&rdquo;에 올라옵니다.
         </p>
         <p className="text-xs text-slate-500 flex flex-wrap items-center gap-1.5">

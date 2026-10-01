@@ -50,6 +50,7 @@ export function PlacementPdfButtons({ id, code, title, scope }: { id: string; co
         perCol: 2 as const,
         pdfUrlOf: (it: BankDetail) => `/api/placement/${id}/page/${it.id}`,
         headRight: "이름 ____________   학교·학년 ____________",
+        cover: "placement" as const, // 2026-10-01: 앞 표지(입학 진단 평가) + 맨 뒤 QR 쪽에 학원 로고
         qr: {
           url,
           heading: "다 풀었으면 답을 입력해 주세요",
@@ -60,7 +61,7 @@ export function PlacementPdfButtons({ id, code, title, scope }: { id: string; co
         const r = await mod.buildWorksheetPdf(list, opts, setMsg);
         downloadBytes(r.bytes, `${safeName(opts.title)}.pdf`);
         setMsg(
-          `시험지 ${r.pages}쪽(맨 뒤 답 제출 QR 포함)을 받았습니다.` +
+          `시험지 ${r.pages}쪽(앞 표지, 맨 뒤 답 제출 QR 포함)을 받았습니다.` +
             (r.textFallback.length ? ` 원래 시험지에서 자리를 못 찾은 ${r.textFallback.length}문항은 옮겨 적은 글로 넣었어요.` : "")
         );
       } else {
