@@ -141,6 +141,8 @@ export type PerItemResult = {
   given: string;
   correct: boolean;
   points: number;
+  /** 2026-10-01: 학생이 "찍음"으로 표시한 문항(점수에는 그대로 들어가고, 실질 점수에서만 뺀다) */
+  guessed?: boolean;
 };
 
 export type GradingOutcome = {
@@ -153,7 +155,7 @@ export type GradingOutcome = {
  * answers.length 는 key.length 와 같아야 하며, 맞지 않으면 예외를 던진다
  * (호출자가 "문항 수가 맞지 않습니다" 같은 메시지로 바꿔서 응답해야 함).
  */
-export function gradeSubmission(key: AnswerKeyItem[], answers: unknown[]): GradingOutcome {
+export function gradeSubmission(key: AnswerKeyItem[], answers: unknown[], guessed?: unknown[]): GradingOutcome {
   if (answers.length !== key.length) {
     throw new Error(`answers length (${answers.length}) !== key length (${key.length})`);
   }
@@ -162,9 +164,41 @@ export function gradeSubmission(key: AnswerKeyItem[], answers: unknown[]): Gradi
     const given = String(answers[i] ?? "").slice(0, 200);
     const correct = isCorrect(given, k.correct_answers, k.type);
     if (correct) total += k.points;
-    return { item_label: k.item_label, given, correct, points: correct ? k.points : 0 };
+    const g = Array.isArray(guessed) && guessed[i] === true;
+    return { item_label: k.item_label, given, correct, points: correct ? k.points : 0, ...(g ? { guessed: true } : {}) };
   });
   // 3.6 + 3.7 같은 소수 합의 부동소수점 오차 제거(원본과 동일하게 소수 둘째 자리에서 반올림)
   total = Math.round(total * 100) / 100;
   return { perItem, totalScore: total };
+}
+
+/**
+ * 2026-10-01 원장님 요청: "찍음" 표시. 점수(total_score)는 그대로 두고, 찍어서 맞힌 문항의 점수를 뺀 "실질 점수"를 따로 보여 준다.
+ * per_item만 있으면 계산되므로 DB에 따로 저장하지 않는다(정답이 바뀌어 다시 채점해도 guessed는 그대로 남는다 — lib/review/regrade.ts).
+ */
+export type GuessSummary = {
+  /** 찍음으로 표시한 문항 수 */
+  guessed: number;
+  /** 그중 맞힌 문항 수 */
+  guessedCorrect: number;
+  /** 찍어서 맞힌 점수 */
+  guessedPoints: number;
+  /** 실질 점수 = 점수 − 찍어서 맞힌 점수 */
+  realScore: number;
+};
+
+export function guessSummary(perItem: { correct?: boolean; points?: number; guessed?: boolean }[] | null | undefined, totalScore: number): GuessSummary {
+  let guessed = 0;
+  let guessedCorrect = 0;
+  let guessedPoints = 0;
+  for (const p of perItem ?? []) {
+    if (!p?.guessed) continue;
+    guessed++;
+    if (p.correct) {
+      guessedCorrect++;
+      guessedPoints += Number(p.points) || 0;
+    }
+  }
+  guessedPoints = Math.round(guessedPoints * 100) / 100;
+  return { guessed, guessedCorrect, guessedPoints, realScore: Math.round((Number(totalScore) - guessedPoints) * 100) / 100 };
 }
