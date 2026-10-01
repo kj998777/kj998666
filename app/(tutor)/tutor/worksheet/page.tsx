@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { ScopePickerForm, type ScopeValue } from "@/app/_components/ScopePicker";
+import { buildTree } from "@/lib/curriculum/units";
 import { requireTutor } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -26,6 +28,13 @@ export default async function TutorWorksheetPage({ searchParams }: { searchParam
   ]);
   const found = search(items, f);
   const fc = facets(items, f);
+  const tree = buildTree(items);
+  const initialScope: ScopeValue = {
+    level: f.level === "중" || f.level === "고" ? f.level : "",
+    grade: f.level && f.grade ? Number(f.grade) : null,
+    course: f.grade ? f.course ?? "" : "",
+    units: f.grade && f.units ? f.units : null,
+  };
   const pages = Math.max(1, Math.ceil(found.length / PAGE));
   const rows = found.slice((page - 1) * PAGE, page * PAGE).map(strip);
   const qs = (over: Record<string, string | undefined>) => {
@@ -63,7 +72,7 @@ export default async function TutorWorksheetPage({ searchParams }: { searchParam
         <div>
           <p className="font-medium text-violet-900">입학테스트 만들기</p>
           <p className="text-sm text-violet-900/80">
-            학년·과목만 고르면 10문항을 자동으로 골라 줍니다. 학생이 QR로 답을 내면 바로 채점되고 진단 보고서(약한 단원·추천 수업 단계)가 나와요.
+            학년·과목·단원만 고르면 10문항을 자동으로 골라 줍니다. 학생이 QR로 답을 내면 바로 채점되고 진단 보고서(약한 단원·추천 수업 단계)가 나와요.
           </p>
         </div>
         <span className="btn-primary whitespace-nowrap">입학테스트 →</span>
@@ -96,20 +105,9 @@ export default async function TutorWorksheetPage({ searchParams }: { searchParam
                 찾기
               </button>
             </div>
+            {/* 2026-10-01: 범위 — 학교급 → 학년 → 과목 → 출제할 단원(대단원·중단원 체크) */}
+            <ScopePickerForm tree={tree} initial={initialScope} />
             <div className="grid gap-2 grid-cols-2 sm:grid-cols-4">
-              <select name="level" defaultValue={f.level ?? ""} className="input" aria-label="학교급">
-                <option value="">모든 학교급</option>
-                <option value="고">고등</option>
-                <option value="중">중등</option>
-              </select>
-              <select name="grade" defaultValue={f.grade ?? ""} className="input" aria-label="학년">
-                <option value="">모든 학년</option>
-                {[1, 2, 3].map((g) => (
-                  <option key={g} value={String(g)}>
-                    {g}학년
-                  </option>
-                ))}
-              </select>
               <select name="year" defaultValue={f.year ?? ""} className="input" aria-label="연도">
                 <option value="">모든 연도</option>
                 {fc.years.map((y) => (
@@ -122,14 +120,6 @@ export default async function TutorWorksheetPage({ searchParams }: { searchParam
                 <option value="">객관식·주관식</option>
                 <option value="객관식">객관식</option>
                 <option value="주관식">주관식</option>
-              </select>
-              <select name="area" defaultValue={f.area ?? ""} className="input col-span-2" aria-label="영역">
-                <option value="">모든 영역</option>
-                {fc.areas.map((a) => (
-                  <option key={a.name} value={a.name}>
-                    {a.name} ({a.n})
-                  </option>
-                ))}
               </select>
               <input name="unit" defaultValue={f.unit ?? ""} list="tws-units" className="input col-span-2" placeholder="단원(일부만 적어도 됨)" />
               <datalist id="tws-units">
@@ -151,6 +141,9 @@ export default async function TutorWorksheetPage({ searchParams }: { searchParam
                 <input type="checkbox" name="jeju" value="1" defaultChecked={!!f.jeju} />
                 제주 학교만
               </label>
+              <button className="btn-primary py-1 px-3" type="submit">
+                이 조건으로 찾기
+              </button>
               <Link href="/tutor/worksheet" className="text-slate-500 hover:underline">
                 조건 지우기
               </Link>
