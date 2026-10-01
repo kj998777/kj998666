@@ -8,6 +8,7 @@ import LocatePanel from "./LocatePanel";
 import { getLocateSummary } from "@/lib/ai/locate";
 import { fetchAllIn, fetchAllPages } from "@/lib/supabase/fetchAll";
 import { personLabel } from "@/lib/profile/label";
+import { reviewJejuLevel, isNewCurriculumExam } from "@/lib/tutor/priority";
 
 export const dynamic = "force-dynamic";
 
@@ -151,7 +152,7 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
   const pendingIds = ((pendingExamsRaw as any[]) ?? []).map((e) => e.id);
   const locate = await getLocateSummary(supabase, pendingIds);
   const examNameById = new Map(examRows.map((e) => [e.id, e.name as string]));
-  // 과외선생님 검토 배정과 같은 순서: 검수대기 → 제주 학교 → 고등 > 중등 > 그 밖 → 남은 검토대기 문항이 적은 시험(0032) → 이름
+  // 과외선생님 검토 배정과 같은 순서: 검수대기 → 제주 학교(+공통수학1·2 시험, 0044) → 고등 > 중등 > 그 밖 → 남은 검토대기 문항이 적은 시험(0032) → 이름
   const items: Item[] = itemsRaw ?? [];
   const remainingByExam = new Map<string, number>();
   for (const it of items) {
@@ -161,7 +162,7 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
   const exams = examRows.sort(
     (a, b) =>
       Number(b.status === "검수대기") - Number(a.status === "검수대기") ||
-      Number(!!b.is_jeju) - Number(!!a.is_jeju) ||
+      Number(reviewJejuLevel(b)) - Number(reviewJejuLevel(a)) ||
       levelRank(a.school_level) - levelRank(b.school_level) ||
       (remainingByExam.get(a.id) ?? 0) - (remainingByExam.get(b.id) ?? 0) ||
       String(a.name).localeCompare(String(b.name), "ko")
@@ -304,7 +305,7 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
             과외선생님 답이 정답표와 같으면 자동 확정되고, 다르면 다른 선생님이 두 답을 모른 채 다시 풀어 2:1이면 자동 확정됩니다(다수결).
             셋 다 다를 때만 &ldquo;원장님 판정&rdquo;으로 남습니다. 시험의 모든 문항이 확정되면 시험이 자동으로 열립니다.
             &ldquo;이 정답으로 확정&rdquo;은 입력칸의 값을 정답표에 그대로 저장합니다(여러 정답은 | 로 구분).
-            시험은 과외선생님에게 문항이 배정되는 순서(제주 학교 → 고등 → 중등)대로 보입니다. 제주 학교인데
+            시험은 과외선생님에게 문항이 배정되는 순서(제주 학교 → 고등 → 중등)대로 보입니다. 공통수학1·2 시험은 전에 제주 기출이 없어 타 지역이어도 제주 학교와 같은 순서(&ldquo;제주 급&rdquo;)로 나갑니다. 제주 학교인데
             &ldquo;타 지역&rdquo;으로 표시된 시험은 시험 상세에서 &ldquo;제주도 내 학교 시험&rdquo;을 체크해 주세요.
           </p>
         </div>
@@ -332,8 +333,8 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
                     {exam.status}
                   </span>{" "}
                   {"is_jeju" in exam && (
-                    <span className={"badge " + (exam.is_jeju ? "bg-sky-100 text-sky-700" : "bg-slate-100 text-slate-500")}>
-                      {exam.is_jeju ? "제주" : "타 지역"}
+                    <span className={"badge " + (reviewJejuLevel(exam) ? "bg-sky-100 text-sky-700" : "bg-slate-100 text-slate-500")}>
+                      {exam.is_jeju ? "제주" : isNewCurriculumExam(exam.name) ? "타 지역 · 제주 급(공통수학)" : "타 지역"}
                       {exam.school_level ? ` · ${exam.school_level === "고" ? "고등" : exam.school_level === "중" ? "중등" : exam.school_level}` : ""}
                     </span>
                   )}
