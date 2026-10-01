@@ -164,7 +164,9 @@ async function regionFromText(pdfjsLib: any, doc: any, label: string): Promise<(
   const want = parseLabel(label);
   if (!want) return null;
   const t = await docText(pdfjsLib, doc);
-  if (t.main.length < 3) return null; // 번호 사슬이 짧으면 글자 정보만으로는 믿지 않음
+  // 번호 사슬이 짧으면 글자 정보만으로는 믿지 않음. 2026-10-01: 문항이 있는 쪽 하나만 받은 PDF(맞춤 시험지·입학테스트·
+  // 휴대폰 검토 화면)는 한 쪽에 번호가 2~3개뿐인 경우가 많아 2개부터 믿는다(전에는 이 경우 자리를 못 찾고 글로 대신했다).
+  if (t.main.length < (doc.numPages === 1 ? 2 : 3)) return null;
   const chain = want.kind === "main" ? t.main : t.sa;
   const a = chain.find((c) => c.n === want.n);
   if (!a) return null;
