@@ -22,6 +22,7 @@
 
 import { PDFDocument } from "pdf-lib";
 import { normalizeTex } from "@/lib/math/normalizeTex";
+import { needsSvgMath, svgifyKatex } from "@/lib/math/svgMath";
 import { canvasGray, refineFigureBox, type Box } from "@/lib/digitize/figureRefine";
 
 // ---------------------------------------------------------------------
@@ -824,6 +825,15 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
     nativeCss = DG_CSS + "\n" + (await loadInlineKatexCss());
   } catch {
     nativeCss = null;
+  }
+  // 2026-10-01: Safari 계열(맥·아이패드·아이폰)은 KaTeX 분수·첨자가 그림에서 어긋나므로 수식을 SVG로 바꿔 끼운 뒤 그린다(lib/math/svgMath.ts)
+  if (needsSvgMath()) {
+    tick("수식을 그림으로 바꾸는 중…");
+    try {
+      for (const el of pageEls) await svgifyKatex(el);
+    } catch (err) {
+      console.warn("수식 SVG 바꾸기 실패 — 그대로 그립니다.", err);
+    }
   }
   for (let k = 0; k < nPg; k++) {
     tick(`쪽을 그리는 중… ${k + 1}/${nPg}`);
