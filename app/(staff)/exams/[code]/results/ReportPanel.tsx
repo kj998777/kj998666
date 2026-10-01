@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { ReportData, ReportStudent } from "./buildReportPdf";
+import { guessSummary } from "@/lib/grading";
 
 // 채점 결과 화면 위쪽에 붙는 "성적 보고서 만들기" 패널.
 // 종합 보고서(반 전체)는 항상 한 개, 개별 보고서는 학생을 골라 한 명씩 PDF로 받거나
@@ -203,7 +204,14 @@ export default function ReportPanel({
                       <span className="truncate">{s.student_name}</span>
                     </label>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-slate-400">{s.total_score}점</span>
+                      <span className="text-slate-400">
+                        {s.total_score}점
+                        {(() => {
+                          // 2026-10-01: 찍어서 맞힌 점수를 뺀 실질 점수
+                          const g = guessSummary(s.per_item, Number(s.total_score));
+                          return g.guessedPoints > 0 ? <span className="text-amber-700"> · 실질 {g.realScore}점</span> : null;
+                        })()}
+                      </span>
                       <button className="text-slate-500 hover:underline" disabled={busy} onClick={() => onIndividual([s])}>
                         PDF
                       </button>

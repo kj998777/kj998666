@@ -6,8 +6,9 @@ import ReportPanel from "./ReportPanel";
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { personLabel } from "@/lib/profile/label";
+import { guessSummary } from "@/lib/grading";
 
-type PerItem = { item_label: string; given: string; correct: boolean; points: number }[];
+type PerItem = { item_label: string; given: string; correct: boolean; points: number; guessed?: boolean }[];
 
 export default async function ResultsPage({ params }: { params: { code: string } }) {
   const session = await requireRole("viewer");
@@ -51,13 +52,18 @@ export default async function ResultsPage({ params }: { params: { code: string }
   const avg = submissions.length
     ? Math.round((submissions.reduce((s, r) => s + Number(r.total_score), 0) / submissions.length) * 10) / 10
     : 0;
+  // 2026-10-01: 실질 평균(찍어서 맞힌 점수를 뺀 점수의 평균)
+  const realAvg = submissions.length
+    ? Math.round((submissions.reduce((s, r) => s + guessSummary(r.per_item, Number(r.total_score)).realScore, 0) / submissions.length) * 10) / 10
+    : 0;
+  const anyGuess = submissions.some((r) => r.per_item.some((p) => p.guessed));
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-lg font-semibold">{exam.name} — 채점 결과</h1>
         <p className="text-sm text-slate-500">
-          제출 {submissions.length}명 · 평균 {avg}점
+          제출 {submissions.length}명 · 평균 {avg}점{anyGuess ? ` · 실질 평균 ${realAvg}점` : ""}
           {tutorCount > 0 && (
             <>
               {" "}
@@ -83,7 +89,8 @@ export default async function ResultsPage({ params }: { params: { code: string }
               <tr className="text-left text-slate-500 border-b border-slate-200">
                 <th className="py-2 pr-2">반</th>
                 <th className="py-2 pr-2">이름</th>
-                <th className="py-2 pr-2">총점</th>
+                <th className="py-2 pr-2">점수</th>
+                <th className="py-2 pr-2" title="학생이 찍음으로 표시하고 맞힌 문항의 점수를 뺀 점수">실질 점수</th>
                 <th className="py-2 pr-2">제출 시각</th>
                 <th className="py-2 pr-2"></th>
               </tr>

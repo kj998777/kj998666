@@ -1,4 +1,5 @@
 import { normalizeTex } from "@/lib/math/normalizeTex";
+import { guessSummary } from "@/lib/grading";
 // 브라우저에서 "성적 보고서"(종합/개별) PDF를 만든다.
 //
 // 옛 Apps Script 시스템의 파이썬 스크립트(claude/dg2025-report-content.md의 content.py/build.py/
@@ -31,7 +32,7 @@ export type ReportItem = {
   exam_error_suspected: boolean;
 };
 
-export type ReportPerItem = { item_label: string; given: string; correct: boolean; points: number };
+export type ReportPerItem = { item_label: string; given: string; correct: boolean; points: number; guessed?: boolean };
 
 export type ReportStudent = {
   id: string;
@@ -328,9 +329,14 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
 
   const totals = students.map((s) => Number(s.total_score));
   const avg = Math.round((totals.reduce((a, x) => a + x, 0) / n) * 100) / 100;
+  // 2026-10-01: 학생이 "찍음"으로 표시한 문항 — 실질 점수 = 점수 − 찍어서 맞힌 점수
+  const gs = students.map((s) => guessSummary(s.per_item, Number(s.total_score)));
+  const anyGuess = gs.some((g) => g.guessed > 0);
+  const realAvg = Math.round((gs.reduce((a, g) => a + g.realScore, 0) / n) * 100) / 100;
   b.push(
     `<div class="rpt-big"><div><div class="n">${n}명</div><div class="t">응시 인원</div></div>` +
       `<div><div class="n">${fmt(avg)}점</div><div class="t">평균</div></div>` +
+      (anyGuess ? `<div><div class="n">${fmt(realAvg)}점</div><div class="t">실질 평균(찍어서 맞힌 점수 뺌)</div></div>` : "") +
       `<div><div class="n">${fmt(Math.max(...totals))}점</div><div class="t">최고</div></div>` +
       `<div><div class="n">${fmt(Math.min(...totals))}점</div><div class="t">최저</div></div>` +
       `<div><div class="n">${fmt(totalPoints)}점</div><div class="t">배점 합</div></div></div>`
@@ -339,19 +345,26 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
   // 1. 응시자별 결과
   b.push("<h2>1. 응시자별 결과</h2>");
   b.push(
-    "<table><thead><tr><th>반</th><th>이름</th><th>총점</th><th>정답 수 (/" +
+    "<table><thead><tr><th>반</th><th>이름</th><th>총점</th>" +
+      (anyGuess ? "<th>실질 점수</th>" : "") +
+      "<th>정답 수 (/" +
       items.length +
       ")</th><th>오답 문항</th><th>무응답 문항</th></tr></thead><tbody>"
   );
-  for (const s of students) {
+  for (const [si, s] of students.entries()) {
     const idx = idxOf.get(s.id)!;
+    const g = gs[si];
     const wrong = items.filter((it) => statusOf(idx, it.label) === "wrong").map((it) => it.label);
     const blank = items.filter((it) => statusOf(idx, it.label) === "blank").map((it) => it.label);
     const ok = items.filter((it) => statusOf(idx, it.label) === "ok").length;
     b.push(
       `<tr><td class="c">${esc(s.class_label)}</td><td class="c">${esc(s.student_name)}</td><td class="c"><b>${fmt(
         s.total_score
-      )}</b></td><td class="c">${ok}</td><td class="l rpt-small">${esc(wrong.join(", ") || "-")}</td><td class="l rpt-small">${esc(
+      )}</b></td>${
+        anyGuess
+          ? `<td class="c">${fmt(g.realScore)}${g.guessed ? `<div class="rpt-small">찍음 ${g.guessed}개 · 맞음 ${g.guessedCorrect}개</div>` : ""}</td>`
+          : ""
+      }<td class="c">${ok}</td><td class="l rpt-small">${esc(wrong.join(", ") || "-")}</td><td class="l rpt-small">${esc(
         blank.join(", ") || "-"
       )}</td></tr>`
     );
@@ -476,17 +489,18 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
   b.push("<h2>8. 학생별 요약</h2>");
   b.push(
     "<table><thead><tr><th>이름</th><th>총점</th>" +
+      (anyGuess ? "<th>실질 점수</th>" : "") +
       (domains.length ? "<th>강한 영역</th><th>보완 영역</th>" : "") +
       "</tr></thead><tbody>"
   );
-  for (const s of students) {
+  for (const [si, s] of students.entries()) {
     const idx = idxOf.get(s.id)!;
-    let extra = "";
+    let extra = anyGuess ? `<td class="c">${fmt(gs[si].realScore)}</td>` : "";
     if (domains.length) {
       const rates = domains.map(([d, cells]) => ({ d, rate: earnedOf(cells, idx) / (totalOf(cells) || 1) }));
       const best = rates.reduce((a, b2) => (b2.rate > a.rate ? b2 : a));
       const worst = rates.reduce((a, b2) => (b2.rate < a.rate ? b2 : a));
-      extra = `<td class="c">${esc(best.d)} (${Math.round(best.rate * 100)}%)</td><td class="c">${esc(worst.d)} (${Math.round(
+      extra += `<td class="c">${esc(best.d)} (${Math.round(best.rate * 100)}%)</td><td class="c">${esc(worst.d)} (${Math.round(
         worst.rate * 100
       )}%)</td>`;
     }
@@ -542,6 +556,8 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
   const blankN = items.filter((it) => statusOf(idx, it.label) === "blank").length;
   const totalPoints = totalOf(items);
   const rate = totalPoints > 0 ? student.total_score / totalPoints : 1;
+  const g = guessSummary(student.per_item, Number(student.total_score));
+  const guessedOk = items.filter((it) => idx.get(it.label)?.guessed && statusOf(idx, it.label) === "ok");
 
   const b: string[] = [];
   b.push(
@@ -554,13 +570,25 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
       student.class_label
     )}</div></div><div><div class="n">${fmt(student.total_score)}점</div><div class="t">총점 (${fmt(
       totalPoints
-    )}점 만점)</div></div><div><div class="n">${ok} / ${items.length}</div><div class="t">정답 문항 수</div></div><div><div class="n">${
+    )}점 만점)</div></div>${
+      g.guessed > 0
+        ? `<div><div class="n">${fmt(g.realScore)}점</div><div class="t">실질 점수 (찍어서 맞힌 ${g.guessedCorrect}문항 ${fmt(g.guessedPoints)}점 뺌)</div></div>`
+        : ""
+    }<div><div class="n">${ok} / ${items.length}</div><div class="t">정답 문항 수</div></div><div><div class="n">${
       missed.length
     }개</div><div class="t">오답 ${wrongN} · 무응답 ${blankN}</div></div></div>`
   );
 
   b.push("<h2>1. 종합 의견</h2>");
-  b.push(`<p>${buildAdvice(items, student, idx, domains)}</p>`);
+  b.push(
+    `<p>${buildAdvice(items, student, idx, domains)}${
+      g.guessed > 0
+        ? ` 확실하지 않아 찍었다고 표시한 문항이 ${g.guessed}개${
+            g.guessedCorrect ? `이고 그중 ${g.guessedCorrect}개(${guessedOk.map((it) => it.label).join(", ")}번)를 맞혀, 이를 뺀 실질 점수는 ${fmt(g.realScore)}점입니다. 찍어서 맞힌 문항은 아래 풀이로 한 번 더 확인해 두세요.` : "이며 모두 틀렸습니다. 이 문항들부터 풀이를 확인해 보세요."
+          }`
+        : ""
+    }</p>`
+  );
 
   if (domains.length) {
     b.push("<h2>2. 영역별·난이도별 결과</h2>");
@@ -599,7 +627,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
       )}</td><td class="c"><code class="v">${esc(givenDisplay(it, idx))}</code></td><td class="c">${mathHtml(
         katex,
         it.answer_display
-      )}</td><td class="c ${statusClass(r)}">${statusMark(r)}</td></tr>`
+      )}</td><td class="c ${statusClass(r)}">${statusMark(r)}${idx.get(it.label)?.guessed ? '<div class="rpt-small">찍음</div>' : ""}</td></tr>`
     );
   }
   b.push("</tbody></table>");
@@ -660,6 +688,22 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
             `<div class="rpt-sol"><b>풀이</b> — ${mathHtml(katex, it.solution)}</div></div>`
         );
       }
+    }
+  }
+  // 2026-10-01: 찍어서 맞힌 문항 — 맞았지만 확실히 안 것은 아니므로 풀이를 함께 싣는다
+  if (guessedOk.length) {
+    b.push('<h2>찍어서 맞힌 문항 — 풀이로 다시 확인</h2><p class="rpt-small">학생이 &ldquo;찍음&rdquo;으로 표시하고 맞힌 문항입니다. 실질 점수에서는 빠집니다.</p>');
+    for (const it of guessedOk) {
+      b.push(
+        `<div class="rpt-card"><div class="hd">${esc(it.label)}번 · ${esc(it.unit)} · ${badge(it.difficulty)} · 배점 ${fmt(
+          it.points
+        )}점</div><div class="st">${mathHtml(katex, it.problem_statement)}</div>` +
+          `<div class="row"><span class="rpt-pill key">내 답: <b>${esc(givenDisplay(it, idx))}</b> (정답 · 찍음)</span><span class="rpt-pill key">정답: <b>${mathHtml(
+            katex,
+            it.answer_display
+          )}</b></span></div>` +
+          `<div class="rpt-sol"><b>풀이</b> — ${mathHtml(katex, it.solution)}</div></div>`
+      );
     }
   }
   b.push('<p class="rpt-foot">등급 구분·예상 등급·다른 학생과의 비교는 이 보고서에 포함하지 않았습니다.</p>');
