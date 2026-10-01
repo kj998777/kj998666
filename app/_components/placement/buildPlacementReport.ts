@@ -15,7 +15,7 @@ export type PlacementReportInput = {
   submittedAt: string;
   items: BankDetail[];
   perItem: PerItemResult[];
-  /** 학원 입학테스트면 맨 끝에 메딕수학 홍보 상자(과외선생님 테스트는 안 붙임) */
+  /** 맨 끝에 메딕수학 홍보 상자(학원·과외선생님 테스트 모두) */
   promo?: boolean;
 };
 
