@@ -1,4 +1,5 @@
 // 문항 은행(2026-09-30): 모든 시험의 문항을 단원·난이도·학교·글자로 찾는 순수 계산. 화면(서버)과 테스트가 같이 쓴다.
+import { cleanUnits, inUnitScope, isCourseKey } from "@/lib/curriculum/units";
 
 export type BankItem = {
   id: string;
@@ -37,6 +38,10 @@ export type BankFilter = {
   school?: string; // 시험 이름 부분 일치
   jeju?: boolean;
   all?: boolean; // 확정 안 된 문항도
+  /** 2026-10-01 범위 고르기: 단원표 과목(lib/curriculum/units.ts 키) */
+  course?: string;
+  /** 고른 중단원 id(없으면 그 범위 전부) */
+  units?: string[];
 };
 
 export const DIFFS = ["하", "중하", "중", "중상", "상"];
@@ -62,6 +67,8 @@ export function parseFilter(sp: Record<string, string | string[] | undefined>): 
     school: one("school")?.slice(0, 60),
     jeju: one("jeju") === "1" ? true : undefined,
     all: one("all") === "1" ? true : undefined,
+    course: isCourseKey(one("course") ?? "") ? one("course") : undefined,
+    units: one("u") ? cleanUnits(one("u")) ?? undefined : undefined,
   };
 }
 
@@ -76,6 +83,7 @@ export function matches(it: BankItem, f: BankFilter): boolean {
   if (f.type && it.type !== f.type) return false;
   if (f.school && !squash(it.examName).includes(squash(f.school))) return false;
   if (f.jeju && !it.isJeju) return false;
+  if ((f.course || f.units) && !inUnitScope(it, { course: f.course, units: f.units ?? null })) return false;
   if (f.q) {
     const q = squash(f.q);
     const hay = squash(it.statement) + "|" + squash(it.unit) + "|" + squash(it.area) + "|" + squash(it.examName);
