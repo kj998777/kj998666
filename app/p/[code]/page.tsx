@@ -24,6 +24,7 @@ export default async function PlacementSubmitPage({ params }: { params: { code: 
       examName={test.title || "입학테스트"}
       classes={[]}
       endpoint={`/api/placement-submit/${encodeURIComponent(test.code)}`}
+      promo={test.owner_kind === "staff"}
       items={details.map((d, i) => ({ item_label: String(i + 1), type: d.type === "객관식" ? "객관식" : "주관식" }))}
     />
   );
