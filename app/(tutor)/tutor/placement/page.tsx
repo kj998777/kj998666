@@ -3,7 +3,7 @@ import { requireTutor } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
 import { loadPool } from "@/lib/placement/server";
 import { listVisibleTests } from "@/lib/placement/list";
-import { scopeOptions, TUTOR_PLACEMENT_COST } from "@/lib/placement/pick";
+import { scopeTree, TUTOR_PLACEMENT_COST } from "@/lib/placement/pick";
 import PlacementBuilder from "@/app/_components/placement/PlacementBuilder";
 import { PlacementList } from "@/app/_components/placement/PlacementViews";
 
@@ -27,14 +27,14 @@ export default async function TutorPlacementPage() {
         </Link>
         <h1 className="text-lg font-semibold mt-1">입학테스트</h1>
         <p className="text-sm text-slate-500">
-          새로 맡은 학생의 실력을 보는 테스트입니다. 학년·과목을 고르면 기출 스토어 시험의 문항에서 쉬운 문항부터 어려운 문항까지 고르게 뽑아 줍니다.
-          만들면(<b>{TUTOR_PLACEMENT_COST}P</b>) 시험지(맨 뒤 답 제출 QR)·정답지를 받을 수 있고, 학생이 QR로 답을 내면 바로 채점돼 <b>진단 보고서</b>
+          새로 맡은 학생의 실력을 보는 테스트입니다. 학교급·학년·과목과 출제할 단원(대단원·중단원)을 고르면 기출 스토어 시험의 문항에서 쉬운 문항부터 어려운 문항까지 고르게 뽑아 줍니다.
+          만들면(<b>{TUTOR_PLACEMENT_COST}P</b>) 시험지(앞 표지, 맨 뒤 답 제출 QR)·정답지를 받을 수 있고, 학생이 QR로 답을 내면 바로 채점돼 <b>진단 보고서</b>
           (단원·난이도별 결과, 추천 수업 단계)가 나옵니다. 만든 테스트는 몇 번이든 다시 받을 수 있어요.
         </p>
       </div>
       <PlacementList tests={tests} counts={counts} base="/tutor/placement" />
       <PlacementBuilder
-        options={scopeOptions(pool)}
+        tree={scopeTree(pool)}
         kind="tutor"
         cost={TUTOR_PLACEMENT_COST}
         balance={Number((stats as any)?.points_balance ?? 0)}

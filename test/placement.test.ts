@@ -1,7 +1,7 @@
 // 입학테스트 문항 고르기·배점·진단(lib/placement/pick.ts) — npx tsx test/placement.test.ts
 import assert from "node:assert/strict";
 import type { BankItem } from "../lib/bank/search";
-import { diagnose, pickPlacement, pointsFor, replaceItem, scopeOptions, scopePool, subjectOf, targetCounts } from "../lib/placement/pick";
+import { diagnose, pickPlacement, pointsFor, replaceItem, scopePool, scopeTree, subjectOf, targetCounts } from "../lib/placement/pick";
 
 let n = 0;
 function check(name: string, fn: () => void) {
@@ -100,12 +100,15 @@ check("범위: 정답 없는·확정 안 된·다른 학년 문항은 빠진다"
     item({ id: "b", correctAnswers: "" }),
     item({ id: "c", confirmed: false }),
     item({ id: "d", grade: 2 }),
-    item({ id: "e", examName: "2025년 2학기 공통수학2 중간" }),
+    item({ id: "e", examName: "2025년 2학기 공통수학2 중간", area: "원의 방정식" }),
   ];
-  assert.deepEqual(scopePool(p, { level: "고", grade: 1, subject: "공통수학1" }).map((x) => x.id), ["a"]);
-  assert.deepEqual(scopePool(p, { level: "고", grade: 1, subject: "" }).map((x) => x.id), ["a", "e"]);
-  const opts = scopeOptions(p);
-  assert.deepEqual(opts.map((o) => `${o.level}${o.grade}:${o.n}`), ["고1:2", "고2:1"]);
+  assert.deepEqual(scopePool(p, { level: "고", grade: 1, course: "c1", units: null }).map((x) => x.id), ["a"]);
+  assert.deepEqual(scopePool(p, { level: "고", grade: 1, course: "", units: null }).map((x) => x.id), ["a", "e"]);
+  assert.deepEqual(scopePool(p, { level: "고", grade: 1, course: "", units: ["c2.1.3"] }).map((x) => x.id), ["e"]);
+  assert.deepEqual(scopePool(p, { level: "고", grade: 1, course: "c2", units: [] }).map((x) => x.id), []);
+  const tree = scopeTree(p);
+  assert.deepEqual(tree.map((o) => `${o.level}${o.grade}:${o.n}`), ["고1:2", "고2:1"]);
+  assert.deepEqual(tree[0].courses.map((c) => `${c.key}:${c.n}`), ["c1:1", "c2:1"]);
 });
 
 check("배점: 합 100, 나머지는 뒤쪽 문항에", () => {

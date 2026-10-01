@@ -9,6 +9,7 @@ export default function WsBuilder({ id, defaultTitle }: { id: string; defaultTit
   const [title, setTitle] = useState(defaultTitle);
   const [subtitle, setSubtitle] = useState("");
   const [showSource, setShowSource] = useState(false);
+  const [cover, setCover] = useState(true); // 2026-10-01: 앞뒤 표지(메딕수학 표지 + 뒤 로고)
   const [perCol, setPerCol] = useState<2 | 3>(3);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -33,6 +34,7 @@ export default function WsBuilder({ id, defaultTitle }: { id: string; defaultTit
         showSource,
         perCol,
         pdfUrlOf: (it: BankDetail) => `/tutor/worksheet/${id}/page/${it.id}`,
+        cover: cover ? ("worksheet" as const) : undefined,
       };
       const safe = opts.title.replace(/[\\/:*?"<>|\s]+/g, "_");
       if (kind === "sheet") {
@@ -58,6 +60,10 @@ export default function WsBuilder({ id, defaultTitle }: { id: string; defaultTit
     <div className="card space-y-3 text-sm">
       <input className="input" value={title} maxLength={60} onChange={(e) => setTitle(e.target.value)} placeholder="시험지 제목" aria-label="시험지 제목" />
       <input className="input" value={subtitle} maxLength={80} onChange={(e) => setSubtitle(e.target.value)} placeholder="부제(예: 김OO 학생 · 이차함수 복습)" aria-label="부제" />
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={cover} onChange={(e) => setCover(e.target.checked)} />
+        앞뒤 표지 붙이기(메딕수학 표지·뒤 로고)
+      </label>
       <label className="flex items-center gap-2">
         <input type="checkbox" checked={showSource} onChange={(e) => setShowSource(e.target.checked)} />
         문항마다 출처(학교·번호·단원) 적기

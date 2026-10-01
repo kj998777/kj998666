@@ -119,8 +119,14 @@ function coverCircle(g: SKRSContext2D, x: number, y: number, r: number): void {
   g.stroke();
 }
 
+/**
+ * 2026-10-01: 입학테스트·문항 은행(맞춤) 시험지에도 같은 표지를 붙인다(원장님 요청). 큰 제목·옆 상자 글과
+ * "마지막 쪽 QR로 제출" 안내 줄만 바꿀 수 있게 — 아무것도 안 넘기면 기출 다운로드 표지 그대로.
+ */
+export type CoverStyle = { title?: string; badge?: string; qr?: boolean };
+
 /** 표지: 시험지 맨 앞에 붙는 표지 그림(PNG). 원본 coverCanvas(name, pw, ph)와 좌표까지 동일. */
-export async function renderCoverPng(name: string, pw: number, ph: number): Promise<Buffer> {
+export async function renderCoverPng(name: string, pw: number, ph: number, style: CoverStyle = {}): Promise<Buffer> {
   await ensureFonts();
   const img = await loadLogo();
   const S = 2.5,
@@ -152,10 +158,10 @@ export async function renderCoverPng(name: string, pw: number, ph: number): Prom
 
   g.textAlign = "left";
   g.font = "bold 58px " + QFONT;
-  const title = "내신 기출 문제지";
+  const title = style.title || "내신 기출 문제지";
   const tw = coverSpacedW(g, title, 3);
   g.font = "bold 25px " + QFONT;
-  const bt = "내신 대비";
+  const bt = style.badge || "내신 대비";
   const bw = g.measureText(bt).width + 44;
   const gap = 28;
   const x0 = (CW0 - (tw + gap + bw)) / 2;
@@ -195,7 +201,17 @@ export async function renderCoverPng(name: string, pw: number, ph: number): Prom
     tx = M + pad + 24,
     twid = IW - pad * 2 - 24;
   type Item = { s?: Seg[]; tel?: boolean; gap?: number };
-  const items: Item[] = [
+  const noQr = style.qr === false;
+  const items: Item[] = noQr
+    ? [
+        { s: [["문제지 첫 장의 해당란에 반과 이름을 정확히 쓰시오.", 0]] },
+        { s: [["풀이 과정은 문제 아래 빈칸에 알아보기 쉽게 쓰시오.", 0]] },
+        { s: [["다 풀면 정답·해설지로 채점하고, 틀린 문항은 풀이를 보며 다시 푸시오.", 0]] },
+        { s: [["수학 학습 상담·문의는 아래 번호로 연락하시오.", 0]] },
+        { tel: true },
+        { s: [["메딕수학은 내신 기출 분석과 꼼꼼한 문항별 해설로 여러분의 성적 향상을 돕습니다.", 0]], gap: 5 },
+      ]
+    : [
     { s: [["문제지 첫 장의 해당란에 반과 이름을 정확히 쓰시오.", 0]] },
     {
       s: [

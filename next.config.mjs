@@ -37,6 +37,8 @@ const nextConfig = {
     "/exams/[code]/pdf": ["./assets/fonts/**", "./assets/branding/**"],
     // #4: 과외선생님 다운로드도 같은 표지·QR 쪽을 그린다.
     "/tutor/store/[code]/download": ["./assets/fonts/**", "./assets/branding/**"],
+    // 2026-10-01: 입학테스트·문항 은행 시험지 앞 표지·뒤 로고(app/api/cover)
+    "/api/cover": ["./assets/fonts/**", "./assets/branding/**"],
   },
 };
 

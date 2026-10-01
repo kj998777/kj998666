@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { currentMaker, loadPool, toPreview, type PreviewItem } from "@/lib/placement/server";
+import { cleanUnits, isCourseKey } from "@/lib/curriculum/units";
 import { PLACEMENT_MAX_N, PLACEMENT_MIN_N, pickPlacement, replaceItem, scopeLabel, scopePool, type Scope } from "@/lib/placement/pick";
 
 // 입학테스트(0047) 서버 액션 — 학원(편집자·관리자)·과외선생님이 같이 쓴다. 누가 부르는지는 로그인 역할로 정하고,
@@ -12,7 +13,9 @@ function cleanScope(s: any): Scope | null {
   const level = s?.level === "중" || s?.level === "고" ? s.level : null;
   const grade = Number(s?.grade);
   if (!level || !Number.isInteger(grade) || grade < 1 || grade > 3) return null;
-  return { level, grade, subject: String(s?.subject ?? "").slice(0, 20) };
+  // 2026-10-01: 과목(단원표 키) + 고른 중단원(null = 전부)
+  const course = isCourseKey(String(s?.course ?? "")) ? String(s.course) : "";
+  return { level, grade, course, units: s?.units == null ? null : cleanUnits(s.units) };
 }
 
 export async function previewPlacement(
@@ -24,6 +27,7 @@ export async function previewPlacement(
   if (!m) return { ok: false, msg: "편집자·관리자·과외선생님만 만들 수 있습니다." };
   const sc = cleanScope(scope);
   if (!sc) return { ok: false, msg: "학년을 골라 주세요." };
+  if (sc.units && !sc.units.length) return { ok: false, msg: "출제할 단원을 하나 이상 골라 주세요." };
   const pool = scopePool(await loadPool(m), sc);
   if (pool.length < PLACEMENT_MIN_N) return { ok: false, msg: `${scopeLabel(sc)}에는 고를 수 있는 문항이 ${pool.length}개뿐이라 만들 수 없습니다.` };
   const want = Math.max(PLACEMENT_MIN_N, Math.min(PLACEMENT_MAX_N, Math.round(Number(n)) || 10));

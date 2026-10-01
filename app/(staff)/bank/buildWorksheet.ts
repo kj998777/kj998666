@@ -22,7 +22,25 @@ export type WsOptions = {
   qr?: { url: string; heading: string; lines: string[] };
   /** 첫 쪽 머리 오른쪽 글(기본: "N문항 · 이름 ____") */
   headRight?: string;
+  /**
+   * 2026-10-01 원장님: 앞뒤 표지 — 기출 다운로드와 같은 메딕수학 표지(+ 뒷면 백지)를 맨 앞에, 맨 뒤에는 학원 로고 쪽
+   * (입학테스트는 답 제출 QR 쪽에 로고). 양면 인쇄를 위해 전체 쪽 수를 짝수로 맞춘다. 표지 그림은 /api/cover가 그린다.
+   */
+  cover?: "placement" | "worksheet";
 };
+
+const A4W = 595.28;
+const A4H = 841.89;
+
+async function fetchBytes(url: string): Promise<Uint8Array | null> {
+  try {
+    const r = await fetch(url, { credentials: "same-origin" });
+    if (!r.ok) return null;
+    return new Uint8Array(await r.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
 
 type Progress = (m: string) => void;
 
@@ -389,6 +407,20 @@ export async function buildWorksheetPdf(
   const nPg = Math.max(1, Math.ceil(cols.length / 2));
 
   const out = await PDFDocument.create();
+  let logo: Uint8Array | null = null;
+  if (opts.cover) {
+    tick("표지를 그리는 중…");
+    const [front, lg] = await Promise.all([
+      fetchBytes(`/api/cover?kind=front&type=${opts.cover}&title=${encodeURIComponent(opts.title || "")}`),
+      fetchBytes("/api/cover?kind=logo"),
+    ]);
+    logo = lg;
+    if (front) {
+      const img = await out.embedPng(front);
+      out.addPage([A4W, A4H]).drawImage(img, { x: 0, y: 0, width: A4W, height: A4H });
+      out.addPage([A4W, A4H]); // 표지 뒷면 백지(양면 인쇄)
+    }
+  }
   for (let k = 0; k < nPg; k++) {
     tick(`쪽을 그리는 중… ${k + 1}/${nPg}`);
     const cv = document.createElement("canvas");
@@ -470,15 +502,23 @@ export async function buildWorksheetPdf(
     const page = out.addPage([595.28, 841.89]);
     page.drawImage(jpg, { x: 0, y: 0, width: 595.28, height: 841.89 });
   }
+  // 맨 뒤 쪽(입학테스트 QR 쪽 또는 학원 로고 쪽)이 짝수 번째(마지막)가 되게 — 기출 다운로드(lib/ai/pdfStamp.ts)와 같은 방식
+  const backLogo = !!opts.cover && !!logo;
+  if (opts.cover && (opts.qr || backLogo) && out.getPageCount() % 2 === 0) out.addPage([A4W, A4H]);
   if (opts.qr) {
     tick("답 제출 QR 쪽을 그리는 중…");
-    await addQrPage(out, opts.qr);
+    await addQrPage(out, opts.qr, opts.cover ? logo : null);
+  } else if (backLogo) {
+    const img = await out.embedPng(logo!);
+    const lw = A4W * 0.7;
+    const lh = (lw * img.height) / img.width;
+    out.addPage([A4W, A4H]).drawImage(img, { x: (A4W - lw) / 2, y: (A4H - lh) / 2, width: lw, height: lh });
   }
-  return { bytes: await out.save(), pages: nPg + (opts.qr ? 1 : 0), textFallback };
+  return { bytes: await out.save(), pages: out.getPageCount(), textFallback };
 }
 
 /** 입학테스트: 학생이 휴대폰으로 찍어 답을 내는 QR 쪽 */
-async function addQrPage(out: PDFDocument, qr: { url: string; heading: string; lines: string[] }): Promise<void> {
+async function addQrPage(out: PDFDocument, qr: { url: string; heading: string; lines: string[] }, logo: Uint8Array | null = null): Promise<void> {
   const QR: any = (await import("qrcode")).default ?? (await import("qrcode"));
   const dataUrl: string = await QR.toDataURL(qr.url, { width: 720, margin: 2 });
   const img = new Image();
@@ -506,11 +546,36 @@ async function addQrPage(out: PDFDocument, qr: { url: string; heading: string; l
   ctx.font = `22px ${FONT}`;
   ctx.fillStyle = "#6b7280";
   ctx.fillText(qr.url, PW / 2, top + size + 60);
-  ctx.fillText("메딕수학", PW / 2, PH - 60);
+  const logoImg = logo ? await pngImage(logo) : null;
+  if (logoImg) {
+    // 뒤 표지: 맨 아래 가운데 학원 로고
+    const lw = 460;
+    const lh = (lw * logoImg.height) / logoImg.width;
+    ctx.drawImage(logoImg, (PW - lw) / 2, PH - 70 - lh, lw, lh);
+  } else {
+    ctx.fillText("메딕수학", PW / 2, PH - 60);
+  }
   const blob: Blob = await new Promise((res, rej) => cv.toBlob((b) => (b ? res(b) : rej(new Error("쪽 그림을 만들지 못했습니다."))), "image/jpeg", 0.92));
   const jpg = await out.embedJpg(new Uint8Array(await blob.arrayBuffer()));
   const page = out.addPage([595.28, 841.89]);
   page.drawImage(jpg, { x: 0, y: 0, width: 595.28, height: 841.89 });
+}
+
+async function pngImage(bytes: Uint8Array): Promise<HTMLImageElement | null> {
+  const url = URL.createObjectURL(new Blob([bytes as any], { type: "image/png" }));
+  try {
+    const img = new Image();
+    await new Promise<void>((res, rej) => {
+      img.onload = () => res();
+      img.onerror = () => rej(new Error("로고"));
+      img.src = url;
+    });
+    return img;
+  } catch {
+    return null;
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }
 
 function keyText(katex: any, it: BankDetail): string {

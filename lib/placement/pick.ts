@@ -2,6 +2,7 @@
 // 문항 은행(검토 끝난 기출)에서 학년·과목 범위를 고르면 쉬운 문항부터 어려운 문항까지 고르게, 단원이 겹치지 않게 골라 준다.
 // 화면(서버)·테스트가 같이 쓰는 순수 계산만 둔다(test/placement.test.ts).
 import { DIFFS, type BankItem } from "@/lib/bank/search";
+import { buildTree, classify, inUnitScope, scopeText, type TreeGrade } from "@/lib/curriculum/units";
 
 export const PLACEMENT_DEFAULT_N = 10;
 export const PLACEMENT_MIN_N = 5;
@@ -9,7 +10,9 @@ export const PLACEMENT_MAX_N = 20;
 /** 과외선생님이 입학테스트 1개를 만들 때 드는 포인트(DB 함수 tutor_create_placement와 같은 값, 0047) */
 export const TUTOR_PLACEMENT_COST = 2;
 
-export type Scope = { level: "중" | "고"; grade: number; subject: string /* "" = 그 학년 전체 */ };
+// 2026-10-01 원장님: 범위를 "학교급 → 학년 → 과목 → 단원(대단원 안에 중단원)" 체크로 고른다(lib/curriculum/units.ts).
+// course = 단원표 과목 키(""면 그 학년 전 과목), units = 고른 중단원 id(null이면 그 범위 전부).
+export type Scope = { level: "중" | "고"; grade: number; course: string; units: string[] | null };
 
 // 시험 이름에서 과목 이름을 읽는다(없으면 ""). 공통수학 → 수학Ⅱ → 수학Ⅰ 순서로 봐야 "수학 II"가 "수학 I"로 읽히지 않는다.
 const SUBJECTS: [RegExp, string][] = [
@@ -34,7 +37,7 @@ export function subjectOf(examName: string): string {
 }
 
 export function scopeLabel(s: Scope): string {
-  return `${s.level}${s.grade}${s.subject ? ` · ${s.subject}` : " 전 범위"}`;
+  return scopeText(s);
 }
 
 /** 입학테스트에 쓸 수 있는 문항: 정답 확정 + 정답 있음 + 객관식/주관식 */
@@ -44,31 +47,17 @@ export function usable(it: BankItem): boolean {
 
 export function scopePool(items: BankItem[], s: Scope): BankItem[] {
   return items.filter(
-    (it) => usable(it) && it.schoolLevel === s.level && Number(it.grade) === s.grade && (!s.subject || subjectOf(it.examName) === s.subject)
+    (it) =>
+      usable(it) &&
+      it.schoolLevel === s.level &&
+      Number(it.grade) === s.grade &&
+      inUnitScope(it, { course: s.course || undefined, units: s.units })
   );
 }
 
-export type ScopeOption = { level: "중" | "고"; grade: number; n: number; subjects: { name: string; n: number }[] };
-
-/** 고를 수 있는 범위(문항이 있는 학년·과목만) */
-export function scopeOptions(items: BankItem[]): ScopeOption[] {
-  const m = new Map<string, ScopeOption>();
-  for (const it of items) {
-    if (!usable(it) || (it.schoolLevel !== "중" && it.schoolLevel !== "고") || !it.grade) continue;
-    const k = `${it.schoolLevel}${it.grade}`;
-    const o = m.get(k) ?? { level: it.schoolLevel as "중" | "고", grade: Number(it.grade), n: 0, subjects: [] };
-    o.n++;
-    const sub = subjectOf(it.examName);
-    if (sub) {
-      const e = o.subjects.find((x) => x.name === sub);
-      if (e) e.n++;
-      else o.subjects.push({ name: sub, n: 1 });
-    }
-    m.set(k, o);
-  }
-  return Array.from(m.values())
-    .map((o) => ({ ...o, subjects: o.subjects.sort((a, b) => b.n - a.n) }))
-    .sort((a, b) => (a.level === b.level ? a.grade - b.grade : a.level === "중" ? -1 : 1));
+/** 고를 수 있는 범위 나무(문항이 있는 학년 → 과목 → 대단원 → 중단원, 개수 포함) */
+export function scopeTree(items: BankItem[]): TreeGrade[] {
+  return buildTree(items.filter(usable));
 }
 
 /** 난이도별 목표 문항 수 — 하 20% · 중하 20% · 중 30% · 중상 20% · 상 10%(10문항이면 2·2·3·2·1) */
@@ -105,20 +94,24 @@ const dIdx = (d: string) => {
   return i < 0 ? 2 : i;
 };
 const unitKey = (it: BankItem) => String(it.unit || it.area || "").replace(/\s+/g, "");
+// 2026-10-01: 단원이 겹치지 않게 — 단원표 중단원(lib/curriculum/units.ts)이 같은지 먼저, 그다음 적힌 단원 글이 같은지
+const midKey = (it: BankItem) => classify(it)?.id ?? `?${unitKey(it)}`;
 
 /** 이미 고른 문항과 단원·시험이 겹치지 않을수록, 원래 자리를 찾을 수 있을수록 먼저 */
 function bestOf(cands: BankItem[], chosen: BankItem[], r: () => number): BankItem | null {
   if (!cands.length) return null;
   const units = new Map<string, number>();
+  const mids = new Map<string, number>();
   const exams = new Map<string, number>();
   for (const c of chosen) {
     units.set(unitKey(c), (units.get(unitKey(c)) ?? 0) + 1);
+    mids.set(midKey(c), (mids.get(midKey(c)) ?? 0) + 1);
     exams.set(c.examId, (exams.get(c.examId) ?? 0) + 1);
   }
   let best: BankItem | null = null;
   let bestScore = Infinity;
   for (const it of cands) {
-    const s = (units.get(unitKey(it)) ?? 0) * 10 + (exams.get(it.examId) ?? 0) * 3 + (it.hasLocation ? 0 : 2) + r();
+    const s = (mids.get(midKey(it)) ?? 0) * 10 + (units.get(unitKey(it)) ?? 0) * 6 + (exams.get(it.examId) ?? 0) * 3 + (it.hasLocation ? 0 : 2) + r();
     if (s < bestScore) {
       bestScore = s;
       best = it;
