@@ -49,9 +49,28 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
+  // 2026-10-01: 과외선생님 친구 초대(0046) — /login?invite=코드 로 들어오면 회원가입 화면으로 바로 열고, 가입 기록에 코드를 남긴다
+  const [inviteCode, setInviteCode] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const inv = (params.get("invite") || "").trim().toUpperCase();
+    if (/^[A-Z0-9]{6}$/.test(inv)) {
+      setInviteCode(inv);
+      setMode("signup");
+      try {
+        sessionStorage.setItem("mc-invite", inv);
+      } catch {
+        /* 저장이 막힌 브라우저 */
+      }
+    } else {
+      try {
+        const saved = sessionStorage.getItem("mc-invite") || "";
+        if (/^[A-Z0-9]{6}$/.test(saved)) setInviteCode(saved);
+      } catch {
+        /* 무시 */
+      }
+    }
     const code = params.get("error");
     if (code) {
       setErr(CALLBACK_ERROR_MESSAGES[code] ?? "로그인 링크 처리 중 문제가 발생했습니다: " + code);
@@ -154,6 +173,7 @@ export default function LoginPage() {
           display_name: displayName.trim().slice(0, 30),
           cohort: cohortValue,
           department,
+          ...(inviteCode ? { invite_code: inviteCode } : {}),
           ...(needAgree ? { legal_consent_version: LEGAL.EFFECTIVE_DATE || LEGAL.VERSION, legal_consent_at: new Date().toISOString() } : {}),
         },
       },
@@ -184,7 +204,8 @@ export default function LoginPage() {
     mode === "login"
       ? "이메일과 비밀번호로 로그인하세요."
       : mode === "signup"
-        ? "이메일과 비밀번호로 계정을 만드세요.\n가입 후 관리자가 승인하면 사용할 수 있습니다."
+        ? "이메일과 비밀번호로 계정을 만드세요.\n가입 후 관리자가 승인하면 사용할 수 있습니다." +
+          (inviteCode ? `\n초대 코드 ${inviteCode}가 적용됩니다 — 승인 뒤 문항 3개를 제출하면 초대한 선생님과 함께 +3P를 받아요.` : "")
         : "가입할 때 쓴 이메일 주소를 입력하면 재설정 링크를 보내드립니다.";
 
   return (
