@@ -54,3 +54,6 @@ update exams set tutor_download_cost=3 where code='OPEN1';
 update exams set tutor_download_cost=4 where code='CLOSED1';
 insert into tutor_worksheets(tutor_id,title,item_ids,points_spent) values ('00000000-0000-0000-0000-000000000012','t2시험지',array['10000000-0000-0000-0000-00000000000c']::uuid[],1);
 insert into tutor_worksheet_items(tutor_id,item_explanation_id) values ('00000000-0000-0000-0000-000000000012','10000000-0000-0000-0000-00000000000c');
+-- 0046 친구 초대: tutor1의 초대 코드, tutor2는 tutor1 초대로 가입(보너스 아직)
+insert into tutor_invite_codes(tutor_id,code) values ('00000000-0000-0000-0000-000000000011','ABC234');
+insert into tutor_referrals(invitee_id,inviter_id,code) values ('00000000-0000-0000-0000-000000000012','00000000-0000-0000-0000-000000000011','ABC234');
