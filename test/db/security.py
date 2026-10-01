@@ -88,6 +88,8 @@ tutor_review_skips     0/0/0 0/0/0 0/0/0 0/0/0 0/0/0 0/0/0 0/0/0
 tutor_stats            0/0/0 2/0/0 0/0/0 0/0/0 1/0/0 1/0/0 0/0/0
 tutor_worksheet_items  x/x/x x/x/x x/x/x x/x/x x/x/x x/x/x x/x/x
 tutor_worksheets       x/x/x 1/x/x 0/x/x 0/x/x 0/x/x 1/x/x 0/x/x
+tutor_invite_codes     x/x/x 1/x/x 0/x/x 0/x/x 1/x/x 0/x/x 0/x/x
+tutor_referrals        x/x/x 1/x/x 0/x/x 0/x/x 1/x/x 0/x/x 0/x/x
 """
 
 
@@ -157,10 +159,17 @@ ATTACKS = [
     ("과외 받은 문항 기록 읽기", "tutor1", "select 1 from tutor_worksheet_items limit 1;", "deny"),
     ("과외 쉬운 문항 판단 직접 부르기", "tutor1", f"select public.tutor_prefers_easy({T1});", "deny"),
     ("과외 포인트 적립 직접 부르기", "tutor1", f"select public.award_review_points({T1}, 5, 'review_primary', null, '1');", "deny"),
+    ("비로그인 초대 코드", "anon", "select public.tutor_my_invite_code();", "deny"),
+    ("대기 초대 코드", "wait", "select public.tutor_my_invite_code();", "deny"),
+    ("과외 초대 기록 직접 넣기", "tutor2", "insert into tutor_referrals(invitee_id,inviter_id,code) values (auth.uid(),'00000000-0000-0000-0000-000000000011','ABC234');", "deny"),
+    ("과외 초대 코드 직접 바꾸기", "tutor1", "update tutor_invite_codes set code='ZZZ999' returning 1;", "deny"),
+    ("과외 남의 초대 코드 읽기", "tutor2", "select 1 from tutor_invite_codes where tutor_id='00000000-0000-0000-0000-000000000011';", "null"),
+    ("과외 가입 기록 함수 직접 부르기", "tutor1", "select public.record_tutor_referral();", "deny"),
     ("관리자 포인트 조정(정상)", "admin", f"select public.admin_adjust_tutor_points({T1}, 1, 'ok');", "ok"),
     ("과외 구매(정상, 이미 구매)", "tutor1", f"select public.purchase_exam_download({EA});", "ok"),
     ("과외 문항 배정(정상)", "tutor1", "select public.claim_next_review_item();", "ok"),
     ("과외 자기 등급(정상)", "tutor1", f"select public.tutor_trust_level({T1});", "ok"),
+    ("과외 초대 코드(정상)", "tutor1", "select public.tutor_my_invite_code();", "ok"),
     ("과외 맞춤 시험지(정상)", "tutor1", "select public.tutor_create_worksheet(array['10000000-0000-0000-0000-00000000000a','10000000-0000-0000-0000-00000000000c']::uuid[], '복습');", "ok"),
 ]
 
