@@ -7,10 +7,11 @@ import ResultRow from "@/app/(staff)/exams/[code]/results/ResultRow";
 import ReportPanel from "@/app/(staff)/exams/[code]/results/ReportPanel";
 import TutorExamTabs from "../TutorExamTabs";
 import CopyLink from "./CopyLink";
+import { guessSummary } from "@/lib/grading";
 
 export const dynamic = "force-dynamic";
 
-type PerItem = { item_label: string; given: string; correct: boolean; points: number }[];
+type PerItem = { item_label: string; given: string; correct: boolean; points: number; guessed?: boolean }[];
 
 // #109 → #4 (2026-09-28): 구매한 시험의 "제출 학생·보고서" 탭.
 //   - 원장님 결정으로, 과외선생님 본인 전용 링크(/s/코드?t=토큰)로 제출한 학생만 보인다(학원 학생 제출은
@@ -52,6 +53,10 @@ export default async function TutorExamResultsPage({ params }: { params: { code:
   const avg = submissions.length
     ? Math.round((submissions.reduce((s, r) => s + Number(r.total_score), 0) / submissions.length) * 10) / 10
     : 0;
+  const realAvg = submissions.length
+    ? Math.round((submissions.reduce((s, r) => s + guessSummary(r.per_item, Number(r.total_score)).realScore, 0) / submissions.length) * 10) / 10
+    : 0;
+  const anyGuess = submissions.some((r) => r.per_item.some((p) => p.guessed));
 
   return (
     <div className="space-y-4">
@@ -59,7 +64,7 @@ export default async function TutorExamResultsPage({ params }: { params: { code:
 
       <div className="card space-y-2">
         <p className="text-sm text-slate-600">
-          제출 {submissions.length}명 · 평균 {avg}점
+          제출 {submissions.length}명 · 평균 {avg}점{anyGuess ? ` · 실질 평균 ${realAvg}점` : ""}
         </p>
         <p className="text-sm text-slate-500">
           선생님 전용 링크(또는 다운로드한 PDF 뒷면 QR)로 제출한 학생만 여기에 보입니다.
@@ -81,7 +86,8 @@ export default async function TutorExamResultsPage({ params }: { params: { code:
               <tr className="text-left text-slate-500 border-b border-slate-200">
                 <th className="py-2 pr-2">반</th>
                 <th className="py-2 pr-2">이름</th>
-                <th className="py-2 pr-2">총점</th>
+                <th className="py-2 pr-2">점수</th>
+                <th className="py-2 pr-2" title="학생이 찍음으로 표시하고 맞힌 문항의 점수를 뺀 점수">실질 점수</th>
                 <th className="py-2 pr-2">제출 시각</th>
                 <th className="py-2 pr-2"></th>
               </tr>
