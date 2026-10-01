@@ -12,7 +12,22 @@ export const PROMO = {
   blogUrl: "https://blog.naver.com/yijean",
   phone: "064-702-3455",
   address: "제주시 중앙로 312",
+  /** 학원 로고(601×116, 메딕차트 머리글·로그인 화면과 같은 파일) */
+  logoSrc: "/academy-logo.png",
 } as const;
+
+// 2026-10-01 원장님: 배너에 학원 로고와 메딕차트 로고도 — 메딕차트 머리글처럼 "[+]메딕차트 | 메딕수학 로고".
+// PDF는 html2canvas로 그리므로 메딕차트 표시(.brand-mark의 ::before)를 인라인 스타일 글자로 다시 만든다(색 brand-700 #832f1d).
+export function promoLogosHtml(): string {
+  return (
+    `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">` +
+    `<span style="display:inline-flex;align-items:center;gap:6px;font-weight:700;color:#0f172a;font-size:15px">` +
+    `<span style="display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:4px;background:#832f1d;color:#fff;font-weight:800;font-size:13px;line-height:1">+</span>메딕차트</span>` +
+    `<span style="display:inline-block;width:1px;height:18px;background:#cbd5e1"></span>` +
+    `<img src="${PROMO.logoSrc}" alt="${PROMO.name}" style="height:24px;width:124px">` +
+    `</div>`
+  );
+}
 
 /** 주소를 화면에 보일 때(https:// 빼고) */
 export const shortUrl = (u: string) => u.replace(/^https?:\/\//, "").replace(/\/$/, "");
@@ -21,6 +36,7 @@ export const shortUrl = (u: string) => u.replace(/^https?:\/\//, "").replace(/\/
 export function promoReportHtml(): string {
   return (
     `<div class="rpt-box" style="margin-top:10px;border-color:#fecdd3;background:#fff1f2">` +
+    promoLogosHtml() +
     `<b style="color:#be123c">${PROMO.name}</b> — ${PROMO.headline}. ${PROMO.sub}<br>` +
     `<span class="rpt-small">홈페이지 ${shortUrl(PROMO.siteUrl)} · 블로그 ${shortUrl(PROMO.blogUrl)} · 상담 ${PROMO.phone} · ${PROMO.address}</span>` +
     `</div>`
