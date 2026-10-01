@@ -75,14 +75,14 @@ export default function CreateAiExamBatchForm() {
 
   // #2(2026-09-28): PDF 바이트는 이제 서버 액션이 아니라 브라우저가 Supabase Storage에 곧바로
   // 올린다(lib/supabase/uploadPdf.ts) — Vercel 서버리스 함수의 요청 본문 크기 제한(약 4.5MB, Next.js
-  // 설정으로는 못 늘림)을 우회해 20MB까지 지원하기 위함(예전에는 이 제한 때문에 4MB로 막혀 있었고,
+  // 설정으로는 못 늘림)을 우회해 50MB까지 지원하기 위함(예전에는 이 제한 때문에 4MB로 막혀 있었고,
   // 넘기면 응답이 undefined로 와서 화면이 "Application error"로 죽는 문제가 있었다 — 2026-09-28
   // 원장님 신고로 발견). 시험 행을 먼저 만들고(createExamRow) → PDF를 직접 올리고(uploadPdfDirect)
   // → 뒷정리(finalizeAiExamUpload) 세 단계로 나뉜다.
   async function submitRow(row: Row) {
     updateRow(row.key, { status: "올리는 중…", msg: undefined });
     if (pdfTooLarge(row.file)) {
-      updateRow(row.key, { status: "실패", msg: "PDF 용량이 너무 큽니다(20MB 이하로 줄여서 올려 주세요)." });
+      updateRow(row.key, { status: "실패", msg: "PDF 용량이 너무 큽니다(50MB 이하로 줄여서 올려 주세요)." });
       return;
     }
     const fd = readSharedFields();
@@ -181,7 +181,7 @@ export default function CreateAiExamBatchForm() {
       </div>
 
       <div>
-        <label className="label">시험지 PDF (여러 개 선택 가능, 파일당 최대 20MB)</label>
+        <label className="label">시험지 PDF (여러 개 선택 가능, 파일당 최대 50MB)</label>
         <PdfDropInput multiple disabled={running} onFiles={(files) => setRows(buildRows(files))} />
         <p className="text-xs text-slate-500 mt-1">
           파일마다 시험이 하나씩 따로 만들어집니다. 학교급·연도·학년·학기·구분은 선택한 파일 전체에 똑같이 적용되고, 코드·이름은 파일

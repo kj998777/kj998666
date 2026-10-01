@@ -17,7 +17,7 @@ import type { SchoolLevel } from "@/lib/supabase/types";
 //
 // #2(2026-09-28): PDF 원본 바이트는 이제 서버 액션이 아니라 브라우저가 Supabase Storage에 곧바로
 // 올린다(lib/supabase/uploadPdf.ts) — Vercel 서버리스 함수의 요청 본문 크기 제한(약 4.5MB, Next.js
-// 설정으로는 못 늘림)을 우회해 20MB까지 지원하기 위함. 그래서 아래 액션들은 더 이상 FormData로 PDF
+// 설정으로는 못 늘림)을 우회해 50MB까지 지원하기 위함. 그래서 아래 액션들은 더 이상 FormData로 PDF
 // 바이트를 직접 받지 않고, "이미 Storage에 올라온 파일"의 뒷정리(쪽수 세기·exam_pdf_meta 기록·AI
 // 자동 처리/디지털화 시작)만 한다 — 새 시험을 만드는 흐름은 createExamRow(행만 먼저 생성) →
 // (브라우저가 Storage에 직접 업로드) → finalizeAiExamUpload(뒷정리) 세 단계로 나뉜다.

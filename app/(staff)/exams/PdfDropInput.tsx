@@ -135,7 +135,7 @@ export default function PdfDropInput({
               <p className={"font-medium text-slate-700 " + (compact ? "text-sm" : "")}>
                 {over ? "여기에 놓으세요" : multiple ? "PDF 파일들을 여기로 끌어다 놓거나 눌러서 고르세요" : "PDF 파일을 여기로 끌어다 놓거나 눌러서 고르세요"}
               </p>
-              {!compact && <p className="text-xs text-slate-500">파일당 최대 20MB</p>}
+              {!compact && <p className="text-xs text-slate-500">파일당 최대 50MB</p>}
             </>
           ) : (
             <>

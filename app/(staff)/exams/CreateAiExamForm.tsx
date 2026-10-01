@@ -24,10 +24,10 @@ export default function CreateAiExamForm() {
         }
         // #2(2026-09-28): PDF 바이트는 서버 액션이 아니라 브라우저가 Supabase Storage에 곧바로
         // 올린다(lib/supabase/uploadPdf.ts) — Vercel 서버리스 함수의 요청 본문 크기 제한(약
-        // 4.5MB, Next.js 설정으로는 못 늘림)을 우회해 20MB까지 지원하기 위함(예전에는 이 제한
+        // 4.5MB, Next.js 설정으로는 못 늘림)을 우회해 50MB까지 지원하기 위함(예전에는 이 제한
         // 때문에 4MB로 막혀 있었다 — 2026-09-28 원장님 신고로 발견된 문제).
         if (pdfTooLarge(file)) {
-          setMsg("PDF 용량이 너무 큽니다(20MB 이하로 줄여서 올려 주세요).");
+          setMsg("PDF 용량이 너무 큽니다(50MB 이하로 줄여서 올려 주세요).");
           return;
         }
         const isScanned = formData.get("is_scanned") === "on";
@@ -115,7 +115,7 @@ export default function CreateAiExamForm() {
         <PdfDropInput name="pdf" required />
         <p className="text-xs text-slate-500 mt-1">
           AI가 문항을 읽어 정답·해설을 자동으로 만듭니다. 다 되면 검수 화면에서 확인 후 시험을 열면 됩니다.
-          (최대 20MB)
+          (최대 50MB)
         </p>
         <label className="flex items-center gap-1.5 text-sm mt-1">
           <input type="checkbox" name="is_scanned" />
