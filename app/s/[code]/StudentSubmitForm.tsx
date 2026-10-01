@@ -15,6 +15,7 @@ export default function StudentSubmitForm({
   classes,
   items,
   tutorToken = null,
+  endpoint = null,
 }: {
   code: string;
   examName: string;
@@ -22,8 +23,11 @@ export default function StudentSubmitForm({
   items: Item[];
   // #4: 과외선생님 전용 링크로 들어왔으면 반 선택 없이 바로 이름·답 입력
   tutorToken?: string | null;
+  // 2026-10-01 입학테스트(/p/코드): 반 선택 없이 이름·답만 받아 이 주소로 보낸다
+  endpoint?: string | null;
 }) {
-  const [step, setStep] = useState<"level" | "grade" | "class" | "form">(tutorToken ? "form" : "level");
+  const direct = !!tutorToken || !!endpoint;
+  const [step, setStep] = useState<"level" | "grade" | "class" | "form">(direct ? "form" : "level");
   const [level, setLevel] = useState<Level | null>(null);
   const [grade, setGrade] = useState<number | null>(null);
   const [cls, setCls] = useState<string | null>(null);
@@ -60,10 +64,12 @@ export default function StudentSubmitForm({
     setSubmitting(true);
     setResult(null);
     try {
-      const res = await fetch(`/api/submit/${encodeURIComponent(code)}`, {
+      const res = await fetch(endpoint ?? `/api/submit/${encodeURIComponent(code)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(tutorToken ? { t: tutorToken, name, answers, guessed } : { lv: level, grade, cls, name, answers, guessed }),
+        body: JSON.stringify(
+          endpoint ? { name, answers, guessed } : tutorToken ? { t: tutorToken, name, answers, guessed } : { lv: level, grade, cls, name, answers, guessed }
+        ),
       });
       const json = await res.json();
       setResult({ ok: !!json.ok, msg: json.msg ?? (json.ok ? "제출 완료" : "제출하지 못했습니다.") });
@@ -154,9 +160,9 @@ export default function StudentSubmitForm({
         </div>
       )}
 
-      {step === "form" && (tutorToken || (level && grade !== null && cls)) && (
+      {step === "form" && (direct || (level && grade !== null && cls)) && (
         <div className="space-y-4">
-          {!tutorToken && <BackBar onBack={() => setStep("class")} title={`${level}${grade} ${cls}`} />}
+          {!direct && <BackBar onBack={() => setStep("class")} title={`${level}${grade} ${cls}`} />}
 
           <div>
             <label className="label">이름</label>

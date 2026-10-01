@@ -57,3 +57,9 @@ insert into tutor_worksheet_items(tutor_id,item_explanation_id) values ('0000000
 -- 0046 친구 초대: tutor1의 초대 코드, tutor2는 tutor1 초대로 가입(보너스 아직)
 insert into tutor_invite_codes(tutor_id,code) values ('00000000-0000-0000-0000-000000000011','ABC234');
 insert into tutor_referrals(invitee_id,inviter_id,code) values ('00000000-0000-0000-0000-000000000012','00000000-0000-0000-0000-000000000011','ABC234');
+-- 0047 입학테스트: 편집자가 만든 학원 테스트 하나, tutor2가 만든 테스트 하나, 각 제출 하나
+insert into placement_tests(id,code,owner_id,owner_kind,title,item_ids,points) values
+ ('80000000-0000-0000-0000-000000000001','PAAAAA1','00000000-0000-0000-0000-0000000000e1','staff','학원 입학',array['10000000-0000-0000-0000-00000000000a']::uuid[],array[100]),
+ ('80000000-0000-0000-0000-000000000002','PBBBBB2','00000000-0000-0000-0000-000000000012','tutor','t2 입학',array['10000000-0000-0000-0000-00000000000c']::uuid[],array[100]);
+insert into placement_submissions(test_id,student_name,per_item,total_score) values
+ ('80000000-0000-0000-0000-000000000001','새학생','[]',100),('80000000-0000-0000-0000-000000000002','과외학생','[]',0);

@@ -48,6 +48,10 @@ const TABLES = [
   "student_keys", // 0039 학생 합치기·숨기기·상담 메모
   "tutor_worksheets", // 0042 과외선생님 맞춤 시험지
   "tutor_worksheet_items", // 0042 맞춤 시험지로 받은 문항(정답 아는 문항 배정에서 뺌)
+  "tutor_invite_codes", // 0046 친구 초대 코드
+  "tutor_referrals", // 0046 누가 누구를 초대했는지
+  "placement_tests", // 0047 입학테스트
+  "placement_submissions", // 0047 입학테스트 학생 제출
 ];
 
 // id 열이 없는 표의 기본키(마이그레이션 기준)
@@ -61,6 +65,8 @@ const KEY_COLS: Record<string, string[]> = {
   digitize_jobs: ["exam_id"],
   item_locate_jobs: ["exam_id"],
   tutor_worksheet_items: ["tutor_id", "item_explanation_id"],
+  tutor_invite_codes: ["tutor_id"],
+  tutor_referrals: ["invitee_id"],
   student_numbers: ["user_id"],
   student_keys: ["key"],
 };

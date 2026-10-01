@@ -18,6 +18,10 @@ export type WsOptions = {
   perCol: 2 | 3;
   /** 문항 그림을 오릴 PDF 주소(기본: 직원용 원본). 과외선생님 맞춤 시험지는 그 문항이 있는 쪽 하나만 주는 주소를 쓴다 */
   pdfUrlOf?: (it: BankDetail) => string;
+  /** 2026-10-01 입학테스트: 맨 뒤에 답 제출 QR 쪽을 붙인다 */
+  qr?: { url: string; heading: string; lines: string[] };
+  /** 첫 쪽 머리 오른쪽 글(기본: "N문항 · 이름 ____") */
+  headRight?: string;
 };
 
 type Progress = (m: string) => void;
@@ -412,7 +416,7 @@ export async function buildWorksheetPdf(
       ctx.textAlign = "right";
       ctx.font = `20px ${FONT}`;
       ctx.fillStyle = "#4b5563";
-      ctx.fillText(`${items.length}문항 · 이름 ____________`, PW - MX, 210);
+      ctx.fillText(opts.headRight || `${items.length}문항 · 이름 ____________`, PW - MX, 210);
       ctx.textAlign = "left";
       ctx.fillText("메딕수학", MX, 210);
     } else {
@@ -466,7 +470,47 @@ export async function buildWorksheetPdf(
     const page = out.addPage([595.28, 841.89]);
     page.drawImage(jpg, { x: 0, y: 0, width: 595.28, height: 841.89 });
   }
-  return { bytes: await out.save(), pages: nPg, textFallback };
+  if (opts.qr) {
+    tick("답 제출 QR 쪽을 그리는 중…");
+    await addQrPage(out, opts.qr);
+  }
+  return { bytes: await out.save(), pages: nPg + (opts.qr ? 1 : 0), textFallback };
+}
+
+/** 입학테스트: 학생이 휴대폰으로 찍어 답을 내는 QR 쪽 */
+async function addQrPage(out: PDFDocument, qr: { url: string; heading: string; lines: string[] }): Promise<void> {
+  const QR: any = (await import("qrcode")).default ?? (await import("qrcode"));
+  const dataUrl: string = await QR.toDataURL(qr.url, { width: 720, margin: 2 });
+  const img = new Image();
+  await new Promise<void>((res, rej) => {
+    img.onload = () => res();
+    img.onerror = () => rej(new Error("QR 그림을 만들지 못했습니다."));
+    img.src = dataUrl;
+  });
+  const cv = document.createElement("canvas");
+  cv.width = PW;
+  cv.height = PH;
+  const ctx = cv.getContext("2d") as CanvasRenderingContext2D;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, PW, PH);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#111827";
+  ctx.font = `bold 44px ${FONT}`;
+  ctx.fillText(qr.heading, PW / 2, 200);
+  ctx.font = `26px ${FONT}`;
+  ctx.fillStyle = "#374151";
+  qr.lines.forEach((l, i) => ctx.fillText(l, PW / 2, 270 + i * 44));
+  const size = 620;
+  const top = 270 + qr.lines.length * 44 + 40;
+  ctx.drawImage(img, (PW - size) / 2, top, size, size);
+  ctx.font = `22px ${FONT}`;
+  ctx.fillStyle = "#6b7280";
+  ctx.fillText(qr.url, PW / 2, top + size + 60);
+  ctx.fillText("메딕수학", PW / 2, PH - 60);
+  const blob: Blob = await new Promise((res, rej) => cv.toBlob((b) => (b ? res(b) : rej(new Error("쪽 그림을 만들지 못했습니다."))), "image/jpeg", 0.92));
+  const jpg = await out.embedJpg(new Uint8Array(await blob.arrayBuffer()));
+  const page = out.addPage([595.28, 841.89]);
+  page.drawImage(jpg, { x: 0, y: 0, width: 595.28, height: 841.89 });
 }
 
 function keyText(katex: any, it: BankDetail): string {

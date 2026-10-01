@@ -90,6 +90,8 @@ tutor_worksheet_items  x/x/x x/x/x x/x/x x/x/x x/x/x x/x/x x/x/x
 tutor_worksheets       x/x/x 1/x/x 0/x/x 0/x/x 0/x/x 1/x/x 0/x/x
 tutor_invite_codes     x/x/x 1/x/x 0/x/x 0/x/x 1/x/x 0/x/x 0/x/x
 tutor_referrals        x/x/x 1/x/x 0/x/x 0/x/x 1/x/x 0/x/x 0/x/x
+placement_tests        x/x/x 2/x/x 1/x/x 1/x/x 0/x/x 1/x/x 0/x/x
+placement_submissions  x/x/x 2/x/x 1/x/x 1/x/x 0/x/x 1/x/x 0/x/x
 """
 
 
@@ -165,6 +167,21 @@ ATTACKS = [
     ("과외 초대 코드 직접 바꾸기", "tutor1", "update tutor_invite_codes set code='ZZZ999' returning 1;", "deny"),
     ("과외 남의 초대 코드 읽기", "tutor2", "select 1 from tutor_invite_codes where tutor_id='00000000-0000-0000-0000-000000000011';", "null"),
     ("과외 가입 기록 함수 직접 부르기", "tutor1", "select public.record_tutor_referral();", "deny"),
+    ("비로그인 입학테스트 만들기", "anon", "select public.create_placement_test(array['10000000-0000-0000-0000-00000000000a']::uuid[], 'x', 'x');", "deny"),
+    ("대기 입학테스트 만들기", "wait", "select public.create_placement_test(array['10000000-0000-0000-0000-00000000000a']::uuid[], 'x', 'x');", "deny"),
+    ("뷰어 입학테스트 만들기", "viewer", "select public.create_placement_test(array['10000000-0000-0000-0000-00000000000a']::uuid[], 'x', 'x');", "deny"),
+    ("과외 검토 중 문항으로 입학테스트", "tutor1", "select public.create_placement_test(array['10000000-0000-0000-0000-00000000000b']::uuid[], 'x', 'x');", "deny"),
+    ("편집자 확정 안 된 문항으로 입학테스트", "editor", "select public.create_placement_test(array['10000000-0000-0000-0000-00000000000b']::uuid[], 'x', 'x');", "deny"),
+    ("과외 입학테스트 직접 넣기", "tutor1", "insert into placement_tests(code,owner_id,owner_kind,item_ids,points) values ('PZZZZZ9',auth.uid(),'staff',array['10000000-0000-0000-0000-00000000000b']::uuid[],array[100]);", "deny"),
+    ("과외 제출 직접 넣기", "tutor2", "insert into placement_submissions(test_id,student_name,total_score) values ('80000000-0000-0000-0000-000000000002','가짜',100);", "deny"),
+    ("과외 제출 점수 고치기", "tutor2", "update placement_submissions set total_score=100 returning 1;", "deny"),
+    ("과외 남의 입학테스트 읽기", "tutor1", "select 1 from placement_tests where id='80000000-0000-0000-0000-000000000002';", "null"),
+    ("과외 학원 입학테스트 읽기", "tutor2", "select 1 from placement_tests where owner_kind='staff';", "null"),
+    ("과외 남의 입학테스트 닫기", "tutor1", "select public.set_placement_open('80000000-0000-0000-0000-000000000002', false);", "deny"),
+    ("비로그인 입학테스트 제출 읽기", "anon", "select 1 from placement_submissions limit 1;", "deny"),
+    ("편집자 입학테스트(정상)", "editor", "select public.create_placement_test(array['10000000-0000-0000-0000-00000000000a','10000000-0000-0000-0000-00000000000c']::uuid[], '입학', '고1');", "ok"),
+    ("과외 입학테스트(정상, 2P)", "tutor1", "select public.create_placement_test(array['10000000-0000-0000-0000-00000000000c']::uuid[], '입학', '고1');", "ok"),
+    ("과외 자기 입학테스트 열기(정상)", "tutor2", "select public.set_placement_open('80000000-0000-0000-0000-000000000002', true);", "ok"),
     ("관리자 포인트 조정(정상)", "admin", f"select public.admin_adjust_tutor_points({T1}, 1, 'ok');", "ok"),
     ("과외 구매(정상, 이미 구매)", "tutor1", f"select public.purchase_exam_download({EA});", "ok"),
     ("과외 문항 배정(정상)", "tutor1", "select public.claim_next_review_item();", "ok"),
