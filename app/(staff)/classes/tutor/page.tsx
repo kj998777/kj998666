@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchAllPages, fetchAllIn } from "@/lib/supabase/fetchAll";
 import { personLabel } from "@/lib/profile/label";
 import TutorSubmissionRow from "./TutorSubmissionRow";
+import { guessSummary } from "@/lib/grading";
 
 // 2026-09-29 원장님 요청: 과외선생님 전용 QR·링크로 들어온 학생 제출을 모두 "과외" 반으로 모아 한곳에서 보고 관리한다.
 // 시험별로 묶고, 과외선생님·시험으로 걸러 볼 수 있다. 삭제(재제출 허용)는 관리자만.
@@ -17,6 +18,7 @@ type Sub = {
   submitted_at: string;
   tutor_id: string;
   total_score: number;
+  real_score: number;
 };
 
 export default async function TutorClassPage({ searchParams }: { searchParams: { tutor?: string; exam?: string } }) {
@@ -28,7 +30,7 @@ export default async function TutorClassPage({ searchParams }: { searchParams: {
   const { data: rows, error } = await fetchAllPages((from, to) =>
     admin
       .from("submissions")
-      .select("id, exam_id, student_name, submitted_at, tutor_id, grading_results(total_score)")
+      .select("id, exam_id, student_name, submitted_at, tutor_id, grading_results(total_score, per_item)")
       .not("tutor_id", "is", null)
       .order("submitted_at", { ascending: false })
       .order("id")
@@ -44,6 +46,7 @@ export default async function TutorClassPage({ searchParams }: { searchParams: {
       submitted_at: r.submitted_at,
       tutor_id: r.tutor_id,
       total_score: Number(gr?.total_score ?? 0),
+      real_score: guessSummary(gr?.per_item ?? [], Number(gr?.total_score ?? 0)).realScore,
     };
   });
 
@@ -168,7 +171,8 @@ export default async function TutorClassPage({ searchParams }: { searchParams: {
                     <tr className="text-left text-slate-500 border-b border-slate-200">
                       <th className="py-2 pr-2">과외선생님</th>
                       <th className="py-2 pr-2">학생</th>
-                      <th className="py-2 pr-2">총점</th>
+                      <th className="py-2 pr-2">점수</th>
+                      <th className="py-2 pr-2" title="찍어서 맞힌 점수를 뺀 점수">실질 점수</th>
                       <th className="py-2 pr-2">제출 시각</th>
                       <th className="py-2 pr-2"></th>
                     </tr>
@@ -183,6 +187,7 @@ export default async function TutorClassPage({ searchParams }: { searchParams: {
                           tutor: tutorName.get(s.tutor_id) ?? "(알 수 없음)",
                           student_name: s.student_name,
                           total_score: s.total_score,
+                          real_score: s.real_score,
                           submitted_at: s.submitted_at,
                         }}
                         canDelete={session.role === "admin" && !!ex}

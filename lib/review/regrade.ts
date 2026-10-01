@@ -9,7 +9,7 @@ import { fetchAllPages } from "@/lib/supabase/fetchAll";
 // 번호로 맞춰 다시 채점한다(정답표 줄 수가 달라져도 안전).
 
 type Client = any;
-type PerItem = { item_label: string; given: string; correct: boolean; points: number };
+type PerItem = { item_label: string; given: string; correct: boolean; points: number; guessed?: boolean };
 
 export async function regradeExam(admin: Client, examId: string): Promise<number> {
   const [{ data: keys }, { data: results }] = await Promise.all([
@@ -26,13 +26,14 @@ export async function regradeExam(admin: Client, examId: string): Promise<number
   for (const r of (results as any[]) ?? []) {
     const old: PerItem[] = Array.isArray(r.per_item) ? r.per_item : [];
     const givenBy = new Map(old.map((p) => [p.item_label, p.given ?? ""]));
+    const guessedBy = new Set(old.filter((p) => p.guessed).map((p) => p.item_label)); // 2026-10-01: 찍음 표시는 그대로 둔다
     let total = 0;
     const perItem: PerItem[] = key.map((k) => {
       const given = String(givenBy.get(k.item_label) ?? "");
       const correct = isCorrect(given, k.correct_answers, k.type);
       const pts = Number(k.points) || 0;
       if (correct) total += pts;
-      return { item_label: k.item_label, given, correct, points: correct ? pts : 0 };
+      return { item_label: k.item_label, given, correct, points: correct ? pts : 0, ...(guessedBy.has(k.item_label) ? { guessed: true } : {}) };
     });
     total = Math.round(total * 100) / 100;
     const same =

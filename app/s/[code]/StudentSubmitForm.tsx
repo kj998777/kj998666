@@ -29,6 +29,8 @@ export default function StudentSubmitForm({
   const [cls, setCls] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [answers, setAnswers] = useState<string[]>(() => items.map(() => ""));
+  // 2026-10-01 원장님 요청: 문항마다 "찍음" 표시 — 점수는 그대로, 보고서에 "실질 점수"(찍어서 맞힌 점수를 뺀 점수)를 함께 보여 준다
+  const [guessed, setGuessed] = useState<boolean[]>(() => items.map(() => false));
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -61,7 +63,7 @@ export default function StudentSubmitForm({
       const res = await fetch(`/api/submit/${encodeURIComponent(code)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(tutorToken ? { t: tutorToken, name, answers } : { lv: level, grade, cls, name, answers }),
+        body: JSON.stringify(tutorToken ? { t: tutorToken, name, answers, guessed } : { lv: level, grade, cls, name, answers, guessed }),
       });
       const json = await res.json();
       setResult({ ok: !!json.ok, msg: json.msg ?? (json.ok ? "제출 완료" : "제출하지 못했습니다.") });
@@ -169,10 +171,34 @@ export default function StudentSubmitForm({
             ))}
           </div>
 
+          <p className="text-xs text-slate-500 -mb-1">
+            확실하지 않아 <b>찍은 문항</b>은 번호 아래 <b>찍음</b>을 눌러 표시해 주세요. 점수에는 영향이 없고, 실력을 정확히 보는 데만 씁니다.
+          </p>
           <div className="space-y-2">
             {items.map((it, i) => (
-              <div key={it.item_label} className="flex items-center gap-2">
-                <span className="w-10 text-sm text-slate-500 text-right">{it.item_label}번</span>
+              <div key={it.item_label} className={"flex items-center gap-1.5 " + (guessed[i] ? "rounded-lg bg-amber-50 -mx-1 px-1" : "")}>
+                {/* 2026-10-01: 번호 아래 작은 "찍음" 버튼(줄 너비는 그대로 — 휴대폰에서 ①~⑤ 버튼이 좁아지지 않게) */}
+                <div className="w-9 shrink-0 flex flex-col items-end gap-1">
+                  <span className="text-sm text-slate-500">{it.item_label}번</span>
+                  <button
+                    type="button"
+                    aria-pressed={guessed[i]}
+                    aria-label={`${it.item_label}번 찍음`}
+                    className={
+                      "rounded-full border px-1 py-1 text-[11px] leading-none font-medium " +
+                      (guessed[i] ? "border-amber-500 bg-amber-400 text-white" : "border-slate-300 bg-white text-slate-500")
+                    }
+                    onClick={() =>
+                      setGuessed((prev) => {
+                        const next = [...prev];
+                        next[i] = !next[i];
+                        return next;
+                      })
+                    }
+                  >
+                    찍음
+                  </button>
+                </div>
                 {it.type === "객관식" && (
                   <div className="flex gap-1">
                     {[1, 2, 3, 4, 5].map((n) => (
@@ -201,7 +227,7 @@ export default function StudentSubmitForm({
                   ref={(el) => {
                     inputRefs.current[i] = el;
                   }}
-                  className="input flex-1"
+                  className="input flex-1 min-w-0"
                   value={answers[i] ?? ""}
                   onFocus={() => setActiveIdx(i)}
                   onChange={(e) =>

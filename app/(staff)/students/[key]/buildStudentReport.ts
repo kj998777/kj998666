@@ -121,7 +121,7 @@ export function buildStudentReportHtml(katex: any, input: StudentReportInput, ch
     b.push(
       `<tr><td class="l">${esc(e.name)}</td><td class="c">${esc(day(e.submittedAt))}</td><td class="c rpt-small">${esc(e.classLabel)}</td><td class="c">${fmt(e.score)} / ${fmt(
         e.max
-      )}</td><td class="c"><b>${pct(e.rate)}</b></td><td class="c">${e.correct} · ${e.wrong} · ${e.blank}</td>${
+      )}${e.guessedCorrect > 0 ? `<div class="rpt-small">실질 ${fmt(e.realScore)} (찍어서 맞힘 ${e.guessedCorrect})</div>` : ""}</td><td class="c"><b>${pct(e.rate)}</b></td><td class="c">${e.correct} · ${e.wrong} · ${e.blank}</td>${
         showAvg ? `<td class="c">${e.classAvg != null ? `${pct(e.classAvg)} (${e.classCount}명)` : "-"}</td>` : ""
       }</tr>`
     );

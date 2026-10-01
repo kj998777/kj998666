@@ -191,6 +191,11 @@ export default async function StudentPage({ params }: { params: { key: string } 
                   <td className="py-2 pr-2 text-slate-500 whitespace-nowrap">{e.classLabel}</td>
                   <td className="py-2 pr-2 text-right tabular-nums whitespace-nowrap">
                     {Math.round(e.score * 100) / 100} / {Math.round(e.max * 100) / 100}
+                    {e.guessedCorrect > 0 && (
+                      <div className="text-xs text-amber-700" title="찍어서 맞힌 문항의 점수를 뺀 점수">
+                        실질 {Math.round(e.realScore * 100) / 100} (찍어서 맞힘 {e.guessedCorrect})
+                      </div>
+                    )}
                   </td>
                   <td className="py-2 pr-2 text-right tabular-nums font-medium">{pct(e.rate)}</td>
                   <td className="py-2 pr-2 text-right tabular-nums">

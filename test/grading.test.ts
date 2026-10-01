@@ -1,6 +1,6 @@
 // 순수 함수 단위 테스트. 프로젝트 의존성 설치 없이 `tsx test/grading.test.ts` 로 바로 돌아간다.
 import assert from "node:assert/strict";
-import { isCorrect, normalizeAnswer, toNumber, gradeSubmission, latexToPlain } from "../lib/grading";
+import { isCorrect, normalizeAnswer, toNumber, gradeSubmission, latexToPlain, guessSummary } from "../lib/grading";
 
 let n = 0;
 function check(name: string, fn: () => void) {
@@ -118,5 +118,34 @@ check("정답 $3\\pi$ ↔ 학생 3pi", () => assert.equal(isCorrect("3pi", "$3\\
 check("학생이 수식으로 적어도: $\\frac{1}{2}$ ↔ 정답 0.5", () => assert.equal(isCorrect("$\\frac{1}{2}$", "0.5"), true));
 check("(√3)/(2) = √3/2", () => assert.equal(isCorrect("(√3)/(2)", "√3/2"), true));
 check("여러 정답 중 수식", () => assert.equal(isCorrect("2", "$\\frac{1}{2}$|2"), true));
+
+// --- 찍음(2026-10-01) ---
+{
+  const key = [
+    { item_label: "1", correct_answers: "3", points: 3.6, type: "객관식" },
+    { item_label: "2", correct_answers: "5", points: 4.2, type: "객관식" },
+    { item_label: "3", correct_answers: "1", points: 5, type: "객관식" },
+  ] as any;
+  check("찍음: 표시한 문항에만 guessed", () => {
+    const r = gradeSubmission(key, ["3", "5", "2"], [false, true, true]);
+    assert.equal(r.perItem[0].guessed, undefined);
+    assert.equal(r.perItem[1].guessed, true);
+    assert.equal(r.perItem[2].guessed, true);
+    assert.equal(r.totalScore, 7.8);
+  });
+  check("찍음: 실질 점수 = 점수 − 찍어서 맞힌 배점", () => {
+    const r = gradeSubmission(key, ["3", "5", "2"], [false, true, true]);
+    assert.deepEqual(guessSummary(r.perItem, r.totalScore), { guessed: 2, guessedCorrect: 1, guessedPoints: 4.2, realScore: 3.6 });
+  });
+  check("찍음 없음: 실질 점수 = 점수", () => {
+    const r = gradeSubmission(key, ["3", "5", "1"]);
+    assert.deepEqual(guessSummary(r.perItem, r.totalScore), { guessed: 0, guessedCorrect: 0, guessedPoints: 0, realScore: 12.8 });
+  });
+  check("찍음: 배열이 아니거나 true가 아니면 무시", () => {
+    const r = gradeSubmission(key, ["3", "5", "1"], ["yes", 1, null] as any);
+    assert.equal(r.perItem.some((p) => p.guessed), false);
+  });
+  check("guessSummary: null per_item", () => assert.equal(guessSummary(null, 50).realScore, 50));
+}
 
 console.log(`\n총 ${n}개 테스트 통과`);

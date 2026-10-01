@@ -7,7 +7,7 @@
 // 묶는다(student_keys.merged_into, 0039). 이 파일은 DB를 모르는 순수 계산만 한다 — 화면(서버)과 누적 보고서
 // PDF(브라우저)가 함께 쓰고, test/studentAnalysis.test.ts로 검증한다.
 
-export type PerItem = { item_label: string; given: string; correct: boolean; points: number };
+export type PerItem = { item_label: string; given: string; correct: boolean; points: number; guessed?: boolean };
 
 export type SubRow = {
   id: string;
@@ -215,6 +215,10 @@ export type ExamResult = {
   classLabel: string;
   submittedAt: string;
   score: number;
+  /** 2026-10-01: 실질 점수 = 점수 − 찍어서 맞힌 점수(학생이 "찍음"으로 표시한 문항) */
+  realScore: number;
+  /** 찍어서 맞힌 문항 수 */
+  guessedCorrect: number;
   max: number;
   rate: number | null;
   n: number;
@@ -346,6 +350,8 @@ export function analyzeStudent(
       const item = itemIdx.get(`${s.exam_id}|${p.item_label}`);
       if (item) attempts.push({ examId: s.exam_id, examName: exam.name, submittedAt: s.submitted_at, item, given: String(p.given ?? ""), ok: !!p.correct, blank: isBlank });
     }
+    const guessedPts = per.reduce((a, p) => a + (p.guessed && p.correct ? Number(p.points) || 0 : 0), 0);
+    const guessedCorrect = per.filter((p) => p.guessed && p.correct).length;
     const pr = peerBy.get(s.exam_id) ?? [];
     const cls = pr.filter((p) => normName(p.class_label) === normName(s.class_label));
     const r = (rows: PeerRow[]) => mean(rows.map((p) => rateOf(p.total_score, exam)).filter((x): x is number => x != null));
@@ -356,6 +362,8 @@ export function analyzeStudent(
       classLabel: normName(s.class_label),
       submittedAt: s.submitted_at,
       score: s.total_score,
+      realScore: Math.round((s.total_score - guessedPts) * 100) / 100,
+      guessedCorrect,
       max: exam.max,
       rate: rateOf(s.total_score, exam, per),
       n: per.length || exam.n,
