@@ -8,6 +8,7 @@ import ReportPanel from "@/app/(staff)/exams/[code]/results/ReportPanel";
 import TutorExamTabs from "../TutorExamTabs";
 import CopyLink from "./CopyLink";
 import { guessSummary } from "@/lib/grading";
+import GuessStatsCard from "@/app/_components/GuessStatsCard";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +75,8 @@ export default async function TutorExamResultsPage({ params }: { params: { code:
 
       {/* 전체 문제 해설지는 제출 학생이 없어도 받을 수 있어야 하므로 패널은 항상 보인다(2026-09-29). */}
       <ReportPanel code={exam.code} examName={exam.name} dataUrl={`/tutor/store/${encodeURIComponent(exam.code)}/report-data`} />
+
+      <GuessStatsCard perItems={submissions.map((r) => r.per_item)} />
 
       <div className="card">
         {error && <p className="text-sm text-red-600">불러오지 못했습니다: {error.message}</p>}
