@@ -1,5 +1,6 @@
 import { normalizeTex } from "@/lib/math/normalizeTex";
 import { guessSummary } from "@/lib/grading";
+import { CONTENT_KIND_LABEL, MEDIC_PDF_CREDIT } from "@/lib/content/kinds";
 // 브라우저에서 "성적 보고서"(종합/개별) PDF를 만든다.
 //
 // 옛 Apps Script 시스템의 파이썬 스크립트(claude/dg2025-report-content.md의 content.py/build.py/
@@ -118,6 +119,10 @@ function loadJsZip(): Promise<any> {
 // 글·수식 렌더링 ($...$ 는 KaTeX, <b>/<br> 만 허용하고 그 밖의 홑화살괄호는 이스케이프)
 // ---------------------------------------------------------------------
 
+// 2026-10-01: 해설지·보고서는 "메딕 해설"(원장님·검토단이 만든 자료)임을 머리말 배지와 꼬리말로 밝힌다(lib/content/kinds.ts).
+export const MEDIC_BADGE = `<div class="rpt-medic">${CONTENT_KIND_LABEL.medic} · 메딕수학</div>`;
+export const MEDIC_FOOT = `<p class="rpt-foot">${MEDIC_PDF_CREDIT}</p>`;
+
 export function esc(s: unknown): string {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;")
@@ -212,6 +217,7 @@ function injectReportStyles(): void {
 .rpt .rpt-sol { font-size:12px; border-top:1px dashed #cbd5e1; padding-top:3px; margin-top:3px; }
 .rpt .rpt-small { font-size:10.5px; color:#52606d; }
 .rpt .rpt-foot { color:#6b7280; font-size:10px; }
+.rpt .rpt-medic { display:inline-block; border:1px solid #fecdd3; background:#fff1f2; color:#be123c; border-radius:999px; padding:2px 9px; font-size:10.5px; font-weight:600; white-space:nowrap; }
 .rpt .rpt-pagebreak { break-before: page; page-break-before: always; }
 .rpt .rpt-rowh { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #2563eb; padding-bottom:4px; margin-bottom:8px; }
 .rpt .rpt-tag { display:inline-block; border:1px solid #f59e0b; color:#92400e; background:#fffbeb; border-radius:4px; padding:1px 7px; font-size:11px; font-weight:700; }
@@ -319,7 +325,7 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
   b.push(
     `<div class="rpt-rowh"><div><h1>종합 보고서</h1><div class="rpt-sub" style="margin:0">${esc(
       data.exam.name
-    )} · 응시 ${n}명</div></div></div>`
+    )} · 응시 ${n}명</div></div>${MEDIC_BADGE}</div>`
   );
 
   if (n === 0) {
@@ -509,6 +515,7 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
   b.push("</tbody></table>");
   b.push(methodNote(items));
 
+  b.push(MEDIC_FOOT);
   return `<div class="rpt">${b.join("")}</div>`;
 }
 
@@ -563,7 +570,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
   b.push(
     `<div class="rpt-rowh"><div><h1>개별 성적 보고서</h1><div class="rpt-sub" style="margin:0">${esc(
       data.exam.name
-    )}</div></div></div>`
+    )}</div></div>${MEDIC_BADGE}</div>`
   );
   b.push(
     `<div class="rpt-big"><div><div class="n" style="font-size:16px">${esc(student.student_name)}</div><div class="t">${esc(
@@ -707,6 +714,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
     }
   }
   b.push('<p class="rpt-foot">등급 구분·예상 등급·다른 학생과의 비교는 이 보고서에 포함하지 않았습니다.</p>');
+  b.push(MEDIC_FOOT);
 
   return `<div class="rpt">${b.join("")}</div>`;
 }
@@ -743,7 +751,7 @@ export function buildSolutionsHtml(katex: any, data: ReportData): string {
   b.push(
     `<div class="rpt-rowh"><div><h1>전체 문제 해설지</h1><div class="rpt-sub" style="margin:0">${esc(
       data.exam.name
-    )} · ${items.length}문항 · 배점 합 ${fmt(totalPoints)}점</div></div></div>`
+    )} · ${items.length}문항 · 배점 합 ${fmt(totalPoints)}점</div></div>${MEDIC_BADGE}</div>`
   );
 
   if (!items.length) {
@@ -807,6 +815,7 @@ export function buildSolutionsHtml(katex: any, data: ReportData): string {
   b.push(
     '<p class="rpt-foot">난이도는 AI가 문제를 풀어 본 뒤 판단한 값이며 실제 정답률이 아닙니다. 문제 글은 원본 시험지를 요약·정리한 것이라 그림·표는 원본 시험지를 함께 보세요.</p>'
   );
+  b.push(MEDIC_FOOT);
   return `<div class="rpt">${b.join("")}</div>`;
 }
 
