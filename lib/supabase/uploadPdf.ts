@@ -14,7 +14,8 @@ import { createClient } from "./client";
 
 // Storage 버킷(exam-pdfs) 자체에도 같은 상한이 걸려 있다(0015 마이그레이션, file_size_limit) —
 // 여기 값을 바꾸면 그쪽도 맞춰 바꿔야 한다.
-export const PDF_MAX_BYTES = 20 * 1024 * 1024; // 20MB
+// 2026-10-01 원장님: 20MB → 50MB(Supabase 무료 플랜 전체 상한이 50MB로 고정, 0048에서 exam-pdfs 버킷도 50MB)
+export const PDF_MAX_BYTES = 50 * 1024 * 1024; // 50MB
 
 export function pdfTooLarge(file: File | Blob): boolean {
   return file.size > PDF_MAX_BYTES;
