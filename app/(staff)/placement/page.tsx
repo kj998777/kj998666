@@ -6,6 +6,7 @@ import PlacementBuilder from "@/app/_components/placement/PlacementBuilder";
 import { PlacementList } from "@/app/_components/placement/PlacementViews";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 // 입학테스트(2026-10-01 원장님 요청, 0047): 학년·과목을 고르면 검토 끝난 기출에서 10문항 안팎을 골라
 // 시험지(맨 뒤 답 제출 QR)·정답지·학생별 진단 보고서까지 만든다. 학원 테스트는 직원 모두가 함께 본다.
