@@ -6,6 +6,7 @@ import PdfDropInput from "./PdfDropInput";
 import { createExamRow, finalizeAiExamUpload, type JobPoll } from "./ai-actions";
 import { pollJob } from "@/lib/jobPoll";
 import { pdfTooLarge, uploadPdfDirect } from "@/lib/supabase/uploadPdf";
+import { fitPdfForUpload } from "@/lib/pdf/shrinkPdf";
 import { ACTIVE, STAGE_LABEL } from "./aiJobStage";
 
 type RowStatus = "대기" | "올리는 중…" | "완료" | "실패";
@@ -81,9 +82,16 @@ export default function CreateAiExamBatchForm() {
   // → 뒷정리(finalizeAiExamUpload) 세 단계로 나뉜다.
   async function submitRow(row: Row) {
     updateRow(row.key, { status: "올리는 중…", msg: undefined });
+    // 2026-10-01: 50MB를 넘으면 브라우저에서 자동으로 줄여서 올린다(lib/pdf/shrinkPdf.ts)
+    let pdf: Blob = row.file;
     if (pdfTooLarge(row.file)) {
-      updateRow(row.key, { status: "실패", msg: "PDF 용량이 너무 큽니다(50MB 이하로 줄여서 올려 주세요)." });
-      return;
+      try {
+        pdf = (await fitPdfForUpload(row.file, (m) => updateRow(row.key, { msg: m }))).file;
+      } catch (e: any) {
+        updateRow(row.key, { status: "실패", msg: String(e?.message ?? e) });
+        return;
+      }
+      updateRow(row.key, { msg: undefined });
     }
     const fd = readSharedFields();
     fd.set("code", row.code);
@@ -94,7 +102,7 @@ export default function CreateAiExamBatchForm() {
       return;
     }
     try {
-      await uploadPdfDirect(created.id, row.file);
+      await uploadPdfDirect(created.id, pdf);
     } catch (e: any) {
       updateRow(row.key, {
         status: "실패",
@@ -181,7 +189,7 @@ export default function CreateAiExamBatchForm() {
       </div>
 
       <div>
-        <label className="label">시험지 PDF (여러 개 선택 가능, 파일당 최대 50MB)</label>
+        <label className="label">시험지 PDF (여러 개 선택 가능, 50MB가 넘으면 자동으로 줄여서 올림)</label>
         <PdfDropInput multiple disabled={running} onFiles={(files) => setRows(buildRows(files))} />
         <p className="text-xs text-slate-500 mt-1">
           파일마다 시험이 하나씩 따로 만들어집니다. 학교급·연도·학년·학기·구분은 선택한 파일 전체에 똑같이 적용되고, 코드·이름은 파일
