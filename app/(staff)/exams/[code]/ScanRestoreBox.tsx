@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { restoreScanPdfAction } from "./digitize-actions";
 import { pdfTooLarge, uploadScanRestoreDirect } from "@/lib/supabase/uploadPdf";
+import { fitPdfForUpload } from "@/lib/pdf/shrinkPdf";
 
 // 2026-09-29: 예전에 '원본으로 적용'하면서 스캔본이 지워진 시험 — 처음 올렸던 스캔 PDF만 다시 넣으면
 // 디지털화를 다시 하지 않고도 그림 다시 오리기·그림 자리 직접 고치기가 된다.
@@ -23,7 +24,7 @@ export default function ScanRestoreBox({ code, examId, mode = "missing" }: { cod
     setMsg(null);
     setPreview(null);
     if (!/pdf$/i.test(f.type) && !/\.pdf$/i.test(f.name)) return setMsg({ ok: false, text: "PDF 파일을 골라 주세요." });
-    if (pdfTooLarge(f)) return setMsg({ ok: false, text: "50MB보다 큰 PDF는 올릴 수 없습니다." });
+    // 2026-10-01: 50MB를 넘으면 올릴 때 자동으로 줄인다(lib/pdf/shrinkPdf.ts) — 쪽 수·크기는 그대로라 확인 화면은 원본으로 본다
     setBusy(true);
     try {
       const { loadPdfJs } = await import("./buildDigitizedPdf");
@@ -74,7 +75,8 @@ export default function ScanRestoreBox({ code, examId, mode = "missing" }: { cod
     setBusy(true);
     setMsg(null);
     try {
-      const path = await uploadScanRestoreDirect(examId, preview.file);
+      const pdf = pdfTooLarge(preview.file) ? (await fitPdfForUpload(preview.file, (m) => setMsg({ ok: true, text: m }))).file : preview.file;
+      const path = await uploadScanRestoreDirect(examId, pdf);
       const r: any = await restoreScanPdfAction(code, path);
       if (!r.ok) throw new Error(r.msg || "넣지 못했습니다.");
       setPreview(null);

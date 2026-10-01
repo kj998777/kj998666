@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { finalizeAttachExamPdfOnly } from "../ai-actions";
 import { pdfTooLarge, uploadPdfDirect } from "@/lib/supabase/uploadPdf";
+import { fitPdfForUpload } from "@/lib/pdf/shrinkPdf";
 import PdfDropInput from "../PdfDropInput";
 
 /**
@@ -30,13 +31,11 @@ export default function AttachPdfForm({ code, examId }: { code: string; examId: 
           setMsg({ ok: false, text: "시험지 PDF 파일을 선택해 주세요." });
           return;
         }
-        if (pdfTooLarge(file)) {
-          setMsg({ ok: false, text: "PDF 용량이 너무 큽니다(50MB 이하로 줄여서 올려 주세요)." });
-          return;
-        }
         start(async () => {
           try {
-            await uploadPdfDirect(examId, file);
+            // 2026-10-01: 50MB를 넘으면 자동으로 줄여서 올린다(lib/pdf/shrinkPdf.ts)
+            const pdf = pdfTooLarge(file) ? (await fitPdfForUpload(file, (m) => setMsg({ ok: true, text: m }))).file : file;
+            await uploadPdfDirect(examId, pdf);
           } catch (e: any) {
             setMsg({ ok: false, text: String(e?.message ?? e) });
             return;
@@ -50,7 +49,7 @@ export default function AttachPdfForm({ code, examId }: { code: string; examId: 
       <PdfDropInput name="pdf" required compact />
       <div className="flex flex-wrap items-center gap-2">
         <button type="submit" className="btn-primary" disabled={pending}>
-          {pending ? "저장하는 중…" : "원본 PDF만 저장 (AI 처리 안 함, 최대 50MB)"}
+          {pending ? "저장하는 중…" : "원본 PDF만 저장 (AI 처리 안 함, 50MB 넘으면 자동 압축)"}
         </button>
         {msg && <span className={"text-sm " + (msg.ok ? "text-emerald-600" : "text-red-600")}>{msg.text}</span>}
       </div>
