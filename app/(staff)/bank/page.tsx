@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { ScopePickerForm, type ScopeValue } from "@/app/_components/ScopePicker";
+import { buildTree } from "@/lib/curriculum/units";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { loadBankItems } from "@/lib/bank/load";
@@ -19,6 +21,13 @@ export default async function BankPage({ searchParams }: { searchParams: Record<
   const all = await loadBankItems(supabase);
   const found = search(all, f);
   const fc = facets(all, f);
+  const tree = buildTree(f.all ? all : all.filter((x) => x.confirmed));
+  const initialScope: ScopeValue = {
+    level: f.level === "중" || f.level === "고" ? f.level : "",
+    grade: f.level && f.grade ? Number(f.grade) : null,
+    course: f.grade ? f.course ?? "" : "",
+    units: f.grade && f.units ? f.units : null,
+  };
   const rows: ResultRow[] = found.slice((page - 1) * PAGE, page * PAGE).map((it) => ({
     id: it.id,
     examCode: it.examCode,
@@ -68,21 +77,9 @@ export default async function BankPage({ searchParams }: { searchParams: Record<
                 찾기
               </button>
             </div>
+            {/* 2026-10-01: 범위 — 학교급 → 학년 → 과목 → 출제할 단원(대단원·중단원 체크) */}
+            <ScopePickerForm tree={tree} initial={initialScope} />
             <div className="grid gap-2 grid-cols-2 sm:grid-cols-4">
-              <select name="level" defaultValue={f.level ?? ""} className="input" aria-label="학교급">
-                <option value="">모든 학교급</option>
-                <option value="고">고등</option>
-                <option value="중">중등</option>
-                <option value="초">초등</option>
-              </select>
-              <select name="grade" defaultValue={f.grade ?? ""} className="input" aria-label="학년">
-                <option value="">모든 학년</option>
-                {[1, 2, 3, 4, 5, 6].map((g) => (
-                  <option key={g} value={String(g)}>
-                    {g}학년
-                  </option>
-                ))}
-              </select>
               <select name="year" defaultValue={f.year ?? ""} className="input" aria-label="연도">
                 <option value="">모든 연도</option>
                 {fc.years.map((y) => (
@@ -95,14 +92,6 @@ export default async function BankPage({ searchParams }: { searchParams: Record<
                 <option value="">객관식·주관식</option>
                 <option value="객관식">객관식</option>
                 <option value="주관식">주관식</option>
-              </select>
-              <select name="area" defaultValue={f.area ?? ""} className="input col-span-2" aria-label="영역">
-                <option value="">모든 영역</option>
-                {fc.areas.map((a) => (
-                  <option key={a.name} value={a.name}>
-                    {a.name} ({a.n})
-                  </option>
-                ))}
               </select>
               <input name="unit" defaultValue={f.unit ?? ""} list="bank-units" className="input col-span-2" placeholder="단원(일부만 적어도 됨)" />
               <datalist id="bank-units">
@@ -128,6 +117,9 @@ export default async function BankPage({ searchParams }: { searchParams: Record<
                 <input type="checkbox" name="all" value="1" defaultChecked={!!f.all} />
                 정답 확정 전 문항도
               </label>
+              <button className="btn-primary py-1 px-3" type="submit">
+                이 조건으로 찾기
+              </button>
               <Link href="/bank" className="text-slate-500 hover:underline">
                 조건 지우기
               </Link>

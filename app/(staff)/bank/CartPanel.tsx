@@ -12,6 +12,7 @@ export default function CartPanel() {
   const [title, setTitle] = useState("메딕수학 복습 시험지");
   const [subtitle, setSubtitle] = useState("");
   const [showSource, setShowSource] = useState(true);
+  const [cover, setCover] = useState(true); // 2026-10-01: 앞뒤 표지(메딕수학 표지 + 뒤 로고)
   const [perCol, setPerCol] = useState<2 | 3>(3);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -72,7 +73,7 @@ export default function CartPanel() {
     try {
       const mod = await import("./buildWorksheet");
       const { downloadBytes } = await import("@/app/(staff)/exams/[code]/results/buildReportPdf");
-      const opts = { title: title.trim() || "메딕수학 복습 시험지", subtitle: subtitle.trim(), showSource, perCol };
+      const opts = { title: title.trim() || "메딕수학 복습 시험지", subtitle: subtitle.trim(), showSource, perCol, cover: cover ? ("worksheet" as const) : undefined };
       const safe = opts.title.replace(/[\\/:*?"<>|\s]+/g, "_");
       if (kind === "sheet") {
         const r = await mod.buildWorksheetPdf(items, opts, setMsg);
@@ -148,6 +149,10 @@ export default function CartPanel() {
       <div className="space-y-2 border-t border-slate-100 pt-3 text-sm">
         <input className="input" value={title} onChange={(e) => setTitle(e.target.value.slice(0, 60))} placeholder="시험지 제목" aria-label="시험지 제목" />
         <input className="input" value={subtitle} onChange={(e) => setSubtitle(e.target.value.slice(0, 80))} placeholder="부제(예: 고1 2반 · 이차방정식 복습)" aria-label="부제" />
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={cover} onChange={(e) => setCover(e.target.checked)} />
+          앞뒤 표지 붙이기(메딕수학 표지·뒤 로고)
+        </label>
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={showSource} onChange={(e) => setShowSource(e.target.checked)} />
           문항마다 출처(시험·번호·단원) 적기
