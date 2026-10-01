@@ -1,3 +1,4 @@
+import { fixLiteralNewlines } from "@/lib/math/literalNewline";
 // 수식 표기 정리(2026-09-28 원장님 제보: 디지털화 시험지에 "g(x)=\begin{cases} … \end{cases}"처럼 수식이
 // 명령어 글자 그대로 남는 경우).
 //
@@ -74,7 +75,8 @@ function wrapBare(text: string): string {
 
 /** 글 속 수식을 모두 $…$ 한 쌍으로 정리한다. */
 export function normalizeTex(input: string | null | undefined): string {
-  let s = String(input ?? "");
+  // 2026-10-01: AI가 줄바꿈을 글자 그대로의 "\n"으로 준 경우 진짜 줄바꿈으로(\neq 등 명령은 그대로) — lib/math/literalNewline.ts
+  let s = fixLiteralNewlines(String(input ?? ""));
   if (!s.includes("\\") && !s.includes("$$")) return s;
   // ① $$…$$ → $\displaystyle …$
   s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_m, x) => `$\\displaystyle ${String(x).trim()}$`);
