@@ -71,7 +71,7 @@ export function buildPlacementHtml(katex: any, d: PlacementReportInput): string 
       `<div><div class="n">${fmt(g.score)}점</div><div class="t">점수 (${fmt(total)}점 만점)</div></div>` +
       (guessedN > 0 ? `<div><div class="n">${fmt(g.realScore)}점</div><div class="t">실질 점수 (찍어서 맞힌 문항 뺌)</div></div>` : "") +
       `<div><div class="n">${okN} / ${items.length}</div><div class="t">맞힌 문항</div></div>` +
-      `<div><div class="n" style="color:#be123c">${g.level}</div><div class="t">추천 수업 단계(참고)</div></div></div>`
+      `<div><div class="n" style="color:#A83232">${g.level}</div><div class="t">추천 수업 단계(참고)</div></div></div>`
   );
 
   b.push("<h2>1. 종합 의견</h2>");
@@ -94,7 +94,7 @@ export function buildPlacementHtml(katex: any, d: PlacementReportInput): string 
   for (const r of g.byDiff) {
     const pct = r.n ? Math.round((r.ok / r.n) * 100) : 0;
     b.push(
-      `<tr><td class="c">${badge(r.d)}</td><td class="c">${r.n}</td><td class="c">${r.ok}</td><td class="l"><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:9px;background:#e5e7eb;border-radius:5px"><div style="width:${pct}%;height:9px;background:#2563eb;border-radius:5px"></div></div><span style="width:34px;text-align:right">${pct}%</span></div></td></tr>`
+      `<tr><td class="c">${badge(r.d)}</td><td class="c">${r.n}</td><td class="c">${r.ok}</td><td class="l"><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:9px;background:#EDE9E2;border-radius:2px"><div style="width:${pct}%;height:9px;background:#1C1A16;border-radius:2px"></div></div><span style="width:34px;text-align:right">${pct}%</span></div></td></tr>`
     );
   }
   b.push("</tbody></table>");
