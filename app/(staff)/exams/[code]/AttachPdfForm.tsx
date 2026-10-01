@@ -10,7 +10,7 @@ import PdfDropInput from "../PdfDropInput";
  * UploadPdfForm과 달리 AI 자동 처리를 시작하지 않는다 — 이미 있는 정답·해설을
  * 덮어쓰거나 불필요한 AI 비용이 드는 일을 막기 위함.
  *
- * #2(2026-09-28): PDF는 이제 브라우저가 Supabase Storage에 곧바로 올린다(최대 20MB — Vercel
+ * #2(2026-09-28): PDF는 이제 브라우저가 Supabase Storage에 곧바로 올린다(최대 50MB — Vercel
  * 서버리스 함수의 요청 본문 제한을 우회하기 위함, lib/supabase/uploadPdf.ts 참고). 업로드가 끝난
  * 뒤에야 서버 액션(finalizeAttachExamPdfOnly)을 불러 뒷정리한다.
  */
@@ -31,7 +31,7 @@ export default function AttachPdfForm({ code, examId }: { code: string; examId: 
           return;
         }
         if (pdfTooLarge(file)) {
-          setMsg({ ok: false, text: "PDF 용량이 너무 큽니다(20MB 이하로 줄여서 올려 주세요)." });
+          setMsg({ ok: false, text: "PDF 용량이 너무 큽니다(50MB 이하로 줄여서 올려 주세요)." });
           return;
         }
         start(async () => {
@@ -50,7 +50,7 @@ export default function AttachPdfForm({ code, examId }: { code: string; examId: 
       <PdfDropInput name="pdf" required compact />
       <div className="flex flex-wrap items-center gap-2">
         <button type="submit" className="btn-primary" disabled={pending}>
-          {pending ? "저장하는 중…" : "원본 PDF만 저장 (AI 처리 안 함, 최대 20MB)"}
+          {pending ? "저장하는 중…" : "원본 PDF만 저장 (AI 처리 안 함, 최대 50MB)"}
         </button>
         {msg && <span className={"text-sm " + (msg.ok ? "text-emerald-600" : "text-red-600")}>{msg.text}</span>}
       </div>

@@ -23,7 +23,7 @@ export default function ScanRestoreBox({ code, examId, mode = "missing" }: { cod
     setMsg(null);
     setPreview(null);
     if (!/pdf$/i.test(f.type) && !/\.pdf$/i.test(f.name)) return setMsg({ ok: false, text: "PDF 파일을 골라 주세요." });
-    if (pdfTooLarge(f)) return setMsg({ ok: false, text: "20MB보다 큰 PDF는 올릴 수 없습니다." });
+    if (pdfTooLarge(f)) return setMsg({ ok: false, text: "50MB보다 큰 PDF는 올릴 수 없습니다." });
     setBusy(true);
     try {
       const { loadPdfJs } = await import("./buildDigitizedPdf");

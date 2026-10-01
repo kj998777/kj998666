@@ -6,7 +6,7 @@ import { pdfTooLarge, uploadPdfDirect } from "@/lib/supabase/uploadPdf";
 import PdfDropInput from "../PdfDropInput";
 
 /**
- * #2(2026-09-28): PDF는 이제 브라우저가 Supabase Storage에 곧바로 올린다(최대 20MB — Vercel
+ * #2(2026-09-28): PDF는 이제 브라우저가 Supabase Storage에 곧바로 올린다(최대 50MB — Vercel
  * 서버리스 함수의 요청 본문 제한을 우회하기 위함, lib/supabase/uploadPdf.ts 참고). 업로드가 끝난
  * 뒤에야 서버 액션(finalizeUploadPdfAndStartAi)을 불러 AI 자동 처리를 시작한다.
  * "스캔본입니다" 체크박스를 켜면 업로드 직후 디지털화(startDigitizeJob)도 같이 시작한다 — "이 PDF가
@@ -29,7 +29,7 @@ export default function UploadPdfForm({ code, examId }: { code: string; examId: 
           return;
         }
         if (pdfTooLarge(file)) {
-          setMsg("PDF 용량이 너무 큽니다(20MB 이하로 줄여서 올려 주세요).");
+          setMsg("PDF 용량이 너무 큽니다(50MB 이하로 줄여서 올려 주세요).");
           return;
         }
         const isScanned = formData.get("is_scanned") === "on";
@@ -56,7 +56,7 @@ export default function UploadPdfForm({ code, examId }: { code: string; examId: 
         <input type="checkbox" name="is_scanned" />
         스캔본입니다(디지털화 필요) — 업로드 후 자동으로 디지털화를 시작합니다
       </label>
-      <p className="text-xs text-slate-400">최대 20MB</p>
+      <p className="text-xs text-slate-400">최대 50MB</p>
       {msg && <span className="text-sm text-red-600">{msg}</span>}
     </form>
   );
