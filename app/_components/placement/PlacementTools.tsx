@@ -95,11 +95,13 @@ export function PlacementReportButton({
   title,
   scope,
   student,
+  promo = false,
 }: {
   id: string;
   title: string;
   scope: string;
   student: { name: string; perItem: PerItemResult[]; createdAt: string };
+  promo?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -119,6 +121,7 @@ export function PlacementReportButton({
         submittedAt: student.createdAt,
         items,
         perItem: student.perItem,
+        promo,
       });
       const bytes = await htmlToPdfBytes(html);
       downloadBytes(bytes, `${safeName(student.name)}_입학테스트_진단.pdf`);

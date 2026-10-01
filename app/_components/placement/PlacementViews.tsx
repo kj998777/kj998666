@@ -135,6 +135,7 @@ export function PlacementDetailView({
                         title={test.title}
                         scope={test.scope_label}
                         student={{ name: s.student_name, perItem: s.per_item, createdAt: s.created_at }}
+                        promo={test.owner_kind === "staff"}
                       />
                     </td>
                   </tr>
