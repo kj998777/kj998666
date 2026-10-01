@@ -63,7 +63,11 @@ export async function hasScanPdf(client: Client, examId: string): Promise<boolea
  * 브라우저가 `<examId>/scan-upload-<시각>.pdf`로 올린 파일을 scan.pdf로 옮긴다(이미 있으면 바꾼다). 그림 자리는 스캔본 쪽 좌표라
  * 디지털화된 쪽 번호보다 쪽수가 적거나 디지털화 때 쪽수와 다르면(다른 파일) 거절한다.
  */
-export async function restoreScanPdf(client: Client, examId: string, uploadedPath: string): Promise<{ pages: number; digitizedPages: number }> {
+export async function restoreScanPdf(
+  client: Client,
+  examId: string,
+  uploadedPath: string
+): Promise<{ pages: number; digitizedPages: number; warning?: string }> {
   const meta = await getExamPdfMeta(client, examId);
   const cleanup = async () => {
     try {
@@ -91,13 +95,15 @@ export async function restoreScanPdf(client: Client, examId: string, uploadedPat
     await cleanup();
     throw new Error(`올린 PDF는 ${pages}쪽인데 디지털화는 ${maxPage}쪽까지 있습니다. 처음 디지털화했던 스캔 PDF를 올려 주세요.`);
   }
-  // 디지털화할 때 AI가 읽은 스캔본 쪽수(digitize_jobs.state.totalPages)와 달라도 다른 파일이다(2026-09-29: 다른 시험지를 넣은 일이 있었음)
+  // 디지털화할 때 AI가 읽은 스캔본 쪽수(digitize_jobs.state.totalPages)와 다르면 알려만 준다.
+  // 2026-10-01 원장님 요청: 화면에서 첫 쪽을 보고 "같은 시험지 맞아요"를 눌렀으면 쪽수가 달라도(정답지 쪽이 붙은 스캔 등) 그대로 넣는다.
+  // (디지털화한 쪽이 올린 PDF보다 많으면 위에서 막는다 — 그 쪽을 오릴 수 없으므로)
   const { data: job } = (await client.from("digitize_jobs").select("state").eq("exam_id", examId).maybeSingle()) as any;
   const total = Number(job?.state?.totalPages);
-  if (Number.isFinite(total) && total > 0 && total !== pages) {
-    await cleanup();
-    throw new Error(`처음 디지털화한 스캔본은 ${total}쪽인데 올린 PDF는 ${pages}쪽입니다. 같은 시험지 스캔 PDF인지 확인해 주세요.`);
-  }
+  const warning =
+    Number.isFinite(total) && total > 0 && total !== pages
+      ? `처음 디지털화한 스캔본은 ${total}쪽인데 올린 PDF는 ${pages}쪽입니다. 같은 쪽 번호끼리 맞춰서 쓰니, 그림이 엉뚱하게 오려지면 다른 파일로 다시 넣어 주세요.`
+      : undefined;
   const prev = await listScanPaths(client, examId);
   const { error: upErr } = await client.storage
     .from(BUCKET)
@@ -111,7 +117,7 @@ export async function restoreScanPdf(client: Client, examId: string, uploadedPat
       /* 무시 */
     }
   }
-  return { pages, digitizedPages: pageNos.length };
+  return { pages, digitizedPages: pageNos.length, warning };
 }
 
 /** 디지털화용 원본(스캔본) 바이트: 원본으로 적용한 시험이면 따로 보관한 scan.pdf, 아니면 지금 원본. 없으면 null. */
