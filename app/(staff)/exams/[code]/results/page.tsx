@@ -7,6 +7,7 @@ import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { personLabel } from "@/lib/profile/label";
 import { guessSummary } from "@/lib/grading";
+import GuessStatsCard from "@/app/_components/GuessStatsCard";
 
 type PerItem = { item_label: string; given: string; correct: boolean; points: number; guessed?: boolean }[];
 
@@ -77,6 +78,8 @@ export default async function ResultsPage({ params }: { params: { code: string }
       </div>
 
       <ReportPanel code={code} examName={exam.name} />
+
+      <GuessStatsCard perItems={submissions.map((r) => r.per_item)} />
 
       <div className="card">
         {error && <p className="text-sm text-red-600">불러오지 못했습니다: {error.message}</p>}

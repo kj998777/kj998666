@@ -191,9 +191,9 @@ export default async function StudentPage({ params }: { params: { key: string } 
                   <td className="py-2 pr-2 text-slate-500 whitespace-nowrap">{e.classLabel}</td>
                   <td className="py-2 pr-2 text-right tabular-nums whitespace-nowrap">
                     {Math.round(e.score * 100) / 100} / {Math.round(e.max * 100) / 100}
-                    {e.guessedCorrect > 0 && (
+                    {e.guessed > 0 && (
                       <div className="text-xs text-amber-700" title="찍어서 맞힌 문항의 점수를 뺀 점수">
-                        실질 {Math.round(e.realScore * 100) / 100} (찍어서 맞힘 {e.guessedCorrect})
+                        실질 {Math.round(e.realScore * 100) / 100} (찍음 {e.guessed}개 중 {e.guessedCorrect}개 맞음)
                       </div>
                     )}
                   </td>
@@ -209,6 +209,34 @@ export default async function StudentPage({ params }: { params: { key: string } 
           </table>
         </div>
       </div>
+
+      {/* 2026-10-01 찍음 추이: 시험마다 "찍음"으로 표시한 문항 수와 그중 맞힌 수(찍음을 쓰기 시작한 뒤의 시험만) */}
+      {a.exams.some((e) => e.guessed > 0) && (
+        <div className="card space-y-2">
+          <h2 className="font-medium">찍음 추이</h2>
+          <p className="text-xs text-slate-500">
+            시험마다 확실하지 않아 &ldquo;찍음&rdquo;으로 표시한 문항 수입니다. 줄어들수록 스스로 확신하고 푸는 문항이 늘어난 것이에요.
+          </p>
+          <ul className="space-y-1.5 text-sm">
+            {a.exams.map((e) => {
+              const max = Math.max(1, ...a.exams.map((x) => x.guessed));
+              return (
+                <li key={e.examId} className="flex items-center gap-2">
+                  <span className="w-40 shrink-0 truncate text-slate-600" title={e.name}>
+                    {day(e.submittedAt)} {e.name}
+                  </span>
+                  <span className="h-2.5 flex-1 rounded bg-slate-100">
+                    <span className="block h-2.5 rounded bg-amber-400" style={{ width: `${(e.guessed / max) * 100}%` }} />
+                  </span>
+                  <span className="w-28 shrink-0 text-right tabular-nums text-xs text-slate-600">
+                    찍음 {e.guessed}개 · 맞음 {e.guessedCorrect}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="card space-y-3">

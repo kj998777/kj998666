@@ -1,6 +1,8 @@
 import { normalizeTex } from "@/lib/math/normalizeTex";
 import { guessSummary } from "@/lib/grading";
+import { guessStatsByItem, guessTotals, manyGuessed, pctOf } from "@/lib/report/guessStats";
 import { CONTENT_KIND_LABEL, MEDIC_PDF_CREDIT } from "@/lib/content/kinds";
+import { promoReportHtml } from "@/lib/content/promo";
 // 브라우저에서 "성적 보고서"(종합/개별) PDF를 만든다.
 //
 // 옛 Apps Script 시스템의 파이썬 스크립트(claude/dg2025-report-content.md의 content.py/build.py/
@@ -347,6 +349,24 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
       `<div><div class="n">${fmt(Math.min(...totals))}점</div><div class="t">최저</div></div>` +
       `<div><div class="n">${fmt(totalPoints)}점</div><div class="t">배점 합</div></div></div>`
   );
+  // 2026-10-01 찍음 통계: 반 전체에서 찍음으로 표시한 문항(학생이 확신하지 못한 문항)
+  const gStats = guessStatsByItem(
+    students.map((s) => s.per_item),
+    items.map((it) => it.label)
+  );
+  const gByLabel = new Map(gStats.map((g) => [g.label, g]));
+  const gTot = guessTotals(students.map((s) => s.per_item));
+  const gMany = manyGuessed(gStats);
+  if (anyGuess) {
+    b.push(
+      `<div class="rpt-box"><b>찍음 표시</b> — ${gTot.studentsGuessed}명이 모두 ${gTot.marks}문항에 &ldquo;찍음&rdquo;을 표시했고 그중 ${gTot.marksCorrect}문항(${pctOf(
+        gTot.marksCorrect,
+        gTot.marks
+      )}%)을 맞혔습니다.${
+        gMany.length ? ` 찍은 학생이 많았던 문항: <b>${gMany.slice(0, 6).map((g) => `${esc(g.label)}번(${g.guessed}명)`).join(", ")}</b> — 6번 항목 참고.` : ""
+      }</div>`
+    );
+  }
 
   // 1. 응시자별 결과
   b.push("<h2>1. 응시자별 결과</h2>");
@@ -420,7 +440,9 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
   // 4. 문항별 분석
   b.push('<h2 class="rpt-pagebreak">4. 문항별 분석</h2>');
   b.push(
-    "<table><thead><tr><th>문항</th><th>단원</th><th>배점</th><th>난이도</th><th>정답</th><th>정답 인원</th><th>오답·무응답 내용</th></tr></thead><tbody>"
+    "<table><thead><tr><th>문항</th><th>단원</th><th>배점</th><th>난이도</th><th>정답</th><th>정답 인원</th>" +
+      (anyGuess ? "<th>찍음</th>" : "") +
+      "<th>오답·무응답 내용</th></tr></thead><tbody>"
   );
   for (const it of items) {
     let nok = 0;
@@ -439,11 +461,22 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
       )}${it.points_assigned ? "*" : ""}</td><td class="c">${badge(it.difficulty)}</td><td class="c">${mathHtml(
         katex,
         it.answer_display
-      )}</td><td class="c">${nok}/${n}</td><td class="l rpt-small">${esc(detailTxt)}</td></tr>`
+      )}</td><td class="c">${nok}/${n}</td>${
+        anyGuess
+          ? `<td class="c rpt-small">${(() => {
+              const g = gByLabel.get(it.label);
+              return g && g.guessed ? `${g.guessed}명<br>(맞힘 ${g.guessedCorrect})` : "-";
+            })()}</td>`
+          : ""
+      }<td class="l rpt-small">${esc(detailTxt)}</td></tr>`
     );
   }
   b.push("</tbody></table>");
-  b.push('<p class="rpt-small">* 시험지에 배점이 인쇄되지 않아 임의로 배정한 문항. 붉은 배경은 정답률 30% 이하인 문항.</p>');
+  b.push(
+    '<p class="rpt-small">* 시험지에 배점이 인쇄되지 않아 임의로 배정한 문항. 붉은 배경은 정답률 30% 이하인 문항.' +
+      (anyGuess ? " 찍음 = 학생이 확실하지 않아 찍었다고 표시한 인원(괄호는 그중 맞힌 인원)." : "") +
+      "</p>"
+  );
 
   // 5. 난이도 판정 근거
   b.push("<h2>5. 문항별 난이도 판정 근거</h2>");
@@ -479,6 +512,17 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
     b.push("</ul>");
   } else {
     b.push('<p class="rpt-small">정답률이 30% 이하로 떨어진 문항은 없었습니다.</p>');
+  }
+  // 2026-10-01: 정답률은 괜찮아도 찍은 학생이 많은 문항 — 실제로는 잘 모르는 문항일 수 있다
+  if (gMany.length) {
+    b.push("<p><b>찍은 학생이 많았던 문항</b> — 응시자의 30% 이상이 &ldquo;찍음&rdquo;으로 표시한 문항입니다. 맞혔더라도 확신이 없었던 문항이라 다시 짚어 주면 좋습니다.</p><ul>");
+    for (const g of gMany) {
+      const it = items.find((x) => x.label === g.label);
+      b.push(
+        `<li><b>${esc(g.label)}번</b>${it ? ` (${esc(it.unit)}, ${esc(it.difficulty)})` : ""} — 찍음 ${g.guessed}/${g.n}명(그중 맞힘 ${g.guessedCorrect}), 확실히 맞힌 학생 ${g.realCorrect}/${g.n}명</li>`
+      );
+    }
+    b.push("</ul>");
   }
 
   // 7. 시험지·해설 확인 사항
@@ -552,7 +596,8 @@ function buildAdvice(items: ReportItem[], student: ReportStudent, idx: Map<strin
   return s;
 }
 
-export function buildIndividualHtml(katex: any, data: ReportData, student: ReportStudent): string {
+/** opts.promo: 학원 학생 보고서면 맨 끝에 메딕수학 홍보 상자(과외선생님 화면에서 만들 때는 안 붙임 — ReportPanel) */
+export function buildIndividualHtml(katex: any, data: ReportData, student: ReportStudent, opts: { promo?: boolean } = {}): string {
   const items = data.items;
   const idx = indexPerItem(student);
   const domains = buildDomains(items);
@@ -715,6 +760,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
   }
   b.push('<p class="rpt-foot">등급 구분·예상 등급·다른 학생과의 비교는 이 보고서에 포함하지 않았습니다.</p>');
   b.push(MEDIC_FOOT);
+  if (opts.promo) b.push(promoReportHtml());
 
   return `<div class="rpt">${b.join("")}</div>`;
 }

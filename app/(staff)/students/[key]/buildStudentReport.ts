@@ -3,6 +3,7 @@
 // 계산은 서버에서 끝난 Analysis(lib/students/analysis.ts)를 그대로 받아 그리기만 한다.
 import { badge, downloadBytes, ensureReportTools, esc, htmlToPdfBytes, mathHtml } from "@/app/(staff)/exams/[code]/results/buildReportPdf";
 import { trendSvg, type Analysis, type Attempt, type Bucket } from "@/lib/students/analysis";
+import { promoReportHtml } from "@/lib/content/promo";
 
 export type StudentReportInput = {
   name: string;
@@ -121,7 +122,7 @@ export function buildStudentReportHtml(katex: any, input: StudentReportInput, ch
     b.push(
       `<tr><td class="l">${esc(e.name)}</td><td class="c">${esc(day(e.submittedAt))}</td><td class="c rpt-small">${esc(e.classLabel)}</td><td class="c">${fmt(e.score)} / ${fmt(
         e.max
-      )}${e.guessedCorrect > 0 ? `<div class="rpt-small">실질 ${fmt(e.realScore)} (찍어서 맞힘 ${e.guessedCorrect})</div>` : ""}</td><td class="c"><b>${pct(e.rate)}</b></td><td class="c">${e.correct} · ${e.wrong} · ${e.blank}</td>${
+      )}${e.guessed > 0 ? `<div class="rpt-small">실질 ${fmt(e.realScore)} (찍음 ${e.guessed}개 중 ${e.guessedCorrect}개 맞음)</div>` : ""}</td><td class="c"><b>${pct(e.rate)}</b></td><td class="c">${e.correct} · ${e.wrong} · ${e.blank}</td>${
         showAvg ? `<td class="c">${e.classAvg != null ? `${pct(e.classAvg)} (${e.classCount}명)` : "-"}</td>` : ""
       }</tr>`
     );
@@ -177,6 +178,7 @@ export function buildStudentReportHtml(katex: any, input: StudentReportInput, ch
   b.push(
     '<p class="rpt-foot">득점률 = 받은 점수 ÷ 만점. 영역·단원·난이도는 AI가 문제를 풀며 붙인 값이라 학교마다 이름이 조금 다를 수 있습니다. 등급 구분·예상 등급은 포함하지 않습니다.</p>'
   );
+  b.push(promoReportHtml()); // 2026-10-01: 학원 학생 누적 보고서(학부모 상담용) 끝에 메딕수학 홍보 상자
   return `<div class="rpt">${b.join("")}</div>`;
 }
 

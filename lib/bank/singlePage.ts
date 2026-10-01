@@ -21,3 +21,29 @@ export async function singlePagePdf(admin: any, itemId: string): Promise<Uint8Ar
   out.addPage(pg);
   return await out.save();
 }
+
+/**
+ * 2026-10-01 느린 화면 줄이기: PDF 바이트에서 n쪽만 떼어 새 PDF로(전체 쪽 수도 같이). 휴대폰으로 검토할 때
+ * 문항마다 시험지 전체(스캔본은 수 MB)를 받던 것을 그 쪽 하나만 받게 한다. n이 범위 밖이면 null.
+ */
+export async function pdfPageOf(src: Uint8Array | Buffer, n: number): Promise<{ bytes: Uint8Array; total: number } | null> {
+  const doc = await PDFDocument.load(src, { ignoreEncryption: true });
+  const total = doc.getPageCount();
+  const idx = Math.floor(n) - 1;
+  if (!Number.isFinite(idx) || idx < 0 || idx >= total) return null;
+  const out = await PDFDocument.create();
+  const [pg] = await out.copyPages(doc, [idx]);
+  out.addPage(pg);
+  return { bytes: await out.save(), total };
+}
+
+/** ?page=N 응답 — 쪽 하나와 전체 쪽 수(X-Page-Count). 같은 쪽을 다시 열면 브라우저가 5분 동안 재사용한다. */
+export function pageResponse(r: { bytes: Uint8Array; total: number }): Response {
+  return new Response(r.bytes as any, {
+    headers: {
+      "Content-Type": "application/pdf",
+      "X-Page-Count": String(r.total),
+      "Cache-Control": "private, max-age=300",
+    },
+  });
+}

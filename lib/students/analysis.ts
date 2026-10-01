@@ -219,6 +219,8 @@ export type ExamResult = {
   realScore: number;
   /** 찍어서 맞힌 문항 수 */
   guessedCorrect: number;
+  /** 찍음으로 표시한 문항 수(맞든 틀리든) — 학생 화면 "찍음 추이" */
+  guessed: number;
   max: number;
   rate: number | null;
   n: number;
@@ -364,6 +366,7 @@ export function analyzeStudent(
       score: s.total_score,
       realScore: Math.round((s.total_score - guessedPts) * 100) / 100,
       guessedCorrect,
+      guessed: per.filter((p) => p.guessed).length,
       max: exam.max,
       rate: rateOf(s.total_score, exam, per),
       n: per.length || exam.n,

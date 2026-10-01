@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { LEVELS, type Level } from "@/lib/classLabel";
+import PromoBanner from "@/app/_components/PromoBanner";
 
 type ClassRow = { level: string; grade: number; name: string };
 type Item = { item_label: string; type: "객관식" | "주관식" };
@@ -16,6 +17,7 @@ export default function StudentSubmitForm({
   items,
   tutorToken = null,
   endpoint = null,
+  promo = false,
 }: {
   code: string;
   examName: string;
@@ -25,6 +27,8 @@ export default function StudentSubmitForm({
   tutorToken?: string | null;
   // 2026-10-01 입학테스트(/p/코드): 반 선택 없이 이름·답만 받아 이 주소로 보낸다
   endpoint?: string | null;
+  /** 2026-10-01: 제출 완료 화면에 메딕수학 홍보 배너(학원 학생만 — 과외선생님 학생에게는 안 보임) */
+  promo?: boolean;
 }) {
   const direct = !!tutorToken || !!endpoint;
   const [step, setStep] = useState<"level" | "grade" | "class" | "form">(direct ? "form" : "level");
@@ -88,6 +92,7 @@ export default function StudentSubmitForm({
           <p className="font-medium">제출 완료했습니다.</p>
           <p className="text-sm text-slate-500 mt-1">{name} 학생, 수고했어요.</p>
         </div>
+        {promo && <PromoBanner />}
       </Wrap>
     );
   }

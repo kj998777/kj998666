@@ -1,4 +1,6 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchAllPages } from "@/lib/supabase/fetchAll";
 import { loadBankItems } from "@/lib/bank/load";
 import type { BankItem } from "@/lib/bank/search";
@@ -17,9 +19,13 @@ export type TutorBank = {
   price: Record<string, number>; // 시험 id → 그 시험 문항 값의 상한(다운로드 가격), 이미 산 시험은 0
 };
 
+// 2026-10-01 느린 화면 줄이기: 문항 전체 목록은 선생님마다 같으므로 60초 동안 서버에 받아 두고 같이 쓴다
+// (맞춤 시험지·입학테스트 화면을 열 때마다 문항·정답표 수천 줄을 다시 읽지 않게). 값·구매 여부는 매번 새로 읽는다.
+const cachedBankItems = unstable_cache(async () => loadBankItems(createAdminClient()), ["tutor-bank-items-v1"], { revalidate: 60 });
+
 export async function loadTutorBank(admin: Client, tutorId: string): Promise<TutorBank> {
   const [all, examsRes, buys] = await Promise.all([
-    loadBankItems(admin),
+    cachedBankItems().catch(() => loadBankItems(admin)),
     fetchAllPages((a, b) => admin.from("exams").select("id, status, tutor_download_cost").neq("status", "검수대기").order("id").range(a, b)),
     fetchAllPages((a, b) => admin.from("tutor_exam_purchases").select("exam_id").eq("tutor_id", tutorId).order("exam_id").range(a, b)),
   ]);

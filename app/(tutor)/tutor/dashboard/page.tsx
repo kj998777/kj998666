@@ -21,29 +21,38 @@ export default async function TutorDashboardPage() {
   const session = await requireTutor();
   const supabase = await createClient();
 
-  const [{ data: stats }, { data: ledger }] = await Promise.all([
-    supabase
-      .from("tutor_stats")
-      .select("points_balance, reviews_submitted")
-      .eq("tutor_id", session.userId)
-      .maybeSingle(),
+  // 2026-10-01 느린 화면 줄이기: 전에는 세 번에 나눠(포인트·내역 → 등급·정답률·순위 → 스토어·구매·초대) 차례로 기다렸다 — 한 번에 묻는다
+  const [
+    { data: stats },
+    { data: ledger },
+    { data: trust },
+    { data: acc },
+    { data: rank },
+    { data: storeExams },
+    { data: buys },
+    { data: inviteCode },
+    { data: refs },
+  ] = await Promise.all([
+    supabase.from("tutor_stats").select("points_balance, reviews_submitted").eq("tutor_id", session.userId).maybeSingle(),
     supabase
       .from("tutor_points_ledger")
       .select("id, delta, reason, ref_item_label, created_at")
       .eq("tutor_id", session.userId)
       .order("created_at", { ascending: false })
       .limit(20),
-  ]);
-
-  const s = (stats as any) ?? { points_balance: 0, reviews_submitted: 0 };
-
-  // 신뢰도(0037: 정답률 등급). 0037 전이면 정답률 조회가 실패해 등급만 보인다.
-  const [{ data: trust }, { data: acc }, { data: rank }] = await Promise.all([
+    // 신뢰도(0037: 정답률 등급). 0037 전이면 정답률 조회가 실패해 등급만 보인다.
     (supabase.rpc as any)("tutor_trust_level", { p_tutor: session.userId }),
     (supabase.rpc as any)("tutor_accuracy", { p_tutor: session.userId }),
     // 0038 포인트 랭킹(문제로 얻은 포인트만) — 내 순위만
     (supabase.rpc as any)("tutor_point_ranking", { p_period: "all", p_limit: 1 }),
+    // 2026-10-01 다음 목표(참여율): 지금 포인트로 받을 수 있는 기출 수, 모자라면 몇 문항 더 풀면 되는지
+    supabase.from("exams").select("id, tutor_download_cost").neq("status", "검수대기").not("tutor_download_cost", "is", null),
+    supabase.from("tutor_exam_purchases").select("exam_id").eq("tutor_id", session.userId),
+    (supabase.rpc as any)("tutor_my_invite_code"),
+    (supabase.from("tutor_referrals") as any).select("invitee_id, rewarded_at").eq("inviter_id", session.userId),
   ]);
+
+  const s = (stats as any) ?? { points_balance: 0, reviews_submitted: 0 };
   const myRank = rank?.mine as { rank: number; points: number } | null | undefined;
   const judged = Number(acc?.judged ?? 0);
   const accPct = judged ? Math.round((Number(acc?.correct ?? 0) / judged) * 100) : null;
@@ -56,13 +65,6 @@ export default async function TutorDashboardPage() {
   };
   const lv = LEVEL[String(trust ?? "ok")] ?? LEVEL.ok;
 
-  // 2026-10-01 다음 목표(참여율): 지금 포인트로 받을 수 있는 기출 수, 모자라면 몇 문항 더 풀면 되는지
-  const [{ data: storeExams }, { data: buys }, { data: inviteCode }, { data: refs }] = await Promise.all([
-    supabase.from("exams").select("id, tutor_download_cost").neq("status", "검수대기").not("tutor_download_cost", "is", null),
-    supabase.from("tutor_exam_purchases").select("exam_id").eq("tutor_id", session.userId),
-    (supabase.rpc as any)("tutor_my_invite_code"),
-    (supabase.from("tutor_referrals") as any).select("invitee_id, rewarded_at").eq("inviter_id", session.userId),
-  ]);
   const owned = new Set(((buys as any[]) ?? []).map((b) => b.exam_id));
   const notOwned = ((storeExams as any[]) ?? []).filter((e) => !owned.has(e.id)).map((e) => Number(e.tutor_download_cost) || 0);
   const balance = Number(s.points_balance ?? 0);

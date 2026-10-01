@@ -35,26 +35,33 @@ function loadPdfJs(): Promise<any> {
   return pdfJsReady;
 }
 
-// pdf.js Document 객체는 요청마다 새로 받기엔 비싸므로(특히 스캔본), 같은 pdfUrl에 대해서는
-// 페이지를 넘길 때마다 다시 fetch/파싱하지 않고 한 번 받아둔 문서를 재사용한다.
-let docCache: { url: string; doc: Promise<any> } | null = null;
-async function loadDoc(pdfUrl: string): Promise<any> {
-  if (docCache && docCache.url === pdfUrl) return docCache.doc;
+// pdf.js Document 객체는 요청마다 새로 받기엔 비싸므로(특히 스캔본), 같은 주소는 한 번 받아 둔 문서를 재사용한다.
+// 2026-10-01 느린 화면 줄이기: paged(주소에 ?page=N을 붙이면 그 쪽 하나만 주는 경로)면 문항이 있는 쪽 하나만 받고,
+// 쪽을 넘길 때도 그 쪽만 받는다 — 전에는 문항마다 시험지 전체(스캔본은 수 MB)를 받았다. 전체 쪽 수는 X-Page-Count.
+type DocEntry = { doc: any; total: number | null };
+const docCache = new Map<string, Promise<DocEntry>>();
+async function loadDoc(url: string): Promise<DocEntry> {
+  const hit = docCache.get(url);
+  if (hit) return hit;
   const promise = (async () => {
     const pdfjsLib = await loadPdfJs();
-    const res = await fetch(pdfUrl, { cache: "no-store" });
+    const res = await fetch(url, { cache: url.includes("page=") ? "default" : "no-store" });
     if (!res.ok) throw new Error("원본 PDF를 불러오지 못했습니다.");
+    const total = Number(res.headers.get("x-page-count")) || null;
     const buf = await res.arrayBuffer();
-    return pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+    return { doc, total };
   })();
-  docCache = { url: pdfUrl, doc: promise };
+  docCache.set(url, promise);
+  if (docCache.size > 8) docCache.delete(docCache.keys().next().value as string);
   try {
     await promise;
   } catch {
-    docCache = null; // 실패하면 캐시해 두지 않는다(다음 시도에서 재시도할 수 있게).
+    docCache.delete(url); // 실패하면 캐시해 두지 않는다(다음 시도에서 재시도할 수 있게).
   }
   return promise;
 }
+const withPage = (url: string, n: number) => `${url}${url.includes("?") ? "&" : "?"}page=${n}`;
 
 export type ProblemBbox = { x0: number; y0: number; x1: number; y1: number };
 
@@ -73,11 +80,14 @@ export default function ProblemPageImage({
   page,
   bbox,
   label,
+  paged = false,
 }: {
   pdfUrl: string;
   page: number | null;
   bbox: ProblemBbox | null;
   label: string;
+  /** pdfUrl에 ?page=N을 붙이면 그 쪽 하나만 주는 경로인지(쪽 번호를 알 때만 씀) */
+  paged?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
@@ -94,6 +104,16 @@ export default function ProblemPageImage({
   const [showFullPage, setShowFullPage] = useState(false);
   // 지금 이 쪽에서 실제로 자르고 있는지: 영역이 있고, 전체 보기를 안 눌렀고, 문항이 있는 쪽 그대로일 때만.
   const cropping = !!region && !showFullPage && currentPage === region.page;
+  // 쪽 하나씩 받기: 쪽 번호를 알 때만(모르면 문항 번호를 찾으려고 전체가 필요)
+  const single = paged && !!(page && page > 0);
+  const docFor = async (n: number): Promise<{ doc: any; total: number | null; at: number }> => {
+    if (single) {
+      const e = await loadDoc(withPage(pdfUrl, n));
+      return { doc: e.doc, total: e.total, at: 1 };
+    }
+    const e = await loadDoc(pdfUrl);
+    return { doc: e.doc, total: e.doc.numPages, at: n };
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -102,8 +122,14 @@ export default function ProblemPageImage({
     (async () => {
       let r: Region | null = null;
       try {
-        const [lib, doc] = await Promise.all([loadPdfJs(), loadDoc(pdfUrl)]);
-        r = await resolveRegion(lib, doc, label, page && page > 0 ? page : null, aiHadBbox ? bbox : null);
+        const p0 = page && page > 0 ? page : null;
+        const [lib, d] = await Promise.all([loadPdfJs(), docFor(p0 ?? 1)]);
+        if (single && p0) {
+          const r1 = await resolveRegion(lib, d.doc, label, 1, aiHadBbox ? bbox : null);
+          r = r1 ? { ...r1, page: p0 } : null;
+        } else {
+          r = await resolveRegion(lib, d.doc, label, p0, aiHadBbox ? bbox : null);
+        }
       } catch {
         r = null;
       }
@@ -123,15 +149,16 @@ export default function ProblemPageImage({
     setStatus("loading");
     (async () => {
       try {
-        const doc = await loadDoc(pdfUrl);
-        if (cancelled) return;
-        setNumPages(doc.numPages);
-        const target = Math.min(Math.max(1, currentPage), doc.numPages);
+        const known = numPages;
+        const target = known ? Math.min(Math.max(1, currentPage), known) : Math.max(1, currentPage);
         if (target !== currentPage) {
           setCurrentPage(target);
           return; // currentPage가 바뀌면 이 effect가 다시 돌면서 그 쪽을 그린다.
         }
-        const pg = await doc.getPage(target);
+        const d = await docFor(target);
+        if (cancelled) return;
+        if (d.total) setNumPages(d.total);
+        const pg = await d.doc.getPage(d.at);
         const v1 = pg.getViewport({ scale: 1 });
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -189,7 +216,7 @@ export default function ProblemPageImage({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdfUrl, currentPage, cropping, region]);
+  }, [pdfUrl, currentPage, cropping, region, single]);
 
   function goPage(delta: number) {
     setCurrentPage((p) => {

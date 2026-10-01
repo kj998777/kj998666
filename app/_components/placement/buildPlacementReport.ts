@@ -4,6 +4,7 @@ import { badge, esc, mathHtml, MEDIC_BADGE, MEDIC_FOOT } from "@/app/(staff)/exa
 import type { BankDetail } from "@/lib/bank/load";
 import type { PerItemResult } from "@/lib/grading";
 import { diagnose } from "@/lib/placement/pick";
+import { promoReportHtml } from "@/lib/content/promo";
 
 const CIRC: Record<string, string> = { "1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤" };
 
@@ -14,6 +15,8 @@ export type PlacementReportInput = {
   submittedAt: string;
   items: BankDetail[];
   perItem: PerItemResult[];
+  /** 학원 입학테스트면 맨 끝에 메딕수학 홍보 상자(과외선생님 테스트는 안 붙임) */
+  promo?: boolean;
 };
 
 function keyText(katex: any, it: BankDetail): string {
@@ -151,5 +154,6 @@ export function buildPlacementHtml(katex: any, d: PlacementReportInput): string 
     '<p class="rpt-foot">난이도·단원은 AI가 문제를 풀어 보고 붙인 값입니다. 문제 글은 원래 시험지를 요약·정리한 것이라 그림·표는 시험지를 함께 보세요.</p>'
   );
   b.push(MEDIC_FOOT);
+  if (d.promo) b.push(promoReportHtml());
   return `<div class="rpt">${b.join("")}</div>`;
 }
