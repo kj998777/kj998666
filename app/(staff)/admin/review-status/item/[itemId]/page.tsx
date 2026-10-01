@@ -135,6 +135,7 @@ export default async function AdminReviewItemPage({ params, searchParams }: { pa
           <ProblemPageImage
             /* 2026-09-30: 원본을 다시 적용하면 주소가 바뀌게(?v=) — 문제 그림 칸은 같은 주소의 PDF를 한 번 받아 두고 계속 써서, 반영해도 예전 그림이 남았다 */
             pdfUrl={`/exams/${encodeURIComponent(exam.code)}/original-pdf?v=${encodeURIComponent(String(pdfMeta?.storage_path ?? "") + "_" + String(pdfMeta?.uploaded_at ?? ""))}`}
+            paged
             label={String(it.item_label ?? "")}
             page={it.source_page ?? null}
             bbox={
