@@ -9,6 +9,7 @@ import { getLocateSummary } from "@/lib/ai/locate";
 import { fetchAllIn, fetchAllPages } from "@/lib/supabase/fetchAll";
 import { personLabel } from "@/lib/profile/label";
 import { reviewJejuLevel, isNewCurriculumExam } from "@/lib/tutor/priority";
+import { basePointsFor } from "@/lib/tutor/points";
 
 export const dynamic = "force-dynamic";
 
@@ -379,7 +380,7 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
                           {r.it.difficulty ? (
                             <span
                               className={"badge " + (DIFF_CLS[r.it.difficulty] ?? "bg-slate-100 text-slate-600")}
-                              title={`과외 적립 ${r.it.difficulty === "중상" || r.it.difficulty === "상" ? 2 : 1}P`}
+                              title={`과외 적립 ${basePointsFor(r.it.difficulty)}P`}
                             >
                               {r.it.difficulty}
                             </span>

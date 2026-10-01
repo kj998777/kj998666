@@ -16,7 +16,7 @@ export default function ReviewQueueClient({ bonusLeft = 0 }: { bonusLeft?: numbe
       <h1 className="text-lg font-semibold">검토하기</h1>
       <p className="text-sm text-slate-500">
         버튼을 누르면 검토가 필요한 문항 하나를 배정받습니다. 원본 문제지 PDF를 함께 보고 정답과
-        풀이를 제출하면 즉시 반영되고 포인트가 적립됩니다(난이도 하·중하·중 1P, 중상·상 2P).
+        풀이를 제출하면 즉시 반영되고 포인트가 적립됩니다(난이도 하·중하·중 1P, 중상 2P, 상 3P).
       </p>
       {/* 0043: 처음 3문항 보너스 + 처음에는 쉬운 문항부터(DB award_review_points·tutor_prefers_easy) */}
       {bonusLeft > 0 && (
