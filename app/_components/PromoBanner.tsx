@@ -4,7 +4,12 @@ import { PROMO } from "@/lib/content/promo";
 export default function PromoBanner({ compact = false }: { compact?: boolean }) {
   return (
     <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-left space-y-2">
-      <p className="text-xs font-semibold tracking-wide text-rose-700">{PROMO.name}</p>
+      {/* 2026-10-01: 메딕차트 표시 + 학원 로고(메딕차트 머리글과 같은 모양) */}
+      <div className="flex items-center gap-2">
+        <span className="brand-mark text-base">메딕차트</span>
+        <span className="w-px h-5 bg-slate-300" aria-hidden="true" />
+        <img src={PROMO.logoSrc} alt={`${PROMO.name} 로고`} className="h-7 w-auto" />
+      </div>
       <p className="text-lg font-bold text-slate-900 leading-snug">{PROMO.headline}</p>
       {!compact && <p className="text-sm text-slate-600">{PROMO.sub}</p>}
       <div className="flex flex-wrap gap-2 pt-1">
