@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchAllIn, fetchAllPages } from "@/lib/supabase/fetchAll";
 import StoreFolderTree, { type StoreExam } from "./StoreFolderTree";
+import ContentKindBadge from "./ContentKindBadge";
+import { CONTENT_KIND_NOTE } from "@/lib/content/kinds";
 
 // exams_select_tutor_store RLS 정책 덕분에 여기서 select("*")를 해도 "지금 판매 중"이거나
 // "이미 구매한" 시험만 자동으로 걸러져서 내려온다 — 앱 코드에서 따로 필터링할 필요 없음.
@@ -76,6 +78,18 @@ export default async function TutorStorePage() {
         <Link href="/tutor/store/purchases" className="text-sm link-accent whitespace-nowrap">
           구매 내역 →
         </Link>
+      </div>
+
+      {/* 2026-10-01: 기출 하나를 사면 무엇을 받는지 — 학교 기출 원본 + 메딕 해설(lib/content/kinds.ts) */}
+      <div className="card grid gap-3 sm:grid-cols-2 text-sm">
+        <div className="space-y-1">
+          <ContentKindBadge kind="original" />
+          <p className="text-slate-600">{CONTENT_KIND_NOTE.original}</p>
+        </div>
+        <div className="space-y-1">
+          <ContentKindBadge kind="medic" />
+          <p className="text-slate-600">{CONTENT_KIND_NOTE.medic} 기출을 사면 함께 받습니다.</p>
+        </div>
       </div>
 
       <div className="card">
