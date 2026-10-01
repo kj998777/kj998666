@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { finalizeUploadPdfAndStartAi } from "../ai-actions";
 import { pdfTooLarge, uploadPdfDirect } from "@/lib/supabase/uploadPdf";
+import { fitPdfForUpload } from "@/lib/pdf/shrinkPdf";
 import PdfDropInput from "../PdfDropInput";
 
 /**
@@ -28,14 +29,12 @@ export default function UploadPdfForm({ code, examId }: { code: string; examId: 
           setMsg("시험지 PDF 파일을 선택해 주세요.");
           return;
         }
-        if (pdfTooLarge(file)) {
-          setMsg("PDF 용량이 너무 큽니다(50MB 이하로 줄여서 올려 주세요).");
-          return;
-        }
         const isScanned = formData.get("is_scanned") === "on";
         start(async () => {
           try {
-            await uploadPdfDirect(examId, file);
+            // 2026-10-01: 50MB를 넘으면 자동으로 줄여서 올린다(lib/pdf/shrinkPdf.ts)
+            const pdf = pdfTooLarge(file) ? (await fitPdfForUpload(file, setMsg)).file : file;
+            await uploadPdfDirect(examId, pdf);
           } catch (e: any) {
             setMsg(String(e?.message ?? e));
             return;
@@ -56,8 +55,8 @@ export default function UploadPdfForm({ code, examId }: { code: string; examId: 
         <input type="checkbox" name="is_scanned" />
         스캔본입니다(디지털화 필요) — 업로드 후 자동으로 디지털화를 시작합니다
       </label>
-      <p className="text-xs text-slate-400">최대 50MB</p>
-      {msg && <span className="text-sm text-red-600">{msg}</span>}
+      <p className="text-xs text-slate-400">50MB가 넘으면 자동으로 줄여서 올립니다</p>
+      {msg && <span className={"text-sm " + (/줄이는 중|줄였습니다/.test(msg) ? "text-slate-600" : "text-red-600")}>{msg}</span>}
     </form>
   );
 }
