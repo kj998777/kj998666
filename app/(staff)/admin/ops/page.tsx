@@ -31,6 +31,7 @@ const REASON_LABEL: Record<string, string> = {
   admin_adjustment: "관리자 지급·조정",
   dispute_reward: "정답 이의 채택 보상",
   worksheet_purchase: "맞춤 시험지(과외)",
+  placement_purchase: "입학테스트(과외)",
   first_bonus: "처음 3문항 보너스",
   referral_bonus: "친구 초대 보너스",
 };
