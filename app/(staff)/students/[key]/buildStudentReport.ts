@@ -1,7 +1,7 @@
 // 학생 누적 성적 보고서 PDF(학부모 상담용, 2026-09-30). 시험별 성적 보고서와 같은 도구(html2canvas + jsPDF,
 // A4 쪽 나누기)와 같은 모양(.rpt)을 쓴다 — app/(staff)/exams/[code]/results/buildReportPdf.ts.
 // 계산은 서버에서 끝난 Analysis(lib/students/analysis.ts)를 그대로 받아 그리기만 한다.
-import { badge, downloadBytes, ensureReportTools, esc, htmlToPdfBytes, mathHtml } from "@/app/(staff)/exams/[code]/results/buildReportPdf";
+import { badge, brandHead, downloadBytes, ensureReportTools, esc, htmlToPdfBytes, mathHtml } from "@/app/(staff)/exams/[code]/results/buildReportPdf";
 import { trendSvg, type Analysis, type Attempt, type Bucket } from "@/lib/students/analysis";
 import { promoReportHtml } from "@/lib/content/promo";
 
@@ -47,8 +47,8 @@ async function svgToPng(svg: string, w: number, h: number): Promise<string> {
 
 function bar(rate: number): string {
   const w = Math.round(Math.max(0, Math.min(1, rate)) * 100);
-  const color = rate >= 0.8 ? "#16a34a" : rate >= 0.6 ? "#ca8a04" : "#dc2626";
-  return `<div style="height:10px;background:#eef2f7;border-radius:5px;overflow:hidden"><div style="height:10px;width:${w}%;background:${color}"></div></div>`;
+  const color = rate >= 0.8 ? "#1C1A16" : rate >= 0.6 ? "#8A8178" : "#A83232"; // 학원 색(먹색·회색·십자 빨강)
+  return `<div style="height:10px;background:#EDE9E2;border-radius:2px;overflow:hidden"><div style="height:10px;width:${w}%;background:${color}"></div></div>`;
 }
 
 function bucketTable(title: string, rows: Bucket[]): string {
@@ -87,7 +87,7 @@ export function buildStudentReportHtml(katex: any, input: StudentReportInput, ch
   b.push(
     `<div class="rpt-rowh"><div><h1>누적 성적 보고서</h1><div class="rpt-sub" style="margin:0">${esc(input.name)} · ${esc(input.classText)}${
       period ? ` · ${esc(period)}` : ""
-    }</div></div><div class="rpt-small">발행 ${esc(day(new Date().toISOString()))} · 메딕수학</div></div>`
+    }</div></div>${brandHead(`발행 ${esc(day(new Date().toISOString()))} · 메딕수학`)}</div>`
   );
   const t = a.trend;
   const trendText =

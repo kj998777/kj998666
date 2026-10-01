@@ -584,28 +584,28 @@ export function trendSvg(
   parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="${xmlEsc(font)}">`);
   parts.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`);
   for (const t of [0, 0.25, 0.5, 0.75, 1]) {
-    parts.push(`<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="${t === 0 ? "#94a3b8" : "#e2e8f0"}" stroke-width="1"/>`);
-    parts.push(`<text x="${L - 6}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="#64748b">${Math.round(t * 100)}%</text>`);
+    parts.push(`<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="${t === 0 ? "#A89F93" : "#E4DFD7"}" stroke-width="1"/>`);
+    parts.push(`<text x="${L - 6}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="#7C7268">${Math.round(t * 100)}%</text>`);
   }
   const cls = exams.map((e, i) => (e.classAvg != null ? [x(i), y(e.classAvg)] : null));
   const clsPts = cls.filter((p): p is number[] => !!p);
   if (clsPts.length >= 2)
-    parts.push(`<polyline points="${clsPts.map((p) => p.join(",")).join(" ")}" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4 4"/>`);
-  for (const p of clsPts) parts.push(`<circle cx="${p[0]}" cy="${p[1]}" r="2.5" fill="#94a3b8"/>`);
+    parts.push(`<polyline points="${clsPts.map((p) => p.join(",")).join(" ")}" fill="none" stroke="#A89F93" stroke-width="1.5" stroke-dasharray="4 4"/>`);
+  for (const p of clsPts) parts.push(`<circle cx="${p[0]}" cy="${p[1]}" r="2.5" fill="#A89F93"/>`);
   const pts = exams.map((e, i) => (e.rate != null ? [x(i), y(e.rate), e.rate] : null)).filter((p): p is number[] => !!p);
-  if (pts.length >= 2) parts.push(`<polyline points="${pts.map((p) => `${p[0]},${p[1]}`).join(" ")}" fill="none" stroke="#2563eb" stroke-width="2.5"/>`);
+  if (pts.length >= 2) parts.push(`<polyline points="${pts.map((p) => `${p[0]},${p[1]}`).join(" ")}" fill="none" stroke="#A83232" stroke-width="2.5"/>`);
   for (const p of pts) {
-    parts.push(`<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="#2563eb" stroke="#ffffff" stroke-width="1.5"/>`);
+    parts.push(`<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="#A83232" stroke="#ffffff" stroke-width="1.5"/>`);
     const ly = p[1] < T + 14 ? p[1] + 16 : p[1] - 9;
-    parts.push(`<text x="${p[0]}" y="${ly}" text-anchor="middle" font-size="11" font-weight="700" fill="#1d4ed8">${Math.round(p[2] * 100)}</text>`);
+    parts.push(`<text x="${p[0]}" y="${ly}" text-anchor="middle" font-size="11" font-weight="700" fill="#8A2A2A">${Math.round(p[2] * 100)}</text>`);
   }
   const step = n > 8 ? Math.ceil(n / 8) : 1;
   exams.forEach((e, i) => {
     if (i % step !== 0 && i !== n - 1) return;
     const d = new Date(e.submittedAt);
     const md = isNaN(d.getTime()) ? "" : `${d.getMonth() + 1}/${d.getDate()}`;
-    parts.push(`<text x="${x(i)}" y="${H - B + 18}" text-anchor="middle" font-size="10.5" fill="#334155">${xmlEsc(shortExamName(e.name, n > 5 ? 8 : 12))}</text>`);
-    parts.push(`<text x="${x(i)}" y="${H - B + 32}" text-anchor="middle" font-size="10" fill="#64748b">${md}</text>`);
+    parts.push(`<text x="${x(i)}" y="${H - B + 18}" text-anchor="middle" font-size="10.5" fill="#453E36">${xmlEsc(shortExamName(e.name, n > 5 ? 8 : 12))}</text>`);
+    parts.push(`<text x="${x(i)}" y="${H - B + 32}" text-anchor="middle" font-size="10" fill="#7C7268">${md}</text>`);
   });
   parts.push("</svg>");
   return parts.join("");

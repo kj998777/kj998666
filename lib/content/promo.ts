@@ -21,9 +21,9 @@ export const PROMO = {
 export function promoLogosHtml(): string {
   return (
     `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">` +
-    `<span style="display:inline-flex;align-items:center;gap:6px;font-weight:700;color:#0f172a;font-size:15px">` +
+    `<span style="display:inline-flex;align-items:center;gap:6px;font-weight:700;color:#1C1A16;font-size:15px">` +
     `<span style="display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:4px;background:#832f1d;color:#fff;font-weight:800;font-size:13px;line-height:1">+</span>메딕차트</span>` +
-    `<span style="display:inline-block;width:1px;height:18px;background:#cbd5e1"></span>` +
+    `<span style="display:inline-block;width:1px;height:18px;background:#D6CFC4"></span>` +
     `<img src="${PROMO.logoSrc}" alt="${PROMO.name}" style="height:24px;width:124px">` +
     `</div>`
   );
@@ -35,9 +35,9 @@ export const shortUrl = (u: string) => u.replace(/^https?:\/\//, "").replace(/\/
 /** 보고서 PDF 맨 끝 홍보 상자(.rpt 양식) — PDF는 그림으로 만들어 링크를 누를 수 없으므로 주소를 글로 적는다 */
 export function promoReportHtml(): string {
   return (
-    `<div class="rpt-box" style="margin-top:10px;border-color:#fecdd3;background:#fff1f2">` +
+    `<div class="rpt-box" style="margin-top:10px;border-color:#E8C4C0;background:#F8ECEA">` +
     promoLogosHtml() +
-    `<b style="color:#be123c">${PROMO.name}</b> — ${PROMO.headline}. ${PROMO.sub}<br>` +
+    `<b style="color:#8A2A2A">${PROMO.name}</b> — ${PROMO.headline}. ${PROMO.sub}<br>` +
     `<span class="rpt-small">홈페이지 ${shortUrl(PROMO.siteUrl)} · 블로그 ${shortUrl(PROMO.blogUrl)} · 상담 ${PROMO.phone} · ${PROMO.address}</span>` +
     `</div>`
   );

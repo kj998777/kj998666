@@ -3,7 +3,7 @@ import { needsSvgMath, svgifyKatex } from "@/lib/math/svgMath";
 import { guessSummary } from "@/lib/grading";
 import { guessStatsByItem, guessTotals, manyGuessed, pctOf } from "@/lib/report/guessStats";
 import { CONTENT_KIND_LABEL, MEDIC_PDF_CREDIT } from "@/lib/content/kinds";
-import { promoReportHtml } from "@/lib/content/promo";
+import { PROMO, promoReportHtml } from "@/lib/content/promo";
 // 브라우저에서 "성적 보고서"(종합/개별) PDF를 만든다.
 //
 // 옛 Apps Script 시스템의 파이썬 스크립트(claude/dg2025-report-content.md의 content.py/build.py/
@@ -123,7 +123,11 @@ function loadJsZip(): Promise<any> {
 // ---------------------------------------------------------------------
 
 // 2026-10-01: 해설지·보고서는 "메딕 해설"(원장님·검토단이 만든 자료)임을 머리말 배지와 꼬리말로 밝힌다(lib/content/kinds.ts).
-export const MEDIC_BADGE = `<div class="rpt-medic">${CONTENT_KIND_LABEL.medic} · 메딕수학</div>`;
+export const MEDIC_BADGE = `<div class="rpt-brand"><img src="${PROMO.logoSrc}" alt="${PROMO.name}"><div class="rpt-medic">${CONTENT_KIND_LABEL.medic} · 메딕수학</div></div>`;
+/** 머리말 오른쪽 학원 로고(+ 아래 작은 글) — 누적 보고서처럼 "메딕 해설" 배지가 맞지 않는 보고서용 */
+export function brandHead(note: string): string {
+  return `<div class="rpt-brand"><img src="${PROMO.logoSrc}" alt="${PROMO.name}"><div class="rpt-small">${note}</div></div>`;
+}
 export const MEDIC_FOOT = `<p class="rpt-foot">${MEDIC_PDF_CREDIT}</p>`;
 
 export function esc(s: unknown): string {
@@ -177,54 +181,132 @@ function pct(a: number, b: number): number {
 // pagebreak 플러그인이 인식하게 했다.)
 // ---------------------------------------------------------------------
 
+// 2026-10-02 원장님: "보고서 디자인이 마음에 안 듦 — 우리 학원 색이랑 통일". 메딕수학 홍보사이트(medicmath-site
+// tailwind.config.ts)의 색·글꼴을 그대로 쓴다: 먹색(#1C1A16)·따뜻한 회색 바탕·로고 십자 빨강(#A83232),
+// 제목은 Noto Serif KR, 본문은 IBM Plex Sans KR. 입학테스트·누적 보고서·해설지도 이 표를 같이 쓴다.
+export const RPT_COLORS = {
+  ink: "#1C1A16", // 제목·강조(로고 Σ 검정)
+  body: "#2B2722", // 본문
+  body2: "#453E36",
+  muted: "#5C534A", // 보조 글자
+  soft: "#8A8178", // 꼬리말
+  line: "#E4DFD7", // 구분선·카드 테두리
+  line2: "#D6CFC4", // 표 테두리
+  paper: "#F7F5F1", // 상자 바탕
+  sand: "#EDE9E2", // 표 머리줄
+  brand: "#A83232", // 로고 십자 빨강
+  brandDark: "#8A2A2A",
+  brandDeep: "#6B1F1F",
+  brandTint: "#F8ECEA",
+  brandLine: "#E8C4C0",
+  amber: "#8A5A12", // 무응답
+  amberTint: "#FBF3E4",
+  amberLine: "#E7CFA2",
+};
+const RPT_SANS_FALLBACK = "'Noto Sans CJK KR','Noto Sans KR','Malgun Gothic','Apple SD Gothic Neo',sans-serif";
+const RPT_SANS = `'IBM Plex Sans KR',${RPT_SANS_FALLBACK}`;
+const RPT_SERIF = `'Noto Serif KR','Noto Serif CJK KR',${RPT_SANS_FALLBACK}`;
+const RPT_FONT_CSS =
+  "https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@700;900&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=block";
+const RPT_FONT_FACES = ['400 13px "IBM Plex Sans KR"', '600 13px "IBM Plex Sans KR"', '700 13px "IBM Plex Sans KR"', '700 16px "Noto Serif KR"', '900 24px "Noto Serif KR"'];
+
+let fontCss: Promise<boolean> | null = null;
+/** 글꼴 CSS(@font-face 목록)가 다 읽힐 때까지 기다린다 — 그 전에는 document.fonts.load가 할 일이 없다며 바로 끝난다 */
+function loadFontCss(): Promise<boolean> {
+  if (!fontCss) {
+    fontCss = new Promise<boolean>((resolve) => {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = RPT_FONT_CSS;
+      link.onload = () => resolve(true);
+      link.onerror = () => {
+        fontCss = null;
+        resolve(false);
+      };
+      document.head.appendChild(link);
+    });
+  }
+  return fontCss;
+}
+const hasFace = (family: string) => {
+  let found = false;
+  (document.fonts as any).forEach((f: FontFace) => {
+    if (f.family.replace(/["']/g, "") === family) found = true;
+  });
+  return found;
+};
+/**
+ * 학원 글꼴(구글 글꼴)을 이 보고서 글자만큼 미리 받아 둔다(한글 글꼴은 글자 묶음별로 나뉘어 있어 쓰인 글자를 알려 줘야 함).
+ * 4초 안에 못 받으면 false — 그때는 기본 글꼴로 그린다(쪽 나눈 뒤 글꼴이 바뀌어 넘치는 일이 없게).
+ */
+async function loadReportFonts(text: string): Promise<boolean> {
+  try {
+    const cssOk = await Promise.race([loadFontCss(), new Promise<boolean>((r) => setTimeout(() => r(false), 4000))]);
+    if (!cssOk || !hasFace("IBM Plex Sans KR") || !hasFace("Noto Serif KR")) return false;
+    const sample = Array.from(new Set(text.replace(/\s+/g, ""))).join("") || "가";
+    const all = Promise.all(RPT_FONT_FACES.map((f) => document.fonts.load(f, sample)));
+    const ok = await Promise.race([all.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 4000))]);
+    return ok && RPT_FONT_FACES.every((f) => document.fonts.check(f, "가"));
+  } catch {
+    return false;
+  }
+}
+
 let stylesInjected = false;
 function injectReportStyles(): void {
   if (stylesInjected) return;
   stylesInjected = true;
+  const C = RPT_COLORS;
   const css = `
-.rpt { box-sizing: border-box; width: 760px; background:#fff; color:#1f2937; font-family:'Noto Sans CJK KR','Noto Sans KR','Malgun Gothic','Apple SD Gothic Neo',sans-serif; font-size:13px; line-height:1.55; padding: 4px; }
+.rpt { box-sizing: border-box; width: 760px; background:#fff; color:${C.body}; font-family:${RPT_SANS}; font-size:13px; line-height:1.55; padding: 4px; }
+.rpt.rpt-nofont, .rpt-nofont .rpt { font-family:${RPT_SANS_FALLBACK}; }
+.rpt.rpt-nofont h1, .rpt.rpt-nofont h2, .rpt.rpt-nofont h3, .rpt.rpt-nofont .rpt-big .n { font-family:${RPT_SANS_FALLBACK}; }
 .rpt * { box-sizing: border-box; overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
-.rpt h1 { font-size: 23px; margin: 0 0 3px; color:#0f2a4a; letter-spacing:-0.3px; }
-.rpt h2 { font-size: 16px; margin: 16px 0 6px; color:#0f2a4a; border-left: 4px solid #2563eb; padding-left: 8px; break-after: avoid; page-break-after: avoid; }
-.rpt h3 { font-size: 13px; margin: 8px 0 3px; color:#1e3a5f; break-after: avoid; page-break-after: avoid; }
+.rpt h1 { font-family:${RPT_SERIF}; font-size: 24px; font-weight: 900; margin: 0 0 4px; color:${C.ink}; letter-spacing:-0.4px; line-height:1.25; }
+.rpt h2 { font-family:${RPT_SERIF}; font-size: 16px; font-weight: 700; margin: 16px 0 6px; color:${C.ink}; padding: 0 0 3px; border-bottom: 1px solid ${C.line}; letter-spacing:-0.2px; break-after: avoid; page-break-after: avoid; }
+.rpt h2::before { content:""; display:inline-block; width:8px; height:8px; background:${C.brand}; margin-right:8px; vertical-align:2px; }
+.rpt h3 { font-family:${RPT_SERIF}; font-size: 13.5px; font-weight: 700; margin: 8px 0 3px; color:${C.ink}; break-after: avoid; page-break-after: avoid; }
 .rpt p { margin: 3px 0; }
-.rpt .rpt-sub { color:#52606d; font-size: 12px; margin-bottom: 8px; }
-.rpt .rpt-box { border: 1px solid #cbd5e1; background:#f8fafc; border-radius: 6px; padding: 6px 8px; margin: 6px 0; font-size: 11.5px; }
-.rpt .rpt-box.warn { border-color:#f59e0b; background:#fffbeb; }
-.rpt .rpt-box b { color:#0f2a4a; }
-.rpt table { border-collapse: collapse; width: 100%; table-layout: fixed; margin: 4px 0 6px; font-size: 11px; }
-.rpt th, .rpt td { border: 1px solid #cbd5e1; padding: 3px 4px; vertical-align: middle; }
-.rpt th { background:#eaf0f8; color:#0f2a4a; font-weight:700; text-align:center; }
+.rpt .rpt-sub { color:${C.muted}; font-size: 12px; margin-bottom: 8px; }
+.rpt .rpt-box { border: 1px solid ${C.line}; background:${C.paper}; border-radius: 4px; padding: 7px 9px; margin: 6px 0; font-size: 11.5px; }
+.rpt .rpt-box.warn { border-color:${C.amberLine}; background:${C.amberTint}; }
+.rpt .rpt-box b { color:${C.ink}; }
+.rpt table { border-collapse: collapse; width: 100%; table-layout: fixed; margin: 4px 0 6px; font-size: 10.5px; line-height:1.45; }
+.rpt th, .rpt td { border: 1px solid ${C.line2}; padding: 3px 4px; vertical-align: middle; }
+.rpt th { background:${C.sand}; color:${C.ink}; font-weight:700; text-align:center; }
 .rpt td.c { text-align:center; }
 .rpt td.l { text-align:left; }
 .rpt tr { break-inside: avoid; page-break-inside: avoid; }
-.rpt .rpt-ok { color:#15803d; font-weight:700; }
-.rpt .rpt-bad { color:#b91c1c; font-weight:700; }
-.rpt .rpt-blk { color:#92400e; font-weight:700; }
-.rpt tr.rpt-rbad td { background:#fef2f2; }
-.rpt tr.rpt-rblk td { background:#fffbeb; }
-.rpt .rpt-bd { display:inline-block; min-width:20px; text-align:center; border-radius:9px; padding:1px 7px; font-size:10.5px; font-weight:700; color:#fff; }
-.rpt .rpt-d1 { background:#16a34a; } .rpt .rpt-d2 { background:#65a30d; } .rpt .rpt-d3 { background:#ca8a04; } .rpt .rpt-d4 { background:#ea580c; } .rpt .rpt-d5 { background:#dc2626; }
-.rpt .rpt-big { display:flex; gap:6px; margin:6px 0; }
-.rpt .rpt-big > div { flex:1; border:1px solid #cbd5e1; border-radius:6px; padding:5px 6px; text-align:center; background:#fff; }
-.rpt .rpt-big .n { font-size:20px; font-weight:700; color:#1d4ed8; line-height:1.2; }
-.rpt .rpt-big .t { font-size:11px; color:#52606d; }
-.rpt .rpt-card { border:1px solid #cbd5e1; border-radius:6px; padding:6px 8px; margin:6px 0; break-inside: avoid; page-break-inside: avoid; }
-.rpt .rpt-card .hd { font-weight:700; color:#0f2a4a; margin-bottom:2px; }
-.rpt .rpt-card .st { color:#374151; font-size:12px; margin:2px 0 5px; }
+.rpt .rpt-ok { color:${C.ink}; font-weight:700; }
+.rpt .rpt-bad { color:${C.brand}; font-weight:700; }
+.rpt .rpt-blk { color:${C.amber}; font-weight:700; }
+.rpt tr.rpt-rbad td { background:${C.brandTint}; }
+.rpt tr.rpt-rblk td { background:${C.amberTint}; }
+.rpt .rpt-bd { display:inline-block; min-width:20px; text-align:center; border-radius:3px; padding:1px 7px; font-size:10.5px; font-weight:700; color:#fff; }
+.rpt .rpt-d1 { background:#fff; color:${C.muted}; border:1px solid ${C.line2}; padding:0 6px; } .rpt .rpt-d2 { background:${C.line2}; color:${C.ink}; } .rpt .rpt-d3 { background:${C.muted}; } .rpt .rpt-d4 { background:${C.brand}; } .rpt .rpt-d5 { background:${C.brandDeep}; }
+.rpt .rpt-big { display:flex; gap:6px; margin:8px 0; }
+.rpt .rpt-big > div { flex:1; border:1px solid ${C.line}; border-top:2px solid ${C.ink}; border-radius:0; padding:6px 6px 5px; text-align:center; background:${C.paper}; }
+.rpt .rpt-big .n { font-family:${RPT_SERIF}; font-size:21px; font-weight:700; color:${C.ink}; line-height:1.2; }
+.rpt .rpt-big .t { font-size:11px; color:${C.muted}; }
+.rpt .rpt-card { border:1px solid ${C.line}; border-radius:4px; padding:7px 9px; margin:6px 0; break-inside: avoid; page-break-inside: avoid; }
+.rpt .rpt-card .hd { font-weight:700; color:${C.ink}; margin-bottom:2px; }
+.rpt .rpt-card .st { color:${C.body2}; font-size:12px; margin:2px 0 5px; }
 .rpt .rpt-card .row { display:flex; gap:6px; margin:3px 0; flex-wrap: wrap; }
-.rpt .rpt-pill { border-radius:4px; padding:2px 6px; font-size:11.5px; }
-.rpt .rpt-pill.mine { background:#fef2f2; border:1px solid #fecaca; }
-.rpt .rpt-pill.mine.blank { background:#fffbeb; border-color:#fde68a; }
-.rpt .rpt-pill.key { background:#ecfdf5; border:1px solid #a7f3d0; }
-.rpt .rpt-sol { font-size:12px; border-top:1px dashed #cbd5e1; padding-top:3px; margin-top:3px; }
-.rpt .rpt-small { font-size:10.5px; color:#52606d; }
-.rpt .rpt-foot { color:#6b7280; font-size:10px; }
-.rpt .rpt-medic { display:inline-block; border:1px solid #fecdd3; background:#fff1f2; color:#be123c; border-radius:999px; padding:2px 9px; font-size:10.5px; font-weight:600; white-space:nowrap; }
+.rpt .rpt-pill { border-radius:3px; padding:2px 6px; font-size:11.5px; }
+.rpt .rpt-pill.mine { background:${C.brandTint}; border:1px solid ${C.brandLine}; }
+.rpt .rpt-pill.mine.blank { background:${C.amberTint}; border-color:${C.amberLine}; }
+.rpt .rpt-pill.key { background:${C.sand}; border:1px solid ${C.line2}; }
+.rpt .rpt-sol { font-size:12px; border-top:1px dashed ${C.line2}; padding-top:3px; margin-top:3px; }
+.rpt .rpt-small { font-size:10.5px; color:${C.muted}; }
+.rpt .rpt-foot { color:${C.soft}; font-size:10px; }
+.rpt .rpt-brand { display:flex; flex-direction:column; align-items:flex-end; gap:5px; flex:none; }
+.rpt .rpt-brand img { display:block; height:26px; width:auto; }
+.rpt .rpt-medic { display:inline-block; border:1px solid ${C.brandLine}; background:${C.brandTint}; color:${C.brandDark}; border-radius:999px; padding:2px 9px; font-size:10.5px; font-weight:600; white-space:nowrap; }
 .rpt .rpt-pagebreak { break-before: page; page-break-before: always; }
-.rpt .rpt-rowh { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #2563eb; padding-bottom:4px; margin-bottom:8px; }
-.rpt .rpt-tag { display:inline-block; border:1px solid #f59e0b; color:#92400e; background:#fffbeb; border-radius:4px; padding:1px 7px; font-size:11px; font-weight:700; }
-.rpt code.v { font-family: monospace; background:#f1f5f9; padding:0 3px; border-radius:3px; }
+.rpt .rpt-rowh { display:flex; justify-content:space-between; align-items:flex-end; gap:12px; border-bottom:2px solid ${C.ink}; padding-bottom:6px; margin-bottom:10px; position:relative; }
+.rpt .rpt-rowh::after { content:""; position:absolute; left:0; bottom:-2px; width:64px; height:2px; background:${C.brand}; }
+.rpt .rpt-tag { display:inline-block; border:1px solid ${C.brand}; color:${C.brandDark}; background:#fff; border-radius:3px; padding:1px 7px; font-size:11px; font-weight:700; }
+.rpt code.v { font-family: monospace; background:${C.sand}; padding:0 3px; border-radius:3px; }
 .rpt ul.rpt-cols { columns:2; column-gap:14px; }
 .rpt ul.rpt-cols li { break-inside: avoid; page-break-inside: avoid; }
 .rpt ul { margin:2px 0 2px 12px; padding:0; } .rpt li { margin: 1.5px 0; }
@@ -441,7 +523,10 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
   // 4. 문항별 분석
   b.push('<h2 class="rpt-pagebreak">4. 문항별 분석</h2>');
   b.push(
-    "<table><thead><tr><th>문항</th><th>단원</th><th>배점</th><th>난이도</th><th>정답</th><th>정답 인원</th>" +
+    (anyGuess
+      ? '<table><colgroup><col style="width:6%"><col style="width:17%"><col style="width:6%"><col style="width:8%"><col style="width:9%"><col style="width:9%"><col style="width:8%"><col style="width:37%"></colgroup>'
+      : '<table><colgroup><col style="width:6%"><col style="width:18%"><col style="width:6%"><col style="width:8%"><col style="width:9%"><col style="width:9%"><col style="width:44%"></colgroup>') +
+      "<thead><tr><th>문항</th><th>단원</th><th>배점</th><th>난이도</th><th>정답</th><th>정답 인원</th>" +
       (anyGuess ? "<th>찍음</th>" : "") +
       "<th>오답·무응답 내용</th></tr></thead><tbody>"
   );
@@ -667,7 +752,9 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
 
   b.push("<h2>3. 문항별 난이도와 결과</h2>");
   b.push(
-    "<table><thead><tr><th>번호</th><th>단원</th><th>배점</th><th>난이도</th><th>난이도 근거</th><th>내 답</th><th>정답</th><th>결과</th></tr></thead><tbody>"
+    // 2026-10-02: 칸 폭을 내용에 맞춤(같은 폭 8칸이면 '난이도 근거'가 3~4줄로 늘어 쪽이 길어졌다)
+    '<table><colgroup><col style="width:6%"><col style="width:17%"><col style="width:6%"><col style="width:8%"><col style="width:35%"><col style="width:9%"><col style="width:10%"><col style="width:9%"></colgroup>' +
+      "<thead><tr><th>번호</th><th>단원</th><th>배점</th><th>난이도</th><th>난이도 근거</th><th>내 답</th><th>정답</th><th>결과</th></tr></thead><tbody>"
   );
   for (const it of items) {
     const r = statusOf(idx, it.label);
@@ -1042,6 +1129,16 @@ async function pageToCanvas(el: HTMLElement): Promise<HTMLCanvasElement> {
     scrollX: 0,
     scrollY: 0,
     logging: false,
+    // 2026-10-02: html2canvas는 쪽을 새 틀(iframe)에 복사해 그리는데, 그 틀에서 학원 글꼴을 아직 안 받았으면 다른 글꼴로 줄이
+    // 바뀌어 쪽이 넘쳤다(첫 쪽 표가 547px → 760px). 복사본에서도 이 쪽 글자만큼 글꼴을 받은 뒤 그린다(최대 3초).
+    onclone: async (doc: Document) => {
+      if (el.closest(".rpt-nofont") || el.classList.contains("rpt-nofont") || !doc.fonts) return;
+      const sample = Array.from(new Set((el.textContent || "").replace(/\s+/g, ""))).join("") || "가";
+      await Promise.race([
+        Promise.all(RPT_FONT_FACES.map((f) => doc.fonts.load(f, sample).catch(() => null))),
+        new Promise((r) => setTimeout(r, 3000)),
+      ]);
+    },
   });
 }
 
@@ -1083,7 +1180,7 @@ async function renderPagesToPdfBytes(pages: HTMLElement[]): Promise<Uint8Array> 
   for (let i = 1; i <= nPages; i++) {
     pdf.setPage(i);
     pdf.setFontSize(8);
-    pdf.setTextColor(107, 114, 128);
+    pdf.setTextColor(138, 129, 120); // RPT_COLORS.soft
     pdf.text(`${i} / ${nPages}`, 105, 292, { align: "center" });
   }
   const buf: ArrayBuffer = pdf.output("arraybuffer");
@@ -1105,6 +1202,8 @@ export async function htmlToPdfBytes(html: string): Promise<Uint8Array> {
     Promise.all([...src.querySelectorAll("img")].map((im) => (im.complete ? null : im.decode().catch(() => null)))),
     new Promise((r) => setTimeout(r, 3000)),
   ]);
+  // 2026-10-02: 학원 글꼴을 받은 뒤 높이를 잰다. 못 받으면 기본 글꼴로 고정.
+  if (!(await loadReportFonts(src.textContent || ""))) src.querySelectorAll(".rpt").forEach((el) => el.classList.add("rpt-nofont"));
   try {
     const root = src.firstElementChild as HTMLElement;
     const pager = new Paginator(stageWrap, root);
