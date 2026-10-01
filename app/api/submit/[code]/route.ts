@@ -11,7 +11,7 @@ import { tutorClassLabel, tutorIdFromToken } from "@/lib/tutor/link";
 export async function POST(request: Request, { params }: { params: { code: string } }) {
   const code = decodeURIComponent(params.code);
 
-  let body: { lv?: unknown; grade?: unknown; cls?: unknown; name?: unknown; answers?: unknown; t?: unknown };
+  let body: { lv?: unknown; grade?: unknown; cls?: unknown; name?: unknown; answers?: unknown; t?: unknown; guessed?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -22,6 +22,8 @@ export async function POST(request: Request, { params }: { params: { code: strin
   if (!name) return NextResponse.json({ ok: false, msg: "이름을 입력해 주세요." }, { status: 400 });
 
   const answers = Array.isArray(body.answers) ? body.answers : [];
+  // 2026-10-01: 문항마다 "찍음" 표시(true/false 배열, 없으면 모두 false)
+  const guessed = Array.isArray(body.guessed) ? body.guessed.map((g) => g === true) : [];
 
   // #4: 과외선생님 전용 링크(?t=토큰)로 들어온 제출 — 학원 반을 고르지 않고, 그 과외선생님이 이 시험을
   // 구매했을 때만 받는다(최종 확인은 submit_and_grade RPC가 잠금과 함께 다시 함).
@@ -94,7 +96,7 @@ export async function POST(request: Request, { params }: { params: { code: strin
   }
 
   // 4) 채점 (순수 함수 — lib/grading.ts, 단위 테스트로 검증됨)
-  const { perItem, totalScore } = gradeSubmission(key, answers);
+  const { perItem, totalScore } = gradeSubmission(key, answers, guessed.length === key.length ? guessed : undefined);
   const sanitizedAnswers = perItem.map((p) => p.given);
 
   // 5) 원자적 기록: 시험이 그 사이 닫히지 않았는지 잠금과 함께 다시 확인 + 제출/채점 결과 동시 기록.
