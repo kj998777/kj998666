@@ -19,6 +19,7 @@ import { getScanPdfBuffer, hasScanPdf } from "./pdf";
 import { claimJobLease } from "./job";
 import { countPdfPages } from "./pdfMeta";
 import { clearLowBalanceAlert, getAiCreds, recordLowBalanceAlert, recordUsage } from "./settings";
+import { fixLiteralNewlinesDeep } from "@/lib/math/literalNewline";
 
 // 2026-09-30: AI가 읽는 PDF는 늘 스캔본(getScanPdfBuffer)이다. 전에는 "지금 원본"을 읽어서, 디지털 시험지를 원본으로 적용한 뒤
 // "다시 시작"하면 AI가 새로 조판한 PDF를 읽었다 — 그림 자리는 스캔본에서 오리므로 쪽·좌표가 어긋났다.
@@ -239,7 +240,8 @@ async function stepSubmit(client: Client, examId: string, state: State): Promise
 
 async function savePage(client: Client, examId: string, pageNo: number, data: unknown): Promise<void> {
     const { error } = await (client.from("digitized_pages") as any).upsert(
-      { exam_id: examId, page_no: pageNo, data },
+      // 2026-10-01: 글자 그대로의 "\n"을 진짜 줄바꿈으로 고쳐서 저장(lib/math/literalNewline.ts)
+      { exam_id: examId, page_no: pageNo, data: fixLiteralNewlinesDeep(data) },
       { onConflict: "exam_id,page_no" }
         );
     if (error) throw error;
