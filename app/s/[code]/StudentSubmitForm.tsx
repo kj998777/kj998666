@@ -27,7 +27,7 @@ export default function StudentSubmitForm({
   tutorToken?: string | null;
   // 2026-10-01 입학테스트(/p/코드): 반 선택 없이 이름·답만 받아 이 주소로 보낸다
   endpoint?: string | null;
-  /** 2026-10-01: 제출 완료 화면에 메딕수학 홍보 배너(학원 학생만 — 과외선생님 학생에게는 안 보임) */
+  /** 2026-10-01: 제출 완료 화면에 메딕수학 홍보 배너(학원·과외선생님 학생 모두) */
   promo?: boolean;
 }) {
   const direct = !!tutorToken || !!endpoint;
