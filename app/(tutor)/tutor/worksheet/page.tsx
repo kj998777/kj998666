@@ -55,6 +55,20 @@ export default async function TutorWorksheetPage({ searchParams }: { searchParam
         </p>
       </div>
 
+      {/* 2026-10-01: 입학테스트(0047) — 새로 맡은 학생 실력 보기 */}
+      <Link
+        href="/tutor/placement"
+        className="card flex flex-wrap items-center justify-between gap-2 border-violet-200 bg-violet-50/60 hover:border-violet-400"
+      >
+        <div>
+          <p className="font-medium text-violet-900">입학테스트 만들기</p>
+          <p className="text-sm text-violet-900/80">
+            학년·과목만 고르면 10문항을 자동으로 골라 줍니다. 학생이 QR로 답을 내면 바로 채점되고 진단 보고서(약한 단원·추천 수업 단계)가 나와요.
+          </p>
+        </div>
+        <span className="btn-primary whitespace-nowrap">입학테스트 →</span>
+      </Link>
+
       {worksheets.length > 0 && (
         <div className="card space-y-1">
           <h2 className="font-medium text-sm">내가 만든 시험지</h2>
