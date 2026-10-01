@@ -85,6 +85,7 @@ export default async function StudentSubmitPage({
       examName={exam.name}
       classes={classes ?? []}
       tutorToken={tutorToken}
+      promo={!tutorToken}
       items={items.map((it) => ({ item_label: it.item_label, type: it.type }))}
     />
   );
