@@ -6,6 +6,7 @@
 //   - 원래 필드(label/points/stem/box_title/box_lines/choices/unsure)를 새 값으로 바꾼다. figures(그림 자리)는 건드리지 않는다.
 //   - orig: 처음 고칠 때의 AI 원래 글(한 번만 남김) — "AI가 처음 읽은 글로 되돌리기"에 쓴다.
 //   - edited: "manual"(직접) | "ai"(AI로 다시 읽음), edited_at: 고친 시각.
+import { fixLiteralNewlinesDeep } from "@/lib/math/literalNewline";
 
 export type ItemText = {
   label: string;
@@ -29,6 +30,7 @@ const str = (v: unknown, max: number) =>
 /** 화면·AI가 준 값을 저장해도 되는 모양으로(길이 제한·빈 줄 정리). 실패하면 이유를 돌려준다. */
 export function cleanItemText(input: any): { ok: true; text: ItemText } | { ok: false; msg: string } {
   if (!input || typeof input !== "object") return { ok: false, msg: "고친 내용이 비어 있습니다." };
+  input = fixLiteralNewlinesDeep(input); // 2026-10-01: AI가 준 글자 그대로의 "\n" → 줄바꿈(\neq 등은 그대로)
   const label = str(input.label, LIMITS.label).trim();
   const stem = str(input.stem, LIMITS.stem + 1);
   if (stem.length > LIMITS.stem) return { ok: false, msg: `문제 글이 너무 깁니다(${LIMITS.stem}자까지).` };
