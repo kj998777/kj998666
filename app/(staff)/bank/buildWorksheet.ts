@@ -7,7 +7,7 @@
 import { PDFDocument } from "pdf-lib";
 import { loadPdfJs } from "@/app/(staff)/exams/[code]/buildDigitizedPdf";
 import { resolveRegion } from "@/app/(tutor)/tutor/review/[itemId]/cropLocator";
-import { badge, ensureReportTools, esc, htmlToPdfBytes, mathHtml } from "@/app/(staff)/exams/[code]/results/buildReportPdf";
+import { badge, ensureReportTools, esc, htmlToPdfBytes, mathHtml, MEDIC_BADGE, MEDIC_FOOT } from "@/app/(staff)/exams/[code]/results/buildReportPdf";
 import type { BankDetail } from "@/lib/bank/load";
 
 export type WsOptions = {
@@ -483,7 +483,7 @@ export async function buildAnswerPdf(items: BankDetail[], opts: WsOptions, onPro
   onProgress && onProgress("정답·해설지를 만드는 중…");
   const b: string[] = [];
   b.push(
-    `<div class="rpt-rowh"><div><h1>정답과 해설</h1><div class="rpt-sub" style="margin:0">${esc(opts.title || "메딕수학 복습 시험지")} · ${items.length}문항</div></div><div class="rpt-small">메딕수학</div></div>`
+    `<div class="rpt-rowh"><div><h1>정답과 해설</h1><div class="rpt-sub" style="margin:0">${esc(opts.title || "메딕수학 복습 시험지")} · ${items.length}문항</div></div>${MEDIC_BADGE}</div>`
   );
   b.push("<h2>빠른 정답</h2>");
   const half = Math.ceil(items.length / 2);
@@ -511,5 +511,6 @@ export async function buildAnswerPdf(items: BankDetail[], opts: WsOptions, onPro
     );
   });
   b.push('<p class="rpt-foot">난이도는 AI가 문제를 풀어 보고 붙인 값입니다.</p>');
+  b.push(MEDIC_FOOT);
   return htmlToPdfBytes(`<div class="rpt">${b.join("")}</div>`);
 }
