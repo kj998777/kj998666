@@ -37,7 +37,7 @@ function Original({ row }: { row: ResultRow }) {
   }, [row.id]);
   if (d === undefined) return <p className="text-xs text-slate-400">불러오는 중…</p>;
   return (
-    <ProblemPageImage pdfUrl={`/exams/${encodeURIComponent(row.examCode)}/original-pdf`} label={row.label} page={d?.sourcePage ?? null} bbox={d?.bbox ?? null} />
+    <ProblemPageImage paged pdfUrl={`/exams/${encodeURIComponent(row.examCode)}/original-pdf`} label={row.label} page={d?.sourcePage ?? null} bbox={d?.bbox ?? null} />
   );
 }
 
