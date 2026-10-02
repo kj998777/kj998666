@@ -312,6 +312,12 @@ function injectReportStyles(): void {
 .rpt ul { margin:2px 0 2px 12px; padding:0; } .rpt li { margin: 1.5px 0; }
 .rpt .katex { font-size: 1.02em; }
 `;
+  // 2026-10-02 원장님: "글자가 전체적으로 아래로 내려가 있음". html2canvas는 글자 기준선을 재려고 1×1 그림을 글 옆에 놓는데,
+  // 사이트 공통 CSS(Tailwind 기본값 img{display:block})가 그 그림을 다음 줄로 내려 기준선이 한 줄만큼 아래로 잡혔다.
+  // 그 재는 그림만 원래대로(글줄 안) 두게 한다 — app/globals.css에도 같은 줄이 있다.
+  const fix = document.createElement("style");
+  fix.textContent = 'img[width="1"][height="1"]{display:inline !important}';
+  document.head.appendChild(fix);
   const style = document.createElement("style");
   style.id = "rpt-pdf-inline-styles";
   style.textContent = css;
