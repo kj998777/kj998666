@@ -95,3 +95,7 @@ body {
   @apply -mx-4 px-4 overflow-x-auto sm:mx-0 sm:px-0;
 }
 }
+
+/* 2026-10-02: html2canvas가 글자 기준선을 재는 1×1 그림이 Tailwind 기본값(img{display:block})으로 줄 밑으로 내려가
+   PDF(보고서·시험지·해설지)의 글자가 전부 아래로 밀려 그려졌다 → 그 그림만 글줄 안에 둔다 */
+img[width="1"][height="1"] { display: inline !important; }
