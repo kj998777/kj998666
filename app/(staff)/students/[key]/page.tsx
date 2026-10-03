@@ -7,6 +7,8 @@ import { decodeKey, encodeKey, keyName, mergeCandidates, trendSvg, type Bucket }
 import StudentTools from "./StudentTools";
 import ReviewCards from "./ReviewCards";
 import SubmittedExams, { type ExamLinks } from "@/app/_components/SubmittedExams";
+import DeleteStudentBox from "@/app/_components/DeleteStudentBox";
+import { deleteStudent, deleteStudentSubmission } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +72,7 @@ export default async function StudentPage({ params, searchParams }: { params: { 
   const { entry, analysis: a, memo } = detail;
   const classText = classDisplay(entry, idx.tutorLabel);
   const canEdit = session.role === "admin" || session.role === "editor";
+  const isAdmin = session.role === "admin";
   const candidates = mergeCandidates(entry, idx.entries).map((c) => ({
     key: c.key,
     classText: classDisplay(c, idx.tutorLabel),
@@ -127,7 +130,7 @@ export default async function StudentPage({ params, searchParams }: { params: { 
       </div>
 
       {tab === "subs" ? (
-        <SubmittedExams exams={detail.submitted} links={links} />
+        <SubmittedExams exams={detail.submitted} links={links} deleteSubmission={isAdmin ? deleteStudentSubmission : undefined} />
       ) : (
       <>
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
@@ -349,6 +352,13 @@ export default async function StudentPage({ params, searchParams }: { params: { 
 
       <ReviewCards review={a.review} />
       </>
+      )}
+
+      {/* 2026-10-03 학생 삭제(관리자만 — 제출·채점 결과를 영구히 지움) */}
+      {isAdmin && (
+        <div className="pt-2">
+          <DeleteStudentBox name={entry.name} nSubs={detail.submitted.length} action={deleteStudent.bind(null, entry.key)} backHref="/students" />
+        </div>
       )}
     </div>
   );

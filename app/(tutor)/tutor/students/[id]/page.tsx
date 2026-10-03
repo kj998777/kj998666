@@ -4,6 +4,8 @@ import { requireTutor } from "@/lib/auth/requireTutor";
 import { decodeKey } from "@/lib/students/analysis";
 import { loadTutorStudent } from "@/lib/tutor/students";
 import SubmittedExams, { type ExamLinks } from "@/app/_components/SubmittedExams";
+import DeleteStudentBox from "@/app/_components/DeleteStudentBox";
+import { deleteMyStudent, deleteMySubmission } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +40,16 @@ export default async function TutorStudentPage({ params }: { params: { id: strin
           낸 시험 {d.submitted.length}개{avg != null ? ` · 평균 득점률 ${avg}%` : ""}
         </p>
       </div>
-      <SubmittedExams exams={d.submitted} links={links} />
+      <SubmittedExams exams={d.submitted} links={links} deleteSubmission={deleteMySubmission} />
+      <div className="pt-2">
+        <DeleteStudentBox
+          name={d.name}
+          nSubs={d.submitted.length}
+          action={deleteMyStudent.bind(null, key)}
+          backHref="/tutor/students"
+          note="학생이 다시 시험을 내면 새로 생깁니다."
+        />
+      </div>
     </div>
   );
 }

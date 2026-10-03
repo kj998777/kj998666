@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
-import { makeResolver, type KeyRow } from "@/lib/students/analysis";
+import { autoKey, makeResolver, type KeyRow } from "@/lib/students/analysis";
+import { loadStudentIndex } from "@/lib/students/load";
 
 // 학생 분석(0039 student_keys): 합치기·풀기·숨기기·상담 메모. 편집자 이상(RLS도 is_editor_or_admin).
 
@@ -96,5 +97,52 @@ export async function saveStudentMemo(key: string, memo: string): Promise<Res> {
   );
   if (r.error) return { ok: false, msg: NO_TABLE };
   revalidatePath("/students/[key]", "page");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------
+// 2026-10-03 원장님: "학생 삭제 기능도 추가". 학생의 제출(submissions)을 지우면 채점 결과(grading_results)는
+// on delete cascade로 같이 지워진다. 되돌릴 수 없으므로 관리자만(RLS submissions_delete_admin_only도 관리자만),
+// 화면에서는 학생 이름을 다시 입력해야 버튼이 눌린다.
+// ---------------------------------------------------------------------
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function doneDelete() {
+  done();
+  revalidatePath("/classes", "layout");
+  revalidatePath("/exams/[code]/results", "page");
+}
+
+/** 학생(합쳐 둔 묶음 포함)이 낸 제출을 모두 지운다. 지운 제출 수를 돌려준다. */
+export async function deleteStudent(key: string): Promise<{ ok: true; n: number } | { ok: false; msg: string }> {
+  await requireRole("admin");
+  if (!validKey(key)) return { ok: false, msg: "학생을 찾지 못했습니다." };
+  const supabase = await createClient();
+  const idx = await loadStudentIndex(supabase);
+  const resolve = makeResolver(idx.keyRows);
+  const target = resolve(key);
+  const ids = idx.subs.filter((s) => resolve(autoKey(s)) === target).map((s) => s.id);
+  if (!ids.length) return { ok: false, msg: "지울 제출이 없습니다(이미 지워졌을 수 있어요)." };
+  for (let i = 0; i < ids.length; i += 200) {
+    const { error } = await supabase.from("submissions").delete().in("id", ids.slice(i, i + 200));
+    if (error) return { ok: false, msg: "삭제하지 못했습니다: " + error.message };
+  }
+  // 합치기·숨기기·상담 메모 기록도 정리(0039 전이면 표가 없어 그냥 넘어감)
+  const members = idx.keyRows.filter((r) => r.key === target || resolve(r.key) === target).map((r) => r.key);
+  if (members.length) await (supabase.from("student_keys") as any).delete().in("key", members);
+  doneDelete();
+  return { ok: true, n: ids.length };
+}
+
+/** 제출 하나만 지운다(잘못 낸 제출 등) */
+export async function deleteStudentSubmission(submissionId: string): Promise<Res> {
+  await requireRole("admin");
+  if (typeof submissionId !== "string" || !UUID_RE.test(submissionId)) return { ok: false, msg: "제출을 찾지 못했습니다." };
+  const supabase = await createClient();
+  const { error, count } = await (supabase.from("submissions") as any).delete({ count: "exact" }).eq("id", submissionId);
+  if (error) return { ok: false, msg: "삭제하지 못했습니다: " + error.message };
+  if (!count) return { ok: false, msg: "지울 제출을 찾지 못했습니다(이미 지워졌을 수 있어요)." };
+  doneDelete();
   return { ok: true };
 }
