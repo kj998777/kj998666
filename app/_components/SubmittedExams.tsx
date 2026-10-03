@@ -6,7 +6,8 @@
 // 데이터는 lib/students/submitted.ts(buildSubmittedExams)가 서버에서 만들어 넘긴다.
 
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Fragment, useState, useTransition } from "react";
 import { useKatex } from "@/app/_components/MathTools";
 import { renderMathHtml } from "@/lib/math/renderMathHtml";
 import type { SubmittedExam } from "@/lib/students/submitted";
@@ -28,13 +29,17 @@ function day(iso: string): string {
 }
 
 export type ExamLinks = Record<string, { href: string | null; reportUrl: string | null }>;
+/** 제출 하나 지우기(서버 액션) — 없으면 삭제 버튼을 감춘다 */
+export type DeleteSubmission = (submissionId: string) => Promise<{ ok: boolean; msg?: string }>;
 
 export default function SubmittedExams({
   exams,
   links,
   emptyText = "아직 제출한 시험이 없습니다.",
+  deleteSubmission,
 }: {
   exams: SubmittedExam[];
+  deleteSubmission?: DeleteSubmission;
   /** 시험 코드 → 결과 화면 주소·보고서 데이터 주소(없으면 버튼을 감춘다) */
   links: ExamLinks;
   emptyText?: string;
@@ -51,13 +56,40 @@ export default function SubmittedExams({
   return (
     <div className="space-y-3">
       {exams.map((e) => (
-        <ExamCard key={e.submissionId} e={e} link={links[e.code]} open={open.has(e.submissionId)} onToggle={() => toggle(e.submissionId)} />
+        <ExamCard key={e.submissionId} e={e} link={links[e.code]} open={open.has(e.submissionId)} onToggle={() => toggle(e.submissionId)} onDelete={deleteSubmission} />
       ))}
     </div>
   );
 }
 
-function ExamCard({ e, link, open, onToggle }: { e: SubmittedExam; link?: ExamLinks[string]; open: boolean; onToggle: () => void }) {
+function ExamCard({
+  e,
+  link,
+  open,
+  onToggle,
+  onDelete,
+}: {
+  e: SubmittedExam;
+  link?: ExamLinks[string];
+  open: boolean;
+  onToggle: () => void;
+  onDelete?: DeleteSubmission;
+}) {
+  const router = useRouter();
+  const [asking, setAsking] = useState(false);
+  const [deleting, startDelete] = useTransition();
+  function doDelete() {
+    if (!onDelete) return;
+    startDelete(async () => {
+      const r = await onDelete(e.submissionId);
+      if (!r.ok) {
+        setMsg("실패: " + (r.msg || "삭제하지 못했습니다."));
+        setAsking(false);
+        return;
+      }
+      router.refresh();
+    });
+  }
   const [onlyMiss, setOnlyMiss] = useState(false);
   const [shown, setShown] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -134,8 +166,26 @@ function ExamCard({ e, link, open, onToggle }: { e: SubmittedExam; link?: ExamLi
             이 시험 전체 결과
           </Link>
         )}
+        {onDelete && !asking && (
+          <button type="button" className="ml-auto text-slate-400 hover:text-red-600" onClick={() => setAsking(true)}>
+            이 제출 삭제
+          </button>
+        )}
         {msg && <span className={msg.startsWith("실패") ? "text-red-600" : "text-slate-500"}>{msg}</span>}
       </div>
+      {onDelete && asking && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm flex flex-wrap items-center gap-2">
+          <span className="text-red-800">
+            이 시험 제출과 채점 결과를 지웁니다. 반 평균·보고서에서도 빠지고 되돌릴 수 없습니다. 학생은 이 시험을 다시 낼 수 있습니다.
+          </span>
+          <button type="button" className="btn-danger" disabled={deleting} onClick={doDelete}>
+            {deleting ? "지우는 중…" : "삭제"}
+          </button>
+          <button type="button" className="btn-secondary" disabled={deleting} onClick={() => setAsking(false)}>
+            취소
+          </button>
+        </div>
+      )}
 
       {open && (
         <div className="space-y-2">
