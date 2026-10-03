@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchAllPages } from "@/lib/supabase/fetchAll";
 import { checkSolution, type SolutionCheck } from "@/lib/review/solutionCheck";
-import { reconcileKeyDisplay } from "@/lib/review/answerMatch";
+import { formatKey, reconcileKeyDisplay } from "@/lib/review/answerMatch";
 import { MathPreview } from "@/app/_components/MathTools";
 
 // 풀이 결론 점검(2026-10-03 원장님 제보 "해설지 정답하고 풀이가 다른 경우가 있음"). 모든 시험의 문항 풀이 끝부분에서
@@ -29,6 +29,9 @@ type Row = {
   displayMismatch: boolean;
   subs: number;
 };
+
+const CIRC: Record<string, string> = { "1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤" };
+const circled = (c: string) => c.split("").map((x) => CIRC[x] ?? x).join("");
 
 export default async function SolutionCheckPage({ searchParams }: { searchParams?: { all?: string } }) {
   await requireRole("admin");
@@ -82,7 +85,8 @@ export default async function SolutionCheckPage({ searchParams }: { searchParams
     (r.check.doubtWords.length ? 5 : 0);
   const strong = rows.filter((r) => weight(r) >= 20);
   const weak = rows.filter((r) => weight(r) < 20);
-  const shown = showAll ? rows : strong;
+  // 기본은 학생이 보는 "열림" 시험의 강한 신호만. 검수대기 시험은 어차피 검토단이 다시 푸니 ?all=1에서만.
+  const shown = showAll ? rows : strong.filter((r) => r.status === "열림");
 
   const byExam = new Map<string, Row[]>();
   for (const r of shown) {
@@ -99,13 +103,14 @@ export default async function SolutionCheckPage({ searchParams }: { searchParams
         <p className="text-sm text-slate-500">
           풀이 글의 끝부분(고른 번호·마지막 값)이 정답표·정답 표시와 다른 문항입니다. 풀이 {checked}문항을 살펴 {rows.length}문항이
           걸렸습니다(그중 번호·값이 다른 강한 신호 {strong.length}, &ldquo;재계산&rdquo; 같은 표현만 있는 약한 신호 {weak.length}). 자동으로
-          고치지 않으니 문제를 직접 풀어 보고 시험 상세에서 정답표나 풀이를 고쳐 주세요.
+          고치지 않으니 문제를 직접 풀어 보고 시험 상세에서 정답표나 풀이를 고쳐 주세요. (정답표의 &ldquo;4&rdquo;와 표시의 &ldquo;④&rdquo;처럼 모양만 다른 것은 같은
+          답으로 보고 걸지 않습니다.)
         </p>
         <p className="text-xs text-slate-400 mt-1">
           {showAll ? (
-            <Link href="/admin/solution-check" className="link-accent">강한 신호만 보기</Link>
+            <Link href="/admin/solution-check" className="link-accent">열림 시험의 강한 신호만 보기</Link>
           ) : (
-            <Link href="/admin/solution-check?all=1" className="link-accent">약한 신호까지 모두 보기 ({rows.length})</Link>
+            <Link href="/admin/solution-check?all=1" className="link-accent">검수대기 시험·약한 신호까지 모두 보기 ({rows.length})</Link>
           )}
         </p>
       </div>
@@ -136,15 +141,24 @@ export default async function SolutionCheckPage({ searchParams }: { searchParams
                     <summary className="cursor-pointer text-sm flex flex-wrap items-center gap-2">
                       <span className="font-medium">{r.label}번</span>
                       <span className="text-slate-500">
-                        정답표 <b>{r.key}</b>
-                        {r.display ? <> · 표시 <b>{r.display}</b></> : null}
-                        {r.check.solValue ? <> · 풀이 마지막 값 <b>{r.check.solValue}</b></> : null}
-                        {r.check.solChoice ? <> · 풀이 번호 <b>{r.check.solChoice}</b></> : null}
+                        정답 <b>{reconcileKeyDisplay(r.type, r.key, r.display).text || r.key}</b>
+                        {r.check.solChoice && r.check.solChoice !== r.check.keyChoice ? (
+                          <> · 풀이 결론 <b className="text-red-700">{circled(r.check.solChoice)}</b></>
+                        ) : r.check.solValue ? (
+                          <> · 풀이 결론 <b className="text-red-700">{r.check.solValue}</b></>
+                        ) : null}
                       </span>
-                      {r.displayMismatch && <span className="badge bg-amber-100 text-amber-800">정답 표시 ≠ 정답표</span>}
-                      {r.check.reasons.map((s, i) => (
-                        <span key={i} className="badge bg-red-50 text-red-700">{s}</span>
-                      ))}
+                      {r.displayMismatch && (
+                        <span className="badge bg-amber-100 text-amber-800">
+                          해설 정답 표시({r.display})가 정답표({formatKey(r.type, r.key)})와 다름
+                        </span>
+                      )}
+                      {r.check.reasons
+                        .filter((s) => !s.startsWith("풀이에"))
+                        .map((s, i) => (
+                          <span key={i} className="badge bg-red-50 text-red-700">{s}</span>
+                        ))}
+                      {r.check.doubtWords.length > 0 && <span className="badge bg-slate-100 text-slate-600">풀이에 &ldquo;{r.check.doubtWords[0]}&rdquo;</span>}
                     </summary>
                     <div className="mt-2 text-sm space-y-2">
                       {r.problem && (
