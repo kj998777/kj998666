@@ -85,5 +85,13 @@ export function reconcileKeyDisplay(type: string, keyCell: string | null | undef
   if (!key) return { text: disp, mismatch: false };
   if (!disp) return { text: formatKey(type, key), mismatch: false };
   if (tutorAnswerMatches(type, disp, key)) return { text: disp, mismatch: false };
+  // 2026-10-03 오탐 줄이기: 정답표 칸을 그대로 적은 표시("√2/8|(√2)/8"), HTML로 이스케이프된 표시("&lt;UNKNOWN&gt;"),
+  // 주관식에서 "a=3"처럼 문자를 붙여 적은 표시는 같은 답으로 본다.
+  const unesc = disp.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  if (unesc === key) return { text: disp, mismatch: false };
+  if (type !== "객관식") {
+    const rhs = unesc.replace(/^\$?\s*[a-zA-Z](?:\([a-zA-Z0-9]+\))?\s*=\s*/, "").replace(/^\$/, "");
+    if (rhs !== unesc && tutorAnswerMatches(type, rhs.startsWith("$") || !unesc.startsWith("$") ? rhs : "$" + rhs, key)) return { text: disp, mismatch: false };
+  }
   return { text: formatKey(type, key), mismatch: true };
 }

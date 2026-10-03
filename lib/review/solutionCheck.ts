@@ -84,7 +84,8 @@ export function solutionChoice(plain: string): string {
 export function solutionValue(plain: string): string {
   const tail = plain.slice(-200);
   const num = "(-?\\d+(?:\\.\\d+)?(?:\\s*/\\s*\\d+)?|-?√\\d+|-?\\d*√\\d+(?:\\s*/\\s*\\d+)?)";
-  const re = new RegExp("(?:=|" + CUE + ")\\s*\\(?\\s*" + num + "(?=\\s*(?:[.。,)]|이다|입니다|이고|\\(|개|점|$|따라서|그러므로|→|∴|정답|답))", "g");
+  // "= 36", "따라서 36", "따라서 거리는 4√2"(단서말 뒤 짧은 말 허용), "답은 1/2"
+  const re = new RegExp("(?:=\\s*|" + CUE + "[^\\d√=-]{0,14}?)\\(?\\s*" + num + "(?=\\s*(?:[.。,)]|이다|입니다|이고|\\(|개|점|$|따라서|그러므로|→|∴|정답|답))", "g");
   let last = "";
   let m: RegExpExecArray | null;
   while ((m = re.exec(tail))) last = m[1];
@@ -98,8 +99,17 @@ export function displayValue(answerDisplay: string): string {
   return m ? m[1].replace(/\s+/g, "") : "";
 }
 
+/** 두 값을 비교할 수 있는가: 둘 다 수(분수 포함)이거나 둘 다 √ 꼴일 때만. 글(ㄱ,ㄴ / 식)과 수는 비교하지 않는다(오탐 방지). */
+function comparable(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const na = toNumber(a);
+  const nb = toNumber(b);
+  if (na !== null && nb !== null) return true;
+  const root = /^-?\d*√\d+(?:\/\d+)?$/;
+  return root.test(a) && root.test(b);
+}
+
 function sameValue(a: string, b: string): boolean {
-  if (!a || !b) return true;
   if (a === b) return true;
   const na = toNumber(a);
   const nb = toNumber(b);
@@ -120,8 +130,8 @@ export function checkSolution(type: string, keyCell: string, answerDisplay: stri
   if (type === "객관식") {
     if (solChoice && keyChoice && solChoice !== keyChoice) reasons.push(`풀이는 ${circ(solChoice)}로 끝나는데 정답표는 ${circ(keyChoice)}`);
     // 번호가 같으면 값 차이는 보기 내용 표기 차이일 가능성이 커서 보지 않는다. 번호를 못 읽었을 때만 값으로 비교.
-    if (!solChoice && solValue && keyValue && !sameValue(solValue, keyValue)) reasons.push(`풀이 마지막 값 ${solValue} ≠ 정답 ${keyValue}`);
-  } else if (solValue && keyValue && !sameValue(solValue, keyValue)) {
+    if (!solChoice && comparable(solValue, keyValue) && !sameValue(solValue, keyValue)) reasons.push(`풀이 마지막 값 ${solValue} ≠ 정답 ${keyValue}`);
+  } else if (comparable(solValue, keyValue) && !sameValue(solValue, keyValue)) {
     reasons.push(`풀이 마지막 값 ${solValue} ≠ 정답표 ${keyValue}`);
   }
   if (doubtWords.length) reasons.push(`풀이에 "${doubtWords[0]}" 표현`);

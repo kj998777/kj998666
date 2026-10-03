@@ -38,6 +38,14 @@ check("reconcile: 한쪽이 비어 있을 때", () => {
   assert.deepEqual(reconcileKeyDisplay("주관식", "", ""), { text: "", mismatch: false });
 });
 
+check("reconcile: 오탐 줄이기 — 정답표 그대로 적은 표시, 이스케이프된 표시, 주관식 'a=3'", () => {
+  assert.equal(reconcileKeyDisplay("주관식", "√2/8|(√2)/8", "√2/8|(√2)/8").mismatch, false);
+  assert.equal(reconcileKeyDisplay("주관식", "<UNKNOWN>", "&lt;UNKNOWN&gt;").mismatch, false);
+  assert.equal(reconcileKeyDisplay("주관식", "3", "$a=3$").mismatch, false);
+  assert.equal(reconcileKeyDisplay("주관식", "-10|8", "a=-10").mismatch, false);
+  assert.equal(reconcileKeyDisplay("주관식", "3", "$a=4$").mismatch, true);
+});
+
 check("toKeyAnswer / tutorAnswerMatches 는 옮기기 전과 같은 동작", () => {
   assert.equal(toKeyAnswer("객관식", "④ 12"), "4");
   assert.equal(toKeyAnswer("객관식", "①③"), "13");
