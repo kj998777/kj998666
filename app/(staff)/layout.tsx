@@ -79,6 +79,9 @@ export default async function StaffLayout({ children }: { children: React.ReactN
               <Link href="/admin/tutor-disputes" className="nav-link">과외 검토 분쟁</Link>
             )}
             {session.role === "admin" && (
+              <Link href="/admin/solution-check" className="nav-link">풀이 점검</Link>
+            )}
+            {session.role === "admin" && (
               <Link href="/admin/bug-reports" className="nav-link">
                 버그 신고
                 {bugCount > 0 && (

@@ -5,6 +5,7 @@ import { MathPreview, MathToolbar } from "@/app/_components/MathTools";
 import { updateItemExplanation } from "./actions";
 import ErrorCheckControl from "./ErrorCheckControl";
 import { reconcileKeyDisplay } from "@/lib/review/answerMatch";
+import { checkSolution } from "@/lib/review/solutionCheck";
 
 type Row = {
   id: string;
@@ -64,6 +65,9 @@ export default function ItemExplanationRow({
   // 저장된 정답 표시가 정답표(채점 기준)와 다른가 — 해설지·보고서에는 정답표 쪽이 보이므로 여기서 눈에 띄게 알린다.
   const keyCheck = keyInfo ? reconcileKeyDisplay(keyInfo.type, keyInfo.correct_answers, row.answer_display) : null;
   const keyMismatch = !!keyCheck?.mismatch;
+  // 풀이 글의 결론(번호·마지막 값)이 정답과 다른가(lib/review/solutionCheck.ts) — 자동으로 고치지 않고 알리기만.
+  const solCheck = keyInfo ? checkSolution(keyInfo.type, keyInfo.correct_answers, row.answer_display, row.solution) : null;
+  const solReasons = solCheck?.flagged ? solCheck.reasons.filter((r) => !r.startsWith("풀이에")) : [];
 
   return (
     <details className="border border-slate-200 rounded px-3 py-2">
@@ -76,6 +80,7 @@ export default function ItemExplanationRow({
         </span>
         {row.exam_error_suspected && <span className="badge bg-red-100 text-red-700">⚠ 출제오류 의심</span>}
         {keyMismatch && <span className="badge bg-amber-100 text-amber-800">정답표({keyCheck!.text})와 다름</span>}
+        {solReasons.length > 0 && <span className="badge bg-red-50 text-red-700">풀이 결론 확인 필요</span>}
       </summary>
       <div className="mt-2 text-sm space-y-2 text-slate-700">
         {row.exam_error_suspected && (
@@ -89,6 +94,11 @@ export default function ItemExplanationRow({
           <div className="border border-amber-200 bg-amber-50 text-amber-900 rounded px-3 py-2 text-sm">
             해설의 정답 표시({row.answer_display})가 채점에 쓰는 정답표({keyCheck!.text})와 다릅니다. 해설지·보고서·학생
             화면에는 정답표 쪽({keyCheck!.text})이 보입니다. 어느 쪽이 맞는지 확인해서 위 정답표나 아래 정답표시를 고쳐 주세요.
+          </div>
+        )}
+        {solReasons.length > 0 && (
+          <div className="border border-red-200 bg-red-50 text-red-900 rounded px-3 py-2 text-sm">
+            {solReasons.join(" · ")}. 문제를 직접 풀어 보고 정답표가 틀렸으면 위 정답표를, 풀이가 틀렸으면 아래 풀이를 고쳐 주세요.
           </div>
         )}
         {row.unit && <p className="text-slate-500">단원: {row.unit}</p>}

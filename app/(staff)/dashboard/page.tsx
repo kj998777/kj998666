@@ -146,6 +146,11 @@ export default async function DashboardPage({
         tone: "red",
       },
       {
+        href: "/admin/solution-check",
+        title: "풀이 점검",
+        desc: "풀이 글의 결론(번호·마지막 값)이 정답표·정답 표시와 다른 문항을 모아 보여 줍니다. 직접 풀어 보고 고치세요.",
+      },
+      {
         href: "/admin/bug-reports",
         title: "버그 신고",
         desc: "과외선생님이 보낸 버그 신고를 보고 처리 상태와 답변을 남깁니다(답변은 선생님 화면에 보임).",
