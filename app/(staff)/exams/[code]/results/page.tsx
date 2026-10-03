@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import ResultRow from "./ResultRow";
 import ReportPanel from "./ReportPanel";
+import RegradeButton from "./RegradeButton";
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { personLabel } from "@/lib/profile/label";
@@ -78,6 +79,8 @@ export default async function ResultsPage({ params }: { params: { code: string }
       </div>
 
       <ReportPanel code={code} examName={exam.name} />
+
+      {session.role === "admin" && submissions.length > 0 && <RegradeButton code={code} />}
 
       <GuessStatsCard perItems={submissions.map((r) => r.per_item)} />
 

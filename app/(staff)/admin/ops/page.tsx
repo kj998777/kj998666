@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { personLabel } from "@/lib/profile/label";
 import { listBackups } from "@/lib/ops/backup";
-import { BackupDownloadButton, BackupNowButton, RejudgeButton, TrustControls } from "./OpsControls";
+import { BackupDownloadButton, BackupNowButton, RegradeAllButton, RejudgeButton, TrustControls } from "./OpsControls";
 import { hasScanPdf } from "@/lib/ai/pdf";
 import { buildHealthChecks, STALE_SECOND_DAYS, worstLevel, type HealthCheck } from "@/lib/ops/health";
 import { dailyFlow } from "@/lib/ops/flow";
@@ -500,6 +500,16 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
           바꿉니다(반대로는 바꾸지 않음). 먼저 몇 건인지 보고 고를 수 있어요. 여러 번 눌러도 안전합니다.
         </p>
         <RejudgeButton />
+      </div>
+
+      <div className="card space-y-2">
+        <h2 className="font-medium">학생 채점 결과 전체 다시 매기기</h2>
+        <p className="text-xs text-slate-500">
+          정답표를 고치면 이제는 그 시험의 제출이 자동으로 다시 채점되지만(10월 3일 고침), 그 전에 고친 정답표는 기존 채점에
+          반영되지 않았을 수 있습니다. 이 버튼은 채점 결과가 있는 모든 시험을 지금 정답표로 다시 매겨, 점수나 정오가 달라지는
+          제출만 고칩니다(찍음 표시는 그대로). 먼저 무엇이 바뀌는지 보고 실행할 수 있고, 여러 번 눌러도 안전합니다.
+        </p>
+        <RegradeAllButton />
       </div>
 
       <div className="card space-y-2">
