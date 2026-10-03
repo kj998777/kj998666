@@ -13,6 +13,7 @@ import {
   type StudentListEntry,
   type SubRow,
 } from "@/lib/students/analysis";
+import { buildSubmittedExams, type SubmittedExam } from "@/lib/students/submitted";
 
 // 학생 분석 화면용 읽기(직원 세션 그대로 — RLS가 직원만 허용). 계산은 lib/students/analysis.ts.
 
@@ -92,6 +93,8 @@ export type StudentDetail = {
   memo: string;
   /** 합쳐진 자동 묶음(대표 자신 포함) — 풀기 버튼용 */
   members: string[];
+  /** 제출한 시험(다시 낸 것 포함, 최신순) — 문항별 답안 보기(2026-10-03) */
+  submitted: SubmittedExam[];
 };
 
 export async function loadStudentDetail(supabase: Client, index: StudentIndex, key: string): Promise<StudentDetail | null> {
@@ -145,7 +148,7 @@ export async function loadStudentDetail(supabase: Client, index: StudentIndex, k
   const peers = index.subs.filter((s) => examSet.has(s.exam_id)).map((s) => ({ exam_id: s.exam_id, class_label: s.class_label, total_score: s.total_score }));
   const analysis = analyzeStudent(mine, index.exams, items, peers);
   const memo = index.keyRows.find((r) => r.key === key)?.memo ?? "";
-  return { entry, analysis, memo, members: entry.members };
+  return { entry, analysis, memo, members: entry.members, submitted: buildSubmittedExams(mine, index.exams, items) };
 }
 
 /** 화면에 보일 반 이름: 과외 반이면 "과외 (선생님)" */
