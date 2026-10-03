@@ -6,6 +6,7 @@ import { classDisplay, loadStudentDetail, loadStudentIndex } from "@/lib/student
 import { decodeKey, encodeKey, keyName, mergeCandidates, trendSvg, type Bucket } from "@/lib/students/analysis";
 import StudentTools from "./StudentTools";
 import ReviewCards from "./ReviewCards";
+import SubmittedExams, { type ExamLinks } from "@/app/_components/SubmittedExams";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ function Bars({ rows }: { rows: Bucket[] }) {
   );
 }
 
-export default async function StudentPage({ params }: { params: { key: string } }) {
+export default async function StudentPage({ params, searchParams }: { params: { key: string }; searchParams?: { tab?: string } }) {
   const session = await requireRole("viewer");
   const key = decodeKey(params.key);
   if (!key) notFound();
@@ -83,6 +84,13 @@ export default async function StudentPage({ params }: { params: { key: string } 
     t.direction === "up" ? "오르는 중" : t.direction === "down" ? "내려가는 중" : t.direction === "flat" ? "비슷함" : "시험 2회부터";
   const trendCls = t.direction === "up" ? "text-emerald-700" : t.direction === "down" ? "text-red-600" : "text-slate-700";
   const nameOf = new Map(a.exams.map((e) => [e.examId, e.name]));
+  const tab = searchParams?.tab === "subs" ? "subs" : "analysis";
+  const links: ExamLinks = {};
+  for (const e of detail.submitted)
+    links[e.code] = {
+      href: `/exams/${encodeURIComponent(e.code)}/results`,
+      reportUrl: `/exams/${encodeURIComponent(e.code)}/results/report-data`,
+    };
   const bigChanges = a.areaChanges.filter((c) => Math.abs(c.delta) >= 0.2).slice(0, 5);
 
   return (
@@ -102,6 +110,26 @@ export default async function StudentPage({ params }: { params: { key: string } 
         </div>
       </div>
 
+      {/* 2026-10-03: "분석" / "제출한 시험"(시험마다 문항별 답안·풀이·개별 보고서) 탭 */}
+      <div className="flex gap-1 border-b border-slate-200 text-sm">
+        <Link
+          href={`/students/${params.key}`}
+          className={"px-3 py-2 -mb-px border-b-2 " + (tab === "subs" ? "border-transparent text-slate-500 hover:text-slate-800" : "border-brand-700 font-medium text-slate-900")}
+        >
+          분석
+        </Link>
+        <Link
+          href={`/students/${params.key}?tab=subs`}
+          className={"px-3 py-2 -mb-px border-b-2 " + (tab === "subs" ? "border-brand-700 font-medium text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800")}
+        >
+          제출한 시험 <span className="tabular-nums">{detail.submitted.length}</span>
+        </Link>
+      </div>
+
+      {tab === "subs" ? (
+        <SubmittedExams exams={detail.submitted} links={links} />
+      ) : (
+      <>
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
         <div className="card text-center">
           <div className="text-2xl font-semibold tabular-nums">{pct(a.avgRate)}</div>
@@ -320,6 +348,8 @@ export default async function StudentPage({ params }: { params: { key: string } 
       </div>
 
       <ReviewCards review={a.review} />
+      </>
+      )}
     </div>
   );
 }
