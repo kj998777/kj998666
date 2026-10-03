@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { backupDownloadUrl, runBackup } from "@/lib/ops/backup";
 import { rejudgeJudgments } from "@/lib/ops/rejudge";
+import { regradeAll, type RegradeAllReport } from "@/lib/ops/regradeAll";
 
 // 운영 현황(/admin/ops) 화면의 버튼들 — 관리자 확인 뒤 서비스롤로 처리한다.
 
@@ -84,4 +85,31 @@ export async function rejudgeNow(apply: boolean): Promise<Result & { flips?: num
         ? `${tutors}명의 기록 ${flips}건을 "맞음"으로 고쳤습니다. 정답률·등급에 바로 반영됩니다.` + tail
         : `"틀림" 기록 ${r.plan.checked}건 중 ${flips}건(${tutors}명)이 사실은 맞은 답입니다.` + tail,
   };
+}
+
+/**
+ * 전체 재채점(2026-10-03): 채점 결과가 있는 모든 시험을 지금 정답표로 다시 매긴다. apply=false면 무엇이 바뀌는지만.
+ * 정답표를 고쳐도 기존 채점이 그대로이던(PR #57 전) 결과를 바로잡는 용도. 여러 번 눌러도 안전.
+ */
+export async function regradeAllNow(apply: boolean): Promise<Result & { report?: RegradeAllReport }> {
+  await requireRole("admin");
+  try {
+    const report = await regradeAll(createAdminClient(), apply);
+    if (apply && report.applied > 0) {
+      revalidatePath("/admin/ops");
+      revalidatePath("/students");
+      for (const e of report.exams) {
+        revalidatePath(`/exams/${e.code}/results`);
+        revalidatePath(`/exams/${e.code}`);
+      }
+    }
+    const msg = !report.changed
+      ? `채점 결과 ${report.checked}건을 지금 정답표로 다시 매겨 봤고, 바뀌는 것이 없습니다.`
+      : apply
+        ? `${report.exams.length}개 시험의 채점 결과 ${report.applied}건을 지금 정답표로 다시 매겼습니다.`
+        : `채점 결과 ${report.checked}건 중 ${report.changed}건(${report.exams.length}개 시험)의 점수·정오가 지금 정답표와 다릅니다.`;
+    return { ok: true, msg, report };
+  } catch (e: any) {
+    return { ok: false, msg: "재채점에 실패했습니다: " + (e?.message ?? String(e)) };
+  }
 }

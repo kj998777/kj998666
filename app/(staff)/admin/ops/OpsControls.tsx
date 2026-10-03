@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { backupNow, getBackupUrl, rejudgeNow, resetTutorTrust, setTutorPaused } from "./actions";
+import { backupNow, getBackupUrl, regradeAllNow, rejudgeNow, resetTutorTrust, setTutorPaused } from "./actions";
+import type { RegradeAllReport } from "@/lib/ops/regradeAll";
 
 export function BackupNowButton() {
   const [pending, start] = useTransition();
@@ -115,6 +116,66 @@ export function RejudgeButton() {
         )}
       </div>
       {msg && <p className={"text-xs " + (msg.ok ? "text-emerald-700" : "text-red-600")}>{msg.text}</p>}
+    </div>
+  );
+}
+
+/** 전체 재채점(2026-10-03): 미리보기 → 실행 두 단계. 바뀌는 학생·점수를 표로 보여 준다. */
+export function RegradeAllButton() {
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [report, setReport] = useState<RegradeAllReport | null>(null);
+  const [previewed, setPreviewed] = useState(false);
+  const run = (apply: boolean) =>
+    start(async () => {
+      setMsg(null);
+      const r = await regradeAllNow(apply);
+      setMsg({ ok: r.ok, text: r.msg ?? (r.ok ? "끝났습니다." : "실패했습니다.") });
+      setReport(r.ok ? r.report ?? null : null);
+      setPreviewed(r.ok && !apply && (r.report?.changed ?? 0) > 0);
+    });
+  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="btn-secondary py-1 px-3 text-sm" disabled={pending} onClick={() => run(false)}>
+          {pending && !previewed ? "살펴보는 중…" : "무엇이 바뀌는지 보기"}
+        </button>
+        {previewed && (
+          <button type="button" className="btn-primary py-1 px-3 text-sm" disabled={pending} onClick={() => run(true)}>
+            {pending ? "다시 채점하는 중…" : `${report?.changed ?? 0}건 다시 채점하기`}
+          </button>
+        )}
+      </div>
+      {msg && <p className={"text-xs " + (msg.ok ? "text-emerald-700" : "text-red-600")}>{msg.text}</p>}
+      {report && report.exams.length > 0 && (
+        <div className="table-wrap">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-slate-500 border-b border-slate-200">
+                <th className="py-1 pr-2">시험</th>
+                <th className="py-1 pr-2">학생</th>
+                <th className="py-1 pr-2 text-right">점수</th>
+                <th className="py-1 pr-2">정오가 바뀐 문항</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.exams.flatMap((e) =>
+                e.changes.map((c, i) => (
+                  <tr key={e.examId + i} className="border-b border-slate-100">
+                    <td className="py-1 pr-2">{i === 0 ? `${e.name} (${e.code})` : ""}</td>
+                    <td className="py-1 pr-2">{c.student}</td>
+                    <td className="py-1 pr-2 text-right tabular-nums whitespace-nowrap">
+                      {fmt(c.from)} → <b>{fmt(c.to)}</b>
+                    </td>
+                    <td className="py-1 pr-2">{c.flipped.join(", ") || "-"}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
