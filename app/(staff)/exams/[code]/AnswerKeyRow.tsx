@@ -20,6 +20,7 @@ export default function AnswerKeyRow({ code, row, canEdit }: { code: string; row
   const [type, setType] = useState<AnswerType>(row.type);
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
+  const [note, setNote] = useState("");
   const dirty =
     item_label !== row.item_label || correct_answers !== row.correct_answers || points !== String(row.points) || type !== row.type;
 
@@ -66,6 +67,7 @@ export default function AnswerKeyRow({ code, row, canEdit }: { code: string; row
             onClick={() =>
               start(async () => {
                 setErr("");
+                setNote("");
                 const r = await updateAnswerKeyRow(code, row.id, {
                   item_label,
                   correct_answers,
@@ -74,6 +76,7 @@ export default function AnswerKeyRow({ code, row, canEdit }: { code: string; row
                   sort_order: row.sort_order,
                 });
                 if (!r.ok) setErr(r.msg ?? "실패");
+                else if (r.msg) setNote(r.msg); // 2026-10-03: 다시 채점한 제출 수·해설 정답 표시 맞춤 안내
               })
             }
           >
@@ -91,6 +94,7 @@ export default function AnswerKeyRow({ code, row, canEdit }: { code: string; row
           삭제
         </button>
         {err && <div className="text-xs text-red-600">{err}</div>}
+        {note && <div className="text-xs text-emerald-700 whitespace-normal max-w-xs">{note}</div>}
       </td>
     </tr>
   );
