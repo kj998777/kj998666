@@ -6,11 +6,16 @@ import { createExamRow, finalizeAiExamUpload } from "./ai-actions";
 import { pdfTooLarge, uploadPdfDirect } from "@/lib/supabase/uploadPdf";
 import { fitPdfForUpload } from "@/lib/pdf/shrinkPdf";
 import PdfDropInput from "./PdfDropInput";
+import { folderLabel, guessFolder } from "@/lib/exams/guessFolder";
 
 export default function CreateAiExamForm() {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState("");
   const [step, setStep] = useState("");
+  // 2026-10-03: 코드·이름을 비워 두고 PDF를 고르면 파일 이름으로 채우고, 폴더는 이름에서 자동으로 읽는다(미리보기)
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const guess = folderLabel(guessFolder(name, code));
   const router = useRouter();
 
   return (
@@ -71,11 +76,27 @@ export default function CreateAiExamForm() {
     >
       <div>
         <label className="label">시험 코드</label>
-        <input name="code" className="input" placeholder="dg2025-mid" required />
+        <input name="code" className="input" placeholder="dg2025-mid" required value={code} onChange={(e) => setCode(e.target.value)} />
       </div>
       <div>
         <label className="label">시험 이름</label>
-        <input name="name" className="input" placeholder="대기고 1-2 공통수학2 중간고사" required />
+        <input
+          name="name"
+          className="input"
+          placeholder="대기고 1-2 공통수학2 중간고사"
+          required
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <p className="text-xs mt-1 text-slate-500">
+          {guess ? (
+            <>
+              자동 분류: <b className="text-slate-700">{guess}</b> — 아래 칸을 비워 두면 이대로 폴더에 들어갑니다(고른 칸이 우선)
+            </>
+          ) : (
+            "이름에 학교·학년·연도·학기·중간/기말을 적으면 폴더가 자동으로 정해집니다."
+          )}
+        </p>
       </div>
       <div>
         <label className="label">학교급</label>
@@ -120,7 +141,17 @@ export default function CreateAiExamForm() {
       </div>
       <div>
         <label className="label">시험지 PDF</label>
-        <PdfDropInput name="pdf" required />
+        <PdfDropInput
+          name="pdf"
+          required
+          onFiles={(files) => {
+            const f = files[0];
+            if (!f) return;
+            const base = f.name.normalize("NFC").replace(/\.pdf$/i, "").trim();
+            if (!name.trim()) setName(base.slice(0, 100));
+            if (!code.trim()) setCode(base.slice(0, 40));
+          }}
+        />
         <p className="text-xs text-slate-500 mt-1">
           AI가 문항을 읽어 정답·해설을 자동으로 만듭니다. 다 되면 검수 화면에서 확인 후 시험을 열면 됩니다.
           (50MB가 넘으면 자동으로 줄여서 올립니다)

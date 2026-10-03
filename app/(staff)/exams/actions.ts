@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import type { SchoolLevel } from "@/lib/supabase/types";
 import { tagJejuSchool } from "@/lib/exams/tagJeju";
+import { folderLabel, guessFolder } from "@/lib/exams/guessFolder";
 
 function schoolLevelField(formData: FormData): SchoolLevel | null {
   const v = String(formData.get("school_level") ?? "").trim();
@@ -46,10 +47,12 @@ export async function createExam(formData: FormData) {
   if (!name) return { ok: false, msg: "시험 이름을 입력해 주세요." };
 
   const supabase = await createClient();
-  const level = schoolLevelField(formData);
+  // 2026-10-03: 학교급을 안 골랐으면, 그리고 폴더 칸은 항상 시험 이름·코드에서 읽어 자동으로 채운다(lib/exams/guessFolder.ts)
+  const guessed = guessFolder(name, code);
+  const level = schoolLevelField(formData) ?? guessed.school_level;
   const { data: created, error } = (await supabase
     .from("exams")
-    .insert({ code, name, status: "닫힘", created_by: userId, school_level: level } as any)
+    .insert({ code, name, status: "닫힘", created_by: userId, ...guessed, school_level: level } as any)
     .select("id")
     .single()) as any;
   if (!error && created) await tagJejuSchool(supabase, created.id, name, level);
@@ -169,6 +172,59 @@ export async function retagJejuExams(): Promise<
   }
   revalidatePath("/exams");
   revalidatePath("/admin/review-status");
+  remaining.sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  return { ok: true, changed, remaining };
+}
+
+/**
+ * 2026-10-03 원장님 요청("미분류 파일들 폴더에 넣어 줘"): 모든 시험의 이름·코드를 읽어(lib/exams/guessFolder.ts)
+ * 비어 있는 폴더 칸(학교급·연도·학년·학기·구분)만 채운다. 이미 들어 있는 값(직접 고른 분류)은 건드리지 않는다.
+ * 결과로 이번에 채운 시험과, 이름만으로는 다 못 채워 여전히 칸이 빈 시험을 돌려준다(화면에서 직접 고치도록).
+ */
+export async function autoClassifyExams(): Promise<
+  | { ok: true; changed: { code: string; name: string; label: string }[]; remaining: { code: string; name: string; missing: string }[] }
+  | { ok: false; msg: string }
+> {
+  await requireRole("admin");
+  const { fetchAllPages } = await import("@/lib/supabase/fetchAll");
+  const supabase = await createClient();
+  const { data, error } = await fetchAllPages((f, t) =>
+    (supabase.from("exams") as any)
+      .select("id, code, name, school_level, folder_year, folder_grade, folder_term, folder_kind")
+      .order("id")
+      .range(f, t)
+  );
+  if (error) return { ok: false, msg: "불러오지 못했습니다: " + error.message };
+  const KEYS = ["school_level", "folder_year", "folder_grade", "folder_term", "folder_kind"] as const;
+  const NAMES: Record<(typeof KEYS)[number], string> = {
+    school_level: "학교급",
+    folder_year: "연도",
+    folder_grade: "학년",
+    folder_term: "학기",
+    folder_kind: "중간/기말",
+  };
+  const changed: { code: string; name: string; label: string }[] = [];
+  const remaining: { code: string; name: string; missing: string }[] = [];
+  for (const e of (data as any[]) ?? []) {
+    const name = String(e.name ?? "").normalize("NFC");
+    const code = String(e.code ?? "").normalize("NFC");
+    const g = guessFolder(name, code);
+    const patch: Record<string, unknown> = {};
+    for (const k of KEYS) if (e[k] == null && g[k] != null) patch[k] = g[k];
+    const after = { ...e, ...patch };
+    if (Object.keys(patch).length) {
+      // 동시에 다른 화면에서 고친 값은 덮지 않도록 "아직 비어 있을 때만" 조건을 건다
+      let q = (supabase.from("exams") as any).update(patch).eq("id", e.id);
+      for (const k of Object.keys(patch)) q = q.is(k, null);
+      const { error: uErr } = await q;
+      if (uErr) return { ok: false, msg: "바꾸지 못했습니다: " + uErr.message };
+      changed.push({ code, name, label: folderLabel(after) });
+    }
+    const missing = KEYS.filter((k) => after[k] == null).map((k) => NAMES[k]);
+    if (missing.length) remaining.push({ code, name, missing: missing.join(", ") });
+  }
+  revalidatePath("/exams");
+  revalidatePath("/tutor/store");
   remaining.sort((a, b) => a.name.localeCompare(b.name, "ko"));
   return { ok: true, changed, remaining };
 }
