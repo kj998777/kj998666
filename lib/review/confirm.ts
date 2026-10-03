@@ -1,7 +1,4 @@
 import "server-only";
-import { isCorrect } from "@/lib/grading";
-import { mcDigitOf, shortAnswerOf } from "@/lib/ai/normalize";
-import { mcChoices, mcMatchesKeyCell } from "@/lib/review/mcAnswer";
 
 // #3 (2026-09-28): 문항별 "정답 확정"과 시험 자동 열기. 자세한 배경은
 // supabase/migrations/0016_review_status_confirm.sql 머리말 참고.
@@ -14,47 +11,10 @@ import { mcChoices, mcMatchesKeyCell } from "@/lib/review/mcAnswer";
 
 type Client = any;
 
-/**
- * 과외선생님이 적은 정답 표시(①, "$\\frac{1}{2}$", "x=3" 등)를 정답표(answer_key.correct_answers)
- * 비교·저장용 문자열로 바꾼다. 완벽한 변환은 아니며, 못 맞추면 관리자가 검토현황에서 직접 고친다.
- */
-export function toKeyAnswer(type: string, s: string): string {
-  const raw = String(s ?? "");
-  if (type === "객관식") {
-    // 2026-09-30: "①③"이 "1"로, "④ 12"가 엉뚱하게 바뀌던 것 → 고른 번호 모음으로(lib/review/mcAnswer.ts)
-    const c = mcChoices(raw);
-    if (c) return c;
-    const d = mcDigitOf(raw);
-    if (d) return d;
-  }
-  let t = shortAnswerOf(raw);
-  const simple = (x: string) => /^-?[0-9a-zA-Z.]+$/.test(x);
-  t = t
-    .replace(/\\left|\\right/g, "")
-    .replace(/\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}/g, (_m, a, b) =>
-      simple(a) && simple(b) ? `${a}/${b}` : `(${a})/(${b})`
-    )
-    .replace(/\\sqrt\{([^{}]*)\}/g, "√($1)")
-    .replace(/\\pi/g, "π")
-    .replace(/\\times/g, "×")
-    .replace(/\\cdot/g, "·")
-    .replace(/\\leq?/g, "≤")
-    .replace(/\\geq?/g, "≥")
-    .replace(/\\[,;!]|\\ /g, "")
-    .replace(/[{}]/g, "");
-  return t.trim().slice(0, 100);
-}
-
-/** 과외선생님 답(정답 표시)이 정답표와 같은가. */
-export function tutorAnswerMatches(type: string, tutorAnswer: string, keyCell: string): boolean {
-  if (!tutorAnswer || !keyCell) return false;
-  // 객관식은 모양("④"·"4번"·"④ 12"·"$4$")이 달라도 고른 번호가 같으면 같은 답(2026-09-30 제보: 번호가 같은데 "AI와 다름")
-  if (type === "객관식") {
-    const m = mcMatchesKeyCell(tutorAnswer, keyCell);
-    if (m !== null) return m;
-  }
-  return isCorrect(toKeyAnswer(type, tutorAnswer), keyCell, type) || isCorrect(tutorAnswer, keyCell, type);
-}
+// toKeyAnswer / tutorAnswerMatches 는 2026-10-03에 lib/review/answerMatch.ts(server-only 아님, 보고서 PDF에서도 씀)로
+// 옮겼다. 기존 import가 깨지지 않도록 여기서 다시 내보낸다.
+export { toKeyAnswer, tutorAnswerMatches } from "@/lib/review/answerMatch";
+import { tutorAnswerMatches } from "@/lib/review/answerMatch";
 
 /**
  * 시험의 모든 문항이 확정됐으면 검수대기 시험을 연다. 연 경우 true.
