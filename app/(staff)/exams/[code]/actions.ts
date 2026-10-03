@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import type { AnswerType } from "@/lib/supabase/types";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { regradeExam } from "@/lib/review/regrade";
+import { reconcileKeyDisplay } from "@/lib/review/answerMatch";
+import { mcChoices } from "@/lib/review/mcAnswer";
 
 async function getExamId(code: string) {
   const supabase = await createClient();
@@ -47,10 +51,50 @@ export async function updateAnswerKeyRow(
 ) {
   await requireRole("editor");
   const supabase = await createClient();
+  // 2026-10-03: 정답표를 고치면 (1) 이미 들어온 제출을 새 정답으로 다시 채점하고 (2) 해설의 정답 표시도 따라
+  // 바꾼다. 그 전엔 정답표만 바뀌고 채점 결과·해설지의 "정답"은 옛 값 그대로라 셋이 서로 달랐다(원장님 제보).
+  const { data: before } = (await supabase
+    .from("answer_key")
+    .select("exam_id, item_label, correct_answers, type")
+    .eq("id", id)
+    .maybeSingle()) as any;
   const { error } = await (supabase.from("answer_key") as any).update(fields).eq("id", id);
   if (error) return { ok: false, msg: "저장하지 못했습니다: " + error.message };
+
+  const notes: string[] = [];
+  const keyChanged =
+    !!before && (String(before.correct_answers ?? "").trim() !== fields.correct_answers.trim() || before.type !== fields.type);
+  if (before && (keyChanged || before.item_label !== fields.item_label)) {
+    const synced = await syncAnswerDisplayToKey(supabase, before.exam_id, fields.item_label, fields.type, fields.correct_answers);
+    if (synced) notes.push(`해설의 정답 표시도 "${synced}"로 맞췄습니다.`);
+  }
+  if (before && keyChanged) {
+    const n = await regradeExam(createAdminClient(), before.exam_id);
+    if (n > 0) notes.push(`제출 ${n}건을 새 정답으로 다시 채점했습니다.`);
+  }
   revalidatePath(`/exams/${code}`);
-  return { ok: true };
+  revalidatePath(`/exams/${code}/results`);
+  return { ok: true, msg: notes.join(" ") };
+}
+
+/**
+ * 해설의 정답 표시(item_explanations.answer_display)가 정답표와 다르면 정답표 모양("③", "1/2")으로 바꾼다.
+ * 바꿨으면 새 표시를, 안 바꿨으면(이미 같거나 해설 행이 없으면) null을 돌려준다. AI 원본은 ai_answer_display에 남긴다.
+ */
+async function syncAnswerDisplayToKey(supabase: any, examId: string, itemLabel: string, type: string, keyCell: string): Promise<string | null> {
+  const { data: ie } = (await supabase
+    .from("item_explanations")
+    .select("id, answer_display, ai_answer_display")
+    .eq("exam_id", examId)
+    .eq("item_label", itemLabel)
+    .maybeSingle()) as any;
+  if (!ie) return null;
+  const { mismatch, text } = reconcileKeyDisplay(type, keyCell, ie.answer_display);
+  if (!mismatch) return null;
+  const patch: Record<string, unknown> = { answer_display: text, updated_at: new Date().toISOString() };
+  if (ie.ai_answer_display == null) patch.ai_answer_display = ie.answer_display ?? "";
+  const { error } = await (supabase.from("item_explanations") as any).update(patch).eq("id", ie.id);
+  return error ? null : text;
 }
 
 export async function deleteAnswerKeyRow(code: string, id: string) {
@@ -74,10 +118,34 @@ export async function updateItemExplanation(
 ) {
   await requireRole("editor");
   const supabase = await createClient();
+  // 2026-10-03: 정답 표시가 정답표(채점 기준)와 다르게 저장되는 걸 막는다. 정답을 바꾸려면 위 정답표에서 고쳐야
+  // 하고, 그러면 정답 표시도 자동으로 따라온다(updateAnswerKeyRow). 주관식은 수식 모양 때문에 비교가 틀릴 수
+  // 있어 막지는 않고 안내만 한다(보고서에는 어차피 정답표 쪽이 보인다).
+  let warn = "";
+  const { data: ie } = (await supabase.from("item_explanations").select("exam_id, item_label").eq("id", id).maybeSingle()) as any;
+  if (ie) {
+    const { data: key } = (await supabase
+      .from("answer_key")
+      .select("correct_answers, type")
+      .eq("exam_id", ie.exam_id)
+      .eq("item_label", ie.item_label)
+      .maybeSingle()) as any;
+    const disp = fields.answer_display.trim();
+    if (key && disp && String(key.correct_answers ?? "").trim()) {
+      const { mismatch, text } = reconcileKeyDisplay(key.type, key.correct_answers, disp);
+      if (mismatch && key.type === "객관식" && mcChoices(disp)) {
+        return {
+          ok: false,
+          msg: `정답표는 ${text}입니다. 정답을 바꾸려면 위 정답표에서 고쳐 주세요(해설의 정답 표시도 함께 바뀝니다).`,
+        };
+      }
+      if (mismatch) warn = `정답표("${key.correct_answers}")와 같은 값인지 확인해 주세요 — 다르면 해설지·보고서에는 정답표 쪽이 보입니다.`;
+    }
+  }
   const { error } = await (supabase.from("item_explanations") as any).update(fields).eq("id", id);
   if (error) return { ok: false, msg: "저장하지 못했습니다: " + error.message };
   revalidatePath(`/exams/${code}`);
-  return { ok: true };
+  return { ok: true, msg: warn };
 }
 
 /**

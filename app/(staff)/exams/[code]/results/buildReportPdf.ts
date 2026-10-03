@@ -1,4 +1,5 @@
 import { normalizeTex } from "@/lib/math/normalizeTex";
+import { reconcileKeyDisplay } from "@/lib/review/answerMatch";
 import { needsSvgMath, svgifyKatex } from "@/lib/math/svgMath";
 import { guessSummary } from "@/lib/grading";
 import { guessStatsByItem, guessTotals, manyGuessed, pctOf } from "@/lib/report/guessStats";
@@ -550,10 +551,7 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
     b.push(
       `<tr class="${rc}"><td class="c"><b>${esc(it.label)}</b></td><td class="l rpt-small">${esc(it.unit)}</td><td class="c">${fmt(
         it.points
-      )}${it.points_assigned ? "*" : ""}</td><td class="c">${badge(it.difficulty)}</td><td class="c">${mathHtml(
-        katex,
-        it.answer_display
-      )}</td><td class="c">${nok}/${n}</td>${
+      )}${it.points_assigned ? "*" : ""}</td><td class="c">${badge(it.difficulty)}</td><td class="c">${keyDisplay(katex, it)}</td><td class="c">${nok}/${n}</td>${
         anyGuess
           ? `<td class="c rpt-small">${(() => {
               const g = gByLabel.get(it.label);
@@ -770,10 +768,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
       )}${it.points_assigned ? "*" : ""}</td><td class="c">${badge(it.difficulty)}</td><td class="l rpt-small">${mathHtml(
         katex,
         it.difficulty_reason
-      )}</td><td class="c"><code class="v">${esc(givenDisplay(it, idx))}</code></td><td class="c">${mathHtml(
-        katex,
-        it.answer_display
-      )}</td><td class="c ${statusClass(r)}">${statusMark(r)}${idx.get(it.label)?.guessed ? '<div class="rpt-small">찍음</div>' : ""}</td></tr>`
+      )}</td><td class="c"><code class="v">${esc(givenDisplay(it, idx))}</code></td><td class="c">${keyDisplay(katex, it)}</td><td class="c ${statusClass(r)}">${statusMark(r)}${idx.get(it.label)?.guessed ? '<div class="rpt-small">찍음</div>' : ""}</td></tr>`
     );
   }
   b.push("</tbody></table>");
@@ -789,10 +784,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
         )}점</div><div class="st">${mathHtml(katex, it.problem_statement)}</div>` +
           `<div class="row"><span class="rpt-pill mine${r === "blank" ? " blank" : ""}">내 답: <b>${esc(
             givenDisplay(it, idx)
-          )}</b>${r === "blank" ? "" : " (오답)"}</span><span class="rpt-pill key">정답: <b>${mathHtml(
-            katex,
-            it.answer_display
-          )}</b></span></div>` +
+          )}</b>${r === "blank" ? "" : " (오답)"}</span><span class="rpt-pill key">정답: <b>${keyDisplay(katex, it)}</b></span></div>` +
           `<div class="rpt-sol"><b>풀이</b> — ${mathHtml(katex, it.solution)}</div></div>`
       );
     }
@@ -827,10 +819,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
           `<div class="rpt-card"><div class="hd">${esc(it.label)}번 · ${esc(it.unit)} · ${badge(it.difficulty)} · 배점 ${fmt(
             it.points
           )}점</div><div class="st">${mathHtml(katex, it.problem_statement)}</div>` +
-            `<div class="row"><span class="rpt-pill key">내 답: <b>${esc(givenDisplay(it, idx))}</b> (정답)</span><span class="rpt-pill key">정답: <b>${mathHtml(
-              katex,
-              it.answer_display
-            )}</b></span></div>` +
+            `<div class="row"><span class="rpt-pill key">내 답: <b>${esc(givenDisplay(it, idx))}</b> (정답)</span><span class="rpt-pill key">정답: <b>${keyDisplay(katex, it)}</b></span></div>` +
             `<div class="rpt-sol"><b>풀이</b> — ${mathHtml(katex, it.solution)}</div></div>`
         );
       }
@@ -844,10 +833,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
         `<div class="rpt-card"><div class="hd">${esc(it.label)}번 · ${esc(it.unit)} · ${badge(it.difficulty)} · 배점 ${fmt(
           it.points
         )}점</div><div class="st">${mathHtml(katex, it.problem_statement)}</div>` +
-          `<div class="row"><span class="rpt-pill key">내 답: <b>${esc(givenDisplay(it, idx))}</b> (정답 · 찍음)</span><span class="rpt-pill key">정답: <b>${mathHtml(
-            katex,
-            it.answer_display
-          )}</b></span></div>` +
+          `<div class="row"><span class="rpt-pill key">내 답: <b>${esc(givenDisplay(it, idx))}</b> (정답 · 찍음)</span><span class="rpt-pill key">정답: <b>${keyDisplay(katex, it)}</b></span></div>` +
           `<div class="rpt-sol"><b>풀이</b> — ${mathHtml(katex, it.solution)}</div></div>`
       );
     }
@@ -866,15 +852,15 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
 // ---------------------------------------------------------------------
 
 function keyDisplay(katex: any, it: ReportItem): string {
-  if (it.answer_display && it.answer_display.trim()) return mathHtml(katex, it.answer_display);
-  const raw = String(it.correct_answers ?? "").trim();
-  if (!raw) return "-";
-  // 정답표 칸은 "|"로 여러 정답을 허용하고, 객관식 "24"는 ②④(복수 정답)이다(lib/grading.ts).
-  const alts = raw.split("|").map((a) => a.trim()).filter(Boolean);
-  if (it.type === "객관식") {
-    return esc(alts.map((a) => (/^[1-5]+$/.test(a) ? a.split("").map((c) => CIRC[c]).join("") : a)).join(" 또는 "));
-  }
-  return alts.map((a) => mathHtml(katex, a)).join(" 또는 ");
+  // 2026-10-03: 정답 표시(answer_display)가 정답표(correct_answers)와 다르면 채점 기준인 정답표를 보여 준다
+  // (lib/review/answerMatch.ts). 그 전엔 해설지 "정답"과 실제 채점 답이 달라 보이는 일이 있었다.
+  const { text } = reconcileKeyDisplay(it.type, it.correct_answers, it.answer_display);
+  if (!text) return "-";
+  if (it.type === "객관식" && /^[①②③④⑤ 또는]+$/.test(text)) return esc(text);
+  return text
+    .split(" 또는 ")
+    .map((a) => mathHtml(katex, a))
+    .join(" 또는 ");
 }
 
 function metaLine(it: ReportItem): string {

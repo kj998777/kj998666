@@ -2,6 +2,7 @@
 // A4 쪽 나누기)와 같은 모양(.rpt)을 쓴다 — app/(staff)/exams/[code]/results/buildReportPdf.ts.
 // 계산은 서버에서 끝난 Analysis(lib/students/analysis.ts)를 그대로 받아 그리기만 한다.
 import { badge, brandHead, downloadBytes, ensureReportTools, esc, htmlToPdfBytes, mathHtml } from "@/app/(staff)/exams/[code]/results/buildReportPdf";
+import { reconcileKeyDisplay } from "@/lib/review/answerMatch";
 import { trendSvg, type Analysis, type Attempt, type Bucket } from "@/lib/students/analysis";
 import { promoReportHtml } from "@/lib/content/promo";
 
@@ -71,12 +72,14 @@ function givenText(a: Attempt): string {
 }
 
 function keyText(katex: any, a: Attempt): string {
-  if (a.item.answer_display && a.item.answer_display.trim()) return mathHtml(katex, a.item.answer_display);
-  const raw = String(a.item.correct_answers ?? "").trim();
-  if (!raw) return "-";
-  const alts = raw.split("|").map((x) => x.trim()).filter(Boolean);
-  if (a.item.type === "객관식") return esc(alts.map((x) => (/^[1-5]+$/.test(x) ? x.split("").map((c) => CIRC[c]).join("") : x)).join(" 또는 "));
-  return alts.map((x) => mathHtml(katex, x)).join(" 또는 ");
+  // 2026-10-03: 정답 표시가 정답표와 다르면 채점 기준인 정답표를 보여 준다(lib/review/answerMatch.ts).
+  const { text } = reconcileKeyDisplay(a.item.type, a.item.correct_answers, a.item.answer_display);
+  if (!text) return "-";
+  if (a.item.type === "객관식" && /^[①②③④⑤ 또는]+$/.test(text)) return esc(text);
+  return text
+    .split(" 또는 ")
+    .map((x) => mathHtml(katex, x))
+    .join(" 또는 ");
 }
 
 export function buildStudentReportHtml(katex: any, input: StudentReportInput, chartPng: string | null): string {

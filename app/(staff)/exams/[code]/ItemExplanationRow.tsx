@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { MathPreview, MathToolbar } from "@/app/_components/MathTools";
 import { updateItemExplanation } from "./actions";
 import ErrorCheckControl from "./ErrorCheckControl";
+import { reconcileKeyDisplay } from "@/lib/review/answerMatch";
 
 type Row = {
   id: string;
@@ -23,6 +24,8 @@ type Row = {
 };
 
 type CheckInfo = { stage: string; message: string; updatedAt: string } | null;
+/** 같은 번호의 정답표 칸(없으면 null) — 정답 표시가 이것과 다르면 경고를 띄운다(2026-10-03). */
+type KeyInfo = { type: string; correct_answers: string } | null;
 
 // AnswerKeyRow.tsx 와 같은 패턴(로컬 useState + dirty flag + 저장 버튼 + useTransition).
 // 직원(editor 이상)은 여기서 정답표시·풀이를 바로 고칠 수 있다 — 지금까지는 읽기 전용이었음.
@@ -32,12 +35,14 @@ export default function ItemExplanationRow({
   canEdit,
   isAdmin,
   initialCheck,
+  keyInfo = null,
 }: {
   code: string;
   row: Row;
   canEdit: boolean;
   isAdmin: boolean;
   initialCheck: CheckInfo;
+  keyInfo?: KeyInfo;
 }) {
   const [answer_display, setAnswer] = useState(row.answer_display);
   const [solution, setSolution] = useState(row.solution);
@@ -54,7 +59,11 @@ export default function ItemExplanationRow({
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
   const [saved, setSaved] = useState(false);
+  const [warn, setWarn] = useState("");
   const dirty = answer_display !== row.answer_display || solution !== row.solution;
+  // 저장된 정답 표시가 정답표(채점 기준)와 다른가 — 해설지·보고서에는 정답표 쪽이 보이므로 여기서 눈에 띄게 알린다.
+  const keyCheck = keyInfo ? reconcileKeyDisplay(keyInfo.type, keyInfo.correct_answers, row.answer_display) : null;
+  const keyMismatch = !!keyCheck?.mismatch;
 
   return (
     <details className="border border-slate-200 rounded px-3 py-2">
@@ -66,6 +75,7 @@ export default function ItemExplanationRow({
           {row.points_assigned && " · 배점임의"}
         </span>
         {row.exam_error_suspected && <span className="badge bg-red-100 text-red-700">⚠ 출제오류 의심</span>}
+        {keyMismatch && <span className="badge bg-amber-100 text-amber-800">정답표({keyCheck!.text})와 다름</span>}
       </summary>
       <div className="mt-2 text-sm space-y-2 text-slate-700">
         {row.exam_error_suspected && (
@@ -75,16 +85,22 @@ export default function ItemExplanationRow({
             {row.exam_error_student_note && <p className="text-red-700">학생 안내: {row.exam_error_student_note}</p>}
           </div>
         )}
+        {keyMismatch && (
+          <div className="border border-amber-200 bg-amber-50 text-amber-900 rounded px-3 py-2 text-sm">
+            해설의 정답 표시({row.answer_display})가 채점에 쓰는 정답표({keyCheck!.text})와 다릅니다. 해설지·보고서·학생
+            화면에는 정답표 쪽({keyCheck!.text})이 보입니다. 어느 쪽이 맞는지 확인해서 위 정답표나 아래 정답표시를 고쳐 주세요.
+          </div>
+        )}
         {row.unit && <p className="text-slate-500">단원: {row.unit}</p>}
         {row.difficulty_reason && <p className="text-slate-500">난이도 판단: {row.difficulty_reason}</p>}
         {row.problem_statement && <p className="whitespace-pre-wrap">{row.problem_statement}</p>}
 
         {!canEdit ? (
           <>
-            {row.answer_display && (
+            {(keyCheck?.text || row.answer_display) && (
               <p>
                 <span className="font-medium">정답: </span>
-                {row.answer_display}
+                {keyCheck?.text || row.answer_display}
               </p>
             )}
             {row.solution && (
@@ -126,9 +142,13 @@ export default function ItemExplanationRow({
                   onClick={() =>
                     start(async () => {
                       setErr("");
+                      setWarn("");
                       const r = await updateItemExplanation(code, row.id, { answer_display, solution });
                       if (!r.ok) setErr(r.msg ?? "실패");
-                      else setSaved(true);
+                      else {
+                        setSaved(true);
+                        if (r.msg) setWarn(r.msg);
+                      }
                     })
                   }
                 >
@@ -137,6 +157,7 @@ export default function ItemExplanationRow({
               )}
               {saved && !dirty && <span className="text-xs text-emerald-600">저장됨</span>}
               {err && <span className="text-xs text-red-600">{err}</span>}
+              {warn && <span className="text-xs text-amber-700">{warn}</span>}
             </div>
           </div>
         )}

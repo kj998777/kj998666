@@ -51,6 +51,9 @@ export default async function ExamDetailPage({
     .order("item_label");
 
   const totalPoints = (keys ?? []).reduce((s: number, k: any) => s + Number(k.points), 0);
+  // 2026-10-03: 문항 해설 줄에서 정답 표시가 정답표와 다른지 보여 주기 위해 번호별 정답표 칸을 넘긴다.
+  const keyByLabel: Record<string, { type: string; correct_answers: string }> = {};
+  for (const k of (keys as any[]) ?? []) keyByLabel[k.item_label] = { type: k.type, correct_answers: String(k.correct_answers ?? "") };
   const studentPath = `/s/${encodeURIComponent(exam.code)}`;
 
   const { data: explanations } = await supabase
@@ -382,6 +385,7 @@ export default async function ExamDetailPage({
                 row={e}
                 canEdit={canEdit}
                 isAdmin={isAdmin}
+                keyInfo={keyByLabel[e.item_label] ?? null}
                 initialCheck={
                   checksByLabel[e.item_label]
                     ? {

@@ -1,6 +1,7 @@
 // 2026-10-03 원장님: "학생별로 제출한 시험을 볼 수 있게 하는 탭". 한 학생이 낸 시험(다시 낸 것 포함)을 최신순으로,
 // 시험마다 문항별 낸 답·정답·맞음/틀림·찍음·풀이를 한 묶음으로 만든다. 원장님 학생 화면(/students/[key]?tab=subs)과
 // 과외선생님 "내 학생"(/tutor/students)이 같이 쓰는 순수 계산(브라우저·서버 공용, test/submittedExams.test.ts).
+import { reconcileKeyDisplay } from "@/lib/review/answerMatch";
 import { normName, type Difficulty, type ExamMeta, type ItemMeta, type SubRow } from "@/lib/students/analysis";
 
 export type AnswerRow = {
@@ -115,7 +116,8 @@ export function buildSubmittedExams(
         unit: it?.unit ?? "",
         difficulty: it?.difficulty ?? "",
         key: show && it ? keyText(type, it.correct_answers ?? "") || null : null,
-        answerDisplay: show ? it?.answer_display ?? "" : "",
+        // 2026-10-03: 정답 표시가 정답표와 다르면 정답표를 보여 준다(lib/review/answerMatch.ts) — 채점 기준과 어긋나지 않게.
+        answerDisplay: show && it ? reconcileKeyDisplay(type, it.correct_answers ?? "", it.answer_display ?? "").text : "",
         problem: show ? it?.problem_statement ?? "" : "",
         solution: show ? it?.solution ?? "" : "",
       };
