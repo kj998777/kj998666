@@ -7,6 +7,7 @@ import CreateAiExamForm from "./CreateAiExamForm";
 import CreateAiExamBatchForm from "./CreateAiExamBatchForm";
 import ExamFolderTree from "./ExamFolderTree";
 import JejuRetagPanel from "./JejuRetagPanel";
+import AutoClassifyPanel from "./AutoClassifyPanel";
 
 const LEVEL_LABEL: Record<string, string> = { 초: "초등학교", 중: "중학교", 고: "고등학교" };
 
@@ -57,6 +58,12 @@ export default async function ExamsPage({ searchParams }: { searchParams?: { lev
       
       <h2 className="font-medium mb-3">여러 시험 한꺼번에 올리기 (AI 자동 처리)</h2>
       <CreateAiExamBatchForm /></div>
+      )}
+
+      {isAdmin && (
+        <div className="card">
+          <AutoClassifyPanel unfiled={((exams ?? []) as any[]).filter((e) => !e.folder_year).length} />
+        </div>
       )}
 
       {isAdmin && (

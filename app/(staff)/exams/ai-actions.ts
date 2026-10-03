@@ -9,6 +9,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { startExamAiJob, cancelExamAiJob, tickExamJob } from "@/lib/ai/pipeline";
 import { startDigitizeJob } from "@/lib/ai/digitize";
 import { tagJejuSchool } from "@/lib/exams/tagJeju";
+import { guessFolder, mergeFolder } from "@/lib/exams/guessFolder";
 import { getJob, isActiveStage, setJob } from "@/lib/ai/job";
 import type { SchoolLevel } from "@/lib/supabase/types";
 
@@ -65,9 +66,12 @@ export async function createExamRow(formData: FormData): Promise<CreateExamRowRe
   if (!name) return { ok: false, msg: "시험 이름을 입력해 주세요." };
 
   const supabase = await createClient();
+  // 2026-10-03: 폴더(학교급·연도·학년·학기·구분)를 비워 두면 시험 이름(=파일 이름)·코드에서 읽어 자동으로 채운다
+  // (lib/exams/guessFolder.ts). 화면에서 고른 값이 있으면 그쪽이 우선.
+  const folder = mergeFolder({ school_level: schoolLevelField(formData), ...folderFields(formData) }, guessFolder(name, code));
   const { data: exam, error } = (await supabase
     .from("exams")
-    .insert({ code, name, status: "닫힘", created_by: userId, school_level: schoolLevelField(formData), ...folderFields(formData) } as any)
+    .insert({ code, name, status: "닫힘", created_by: userId, ...folder } as any)
     .select("id, code")
     .single()) as any;
   if (error) {
@@ -75,7 +79,7 @@ export async function createExamRow(formData: FormData): Promise<CreateExamRowRe
     return { ok: false, msg };
   }
   // 이름으로 제주 학교 여부·학교급 자동 표시(검토 배정 우선순위용)
-  await tagJejuSchool(supabase, exam.id, name, schoolLevelField(formData));
+  await tagJejuSchool(supabase, exam.id, name, folder.school_level);
   return { ok: true, id: exam.id, code: exam.code };
 }
 

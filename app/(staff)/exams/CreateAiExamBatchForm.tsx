@@ -8,6 +8,7 @@ import { pollJob } from "@/lib/jobPoll";
 import { pdfTooLarge, uploadPdfDirect } from "@/lib/supabase/uploadPdf";
 import { fitPdfForUpload } from "@/lib/pdf/shrinkPdf";
 import { ACTIVE, STAGE_LABEL } from "./aiJobStage";
+import { folderLabel, guessFolder } from "@/lib/exams/guessFolder";
 
 type RowStatus = "대기" | "올리는 중…" | "완료" | "실패";
 
@@ -146,7 +147,7 @@ export default function CreateAiExamBatchForm() {
     <div className="space-y-3">
       <div ref={sharedRef} className="space-y-3">
         <div>
-          <label className="label">학교급 (전체 파일 공통)</label>
+          <label className="label">학교급 (비우면 파일마다 자동)</label>
           <select name="school_level" className="input" defaultValue="" disabled={running}>
             <option value="">선택 안 함</option>
             <option value="초">초등학교</option>
@@ -156,7 +157,7 @@ export default function CreateAiExamBatchForm() {
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="label">연도 (전체 파일 공통)</label>
+            <label className="label">연도 (비우면 자동)</label>
             <input name="folder_year" className="input" placeholder="2026" disabled={running} />
           </div>
           <div>
@@ -192,8 +193,9 @@ export default function CreateAiExamBatchForm() {
         <label className="label">시험지 PDF (여러 개 선택 가능, 50MB가 넘으면 자동으로 줄여서 올림)</label>
         <PdfDropInput multiple disabled={running} onFiles={(files) => setRows(buildRows(files))} />
         <p className="text-xs text-slate-500 mt-1">
-          파일마다 시험이 하나씩 따로 만들어집니다. 학교급·연도·학년·학기·구분은 선택한 파일 전체에 똑같이 적용되고, 코드·이름은 파일
-          이름에서 자동으로 채워지니 아래에서 각 파일별로 고쳐 주세요(코드는 서로 겹치면 안 됩니다).
+          파일마다 시험이 하나씩 따로 만들어집니다. 코드·이름은 파일 이름에서 자동으로 채워지고, <b>폴더(학교급·연도·학년·학기·구분)도
+          파일 이름을 읽어 파일마다 자동으로 분류</b>됩니다(아래 표의 &ldquo;자동 분류&rdquo;). 위 칸에서 고른 값이 있으면 그 값이 모든
+          파일에 우선 적용됩니다. 코드는 서로 겹치면 안 됩니다.
         </p>
         <label className="flex items-center gap-1.5 text-sm mt-1">
           <input
@@ -240,6 +242,9 @@ export default function CreateAiExamBatchForm() {
                 }
               >
                 {row.status}
+              </span>
+              <span className="text-xs text-slate-500" title="파일 이름에서 읽은 폴더 분류">
+                자동 분류: {folderLabel(guessFolder(row.name, row.code)) || <span className="text-amber-700">못 읽음(폴더 미분류)</span>}
               </span>
               {row.status === "실패" && (
                 <button type="button" className="btn-secondary" disabled={pending} onClick={() => retryRow(row.key)}>
