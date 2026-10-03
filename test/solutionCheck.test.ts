@@ -55,6 +55,12 @@ check("보조 함수들", () => {
   assert.equal(plainSolution("$\\dfrac{3}{4}$<br>끝"), "3/4 끝");
 });
 
+check("글 정답(ㄱ,ㄴ)·식과 수는 비교하지 않는다(오탐 방지)", () => {
+  assert.equal(checkSolution("객관식", "3", "③ (ㄱ, ㄴ)", "ㄱ 참, ㄴ 참, ㄷ 거짓이므로 옳은 것은 2개이다.").flagged, false);
+  assert.equal(checkSolution("주관식", "(2√2,2√2)", "$a=2\\sqrt2,\\ b=2\\sqrt2$", "따라서 $a=2\\sqrt2$").flagged, false);
+  assert.equal(checkSolution("주관식", "2√2", "$2\\sqrt2$", "따라서 거리는 $4\\sqrt2$").flagged, true);
+});
+
 check("빈 풀이나 값을 못 읽으면 안 걸림", () => {
   assert.equal(checkSolution("객관식", "2", "② (4)", "").flagged, false);
   assert.equal(checkSolution("객관식", "2", "② (4)", "그림을 보고 판단한다.").flagged, false);
