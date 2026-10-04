@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""메딕수학 블로그 이미지 생성기 (2026-10-01).
+"""메딕수학 블로그 이미지 생성기 (2026-10-01, 시리즈별 대표 이미지 2026-10-04).
 
 사용법:  python3 blog_images.py spec.json
 spec.json 예:
@@ -16,13 +16,24 @@ spec.json 예:
     {"kind": "card", "file": "04_steps.png", "title": "...", "items": ["...", "..."]}
   ]
 }
+대표 이미지(00)는 시리즈별로 종류가 다르다 — thumbnail / thumb_cells / thumb_exam / thumb_bold (아래 page_thumb_* 설명 참고).
+  thumb_cells 예: {"kind":"thumb_cells","kicker":"중앙여고 기출 분석","title":"작년 ...\n... *100점*을 펼치면",
+                   "items":[[1,3,0],[2,3,0],...],  (또는 "red": 44)  "legend":["중상·상 8문항","하~중 14문항","한 칸 = 1점"],
+                   "stat":"51칸","stat_label":"100점 중 절반 이상이\n어려운 8문항에","foot":"2025년 2학기 중간고사 · 22문항"}
+  thumb_exam 예:  {"kind":"thumb_exam","header":["2학기 중간고사 대비","수학","고2","메딕수학"],"paper_title":"...",
+                   "rows":[{"n":"1.","right":"[3점]"},...,{"n":"16.","right":"[7점]","red":true,"circle":true}],
+                   "pen_note":"16~18번\n모두 '상'!","pen_big":"51점","pen_small":"← ...","tag":"메딕수학 · 시험 대비"}
+  thumb_bold 예:  {"kind":"thumb_bold","kicker":"메딕수학 이야기","sub":"...","title":"승부는\n이 세 문제",
+                   "balls":[{"big":"16","cap":"상 · 7점"}],"bottom":"세 문제 모두 **함수의 연속**"}
 모든 이미지 1080×1080 PNG. 색: 바탕 #F7F5F1, 글자 #1C1A16, 강조 빨강 #A83232, 비교용 파랑 #3A6EA5,
 배경 막대 회색 #CFC9BE(강조가 아닌 막대 — 일부러 회색). 빨강·파랑 짝은 dataviz 검증기 통과(색약 ΔE 17.9).
 """
 import html
 import json
 import os
+import re
 import sys
+import tempfile
 
 from playwright.sync_api import sync_playwright
 
@@ -198,7 +209,169 @@ li {{ display: flex; gap: 28px; align-items: baseline; border-bottom: 2px solid 
 {footer(spec, img)}</div>"""
 
 
-KINDS = {"thumbnail": page_thumbnail, "bars": page_bars, "compare": page_compare, "stat": page_stat, "card": page_card}
+# ───────────────────────── 시리즈별 대표 이미지 (2026-10-04) ─────────────────────────
+# 시리즈마다 대표 이미지 모양을 다르게 쓴다(playbook 4번 "시리즈별 대표 이미지" 표).
+#   thumbnail   : 데이터로 보는 내신(통계 글) — 미색 바탕, 큰 제목, 빨간 숫자
+#   thumb_cells : 학교별 기출 분석 — 검은 바탕, 100칸(한 칸 = 1점/1%) 중 빨간 칸
+#   thumb_exam  : 공부법·시험 대비 — 시험지 위에 빨간 펜(손글씨 글꼴 Nanum Pen Script, OFL)
+#   thumb_bold  : 메딕수학 이야기(학원·메딕차트) — 빨간 바탕, 큰 글씨, 흰 동그라미
+# 제목 등에서 *글자* 는 강조색, **글자** 는 검은 띠 강조(thumb_bold 아래 문장)로 바뀐다.
+
+def em(s):
+    t = esc(s)
+    t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
+    return re.sub(r"\*(.+?)\*", r"<em>\1</em>", t)
+
+
+THUMB_CSS = """
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1080px; height: 1080px; overflow: hidden; word-break: keep-all;
+  font-family: 'Noto Sans CJK KR', 'Noto Sans KR', sans-serif; }
+.pen { font-family: 'Nanum Pen Script', 'Noto Sans CJK KR', cursive; }
+.serif { font-family: 'Noto Serif CJK KR', 'Noto Serif KR', serif; }
+"""
+
+
+def page_thumb_cells(spec, img):
+    cells = ""
+    if img.get("items"):  # [[번호, 배점, 어려움(1/0)], ...] — 배점 합이 100이면 한 칸 = 1점
+        for n, pts, hard in img["items"]:
+            for k in range(int(pts)):
+                lab = f' data-n="{esc(n)}"' if k == 0 else ""
+                cells += f'<i class="{"r" if hard else "g"}"{lab}></i>'
+    else:  # "red": 100칸 중 빨간 칸 수(예: 44.3% → 44)
+        red = int(round(float(img.get("red", 0))))
+        cells = '<i class="r"></i>' * red + '<i class="g"></i>' * (100 - red)
+    leg = img.get("legend", ["어려운 문항", "나머지", "한 칸 = 1점"])
+    leg_html = (f'<span><s style="background:#d9433e"></s>{esc(leg[0])}</span>'
+                f'<span><s style="background:#3a362f"></s>{esc(leg[1])}</span>'
+                + (f'<span class="m">{esc(leg[2])}</span>' if len(leg) > 2 and leg[2] else ""))
+    return f"""
+<style>
+body {{ background: #15130f; color: #f3efe6; }}
+.top {{ position: absolute; left: 84px; top: 78px; right: 84px; display: flex; justify-content: space-between; align-items: center; }}
+.k {{ font-weight: 700; font-size: 26px; letter-spacing: .06em; color: #bdb6aa; }} .k b {{ color: #e0524d; }}
+.brand2 {{ font-weight: 900; font-size: 26px; }}
+h1 {{ position: absolute; left: 84px; right: 84px; top: 140px; font-weight: 900; font-size: 66px; line-height: 1.2; letter-spacing: -.02em; }}
+h1 em {{ font-style: normal; color: #e0524d; }}
+.grid {{ position: absolute; left: 84px; top: 350px; display: grid; grid-template-columns: repeat(20, 1fr); gap: 7px; width: 912px; }}
+.grid i {{ display: block; aspect-ratio: 1; border-radius: 5px; position: relative; }}
+.grid i.g {{ background: #3a362f; }} .grid i.r {{ background: #d9433e; }}
+.grid i[data-n]::after {{ content: attr(data-n); position: absolute; left: 4px; top: 1px; font-size: 14px; font-weight: 700; font-style: normal; color: rgba(255,255,255,.65); }}
+.leg {{ position: absolute; left: 84px; top: 640px; display: flex; gap: 34px; font-size: 26px; font-weight: 700; color: #d9d3c6; }}
+.leg span {{ display: flex; align-items: center; gap: 10px; }} .leg s {{ display: inline-block; width: 24px; height: 24px; border-radius: 5px; }}
+.leg .m {{ color: #8f887c; font-weight: 500; }}
+.big {{ position: absolute; left: 84px; right: 84px; bottom: 130px; display: flex; align-items: flex-end; gap: 30px; }}
+.big .v {{ font-weight: 900; font-size: 190px; line-height: .8; color: #e0524d; letter-spacing: -.04em; white-space: nowrap; }}
+.big .t {{ font-size: 34px; font-weight: 700; line-height: 1.4; padding-bottom: 6px; }}
+.foot {{ position: absolute; left: 84px; right: 84px; bottom: 46px; font-size: 21px; color: #8f887c; display: flex; justify-content: space-between; }}
+</style>
+<div class="top"><div class="k"><b>■</b> {esc(img.get('kicker', '학교별 기출 분석'))}</div><div class="brand2">메딕수학</div></div>
+<h1>{em(img['title'])}</h1>
+<div class="grid">{cells}</div>
+<div class="leg">{leg_html}</div>
+<div class="big"><div class="v">{esc(img.get('stat', ''))}</div><div class="t">{esc(img.get('stat_label', ''))}</div></div>
+<div class="foot"><span>{esc(img.get('foot', spec.get('footer', '')))}</span><span>제주시 중앙로 312 · 메딕수학</span></div>"""
+
+
+def page_thumb_exam(spec, img):
+    # rows: [{"n": "16.", "right": "[7점]", "red": true, "circle": true}, ...] 최대 18줄(2단 × 9).
+    # 동그라미(circle) 줄은 오른쪽 단 맨 아래(마지막 줄들)에 두고, 그 줄의 right는 5글자 이하(예: "[7점]")로 — 손글씨 메모(pen_note) 자리와 겹치지 않게.
+    rows = ""
+    for r in img["rows"][:18]:
+        cls = "q" + (" h" if r.get("red") else "") + (" s" if r.get("circle") else "")
+        circ = '<span class="circ"></span>' if r.get("circle") else ""
+        rows += (f'<div class="{cls}"><span class="n">{esc(r.get("n", ""))}</span><span class="line"></span>'
+                 f'<span class="pt">{esc(r.get("right", ""))}</span>{circ}</div>')
+    head = img.get("header", ["시험", "수학", "", "메딕수학"])
+    head_html = "".join(f"<div>{esc(h)}</div>" for h in head if h is not None)
+    return f"""
+<style>
+body {{ background: #d9d4c8; }}
+.paper {{ position: absolute; left: 70px; top: 58px; width: 940px; height: 1000px; background: #fffdf8; box-shadow: 0 18px 40px rgba(0,0,0,.18); transform: rotate(-1.6deg); padding: 56px 64px; }}
+.hd {{ border: 2.5px solid #222; display: flex; font-size: 24px; color: #222; }}
+.hd div {{ padding: 12px 18px; border-right: 2px solid #222; white-space: nowrap; }} .hd div:last-child {{ border-right: 0; flex: 1; text-align: right; color: #777; }}
+.ttl {{ font-weight: 700; font-size: 40px; text-align: center; margin: 34px 0 26px; color: #222; letter-spacing: .04em; }}
+.cols {{ columns: 2; column-gap: 56px; border-top: 2px solid #222; padding-top: 22px; }}
+.q {{ display: flex; align-items: center; gap: 10px; height: 62px; font-size: 24px; color: #444; position: relative; break-inside: avoid; }}
+.q .n {{ min-width: 44px; font-weight: 700; color: #222; white-space: nowrap; }}
+.q .line {{ flex: 1; height: 10px; background: repeating-linear-gradient(90deg, #d6d0c4 0 70%, transparent 70% 100%); background-size: 46px 10px; border-radius: 3px; }}
+.q.s .line {{ flex: 0 0 70px; }} .q.s .pt {{ margin-right: auto; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }}
+.q .pt {{ font-size: 20px; color: #888; white-space: nowrap; }} .q.h .pt {{ color: #b0302f; font-weight: 700; }}
+.circ {{ position: absolute; left: -14px; top: 6px; width: 66px; height: 52px; border: 4px solid #c62f2f; border-radius: 50%; transform: rotate(-8deg); }}
+.note {{ position: absolute; color: #c62f2f; line-height: 1; }}
+.n1 {{ right: 62px; top: 668px; font-size: 52px; transform: rotate(-4deg); text-align: right; }}
+.n2 {{ left: 84px; bottom: 92px; font-size: 108px; transform: rotate(-3deg); }}
+.n3 {{ left: 96px; bottom: 46px; font-size: 46px; color: #7a2320; transform: rotate(-2deg); }}
+.tag {{ position: absolute; right: 52px; bottom: 40px; background: #1c1a16; color: #f7f5f1; font-weight: 700; font-size: 28px; padding: 14px 22px; transform: rotate(1.6deg); }}
+.tag b {{ color: #ff8a80; }}
+</style>
+<div class="paper">
+ <div class="hd serif">{head_html}</div>
+ <div class="ttl serif">{esc(img.get('paper_title', ''))}</div>
+ <div class="cols serif">{rows}</div>
+ <div class="note pen n1">{esc(img.get('pen_note', ''))}</div>
+ <div class="note pen n2">{esc(img.get('pen_big', ''))}</div>
+ <div class="note pen n3">{esc(img.get('pen_small', ''))}</div>
+</div>
+<div class="tag"><b>■</b> {esc(img.get('tag', '메딕수학'))}</div>"""
+
+
+def page_thumb_bold(spec, img):
+    balls = "".join(
+        f'<div class="ball"><div class="num">{esc(b.get("big", ""))}</div><div class="cap">{esc(b.get("cap", ""))}</div></div>'
+        for b in img.get("balls", [])[:3]
+    )
+    return f"""
+<style>
+body {{ background: #a83232; color: #fff; }}
+.wrap {{ position: absolute; inset: 0; padding: 86px 84px; }}
+.k {{ display: inline-block; background: #fff; color: #a83232; font-weight: 900; font-size: 28px; padding: 10px 20px; }}
+.sub {{ font-size: 38px; font-weight: 700; margin-top: 44px; line-height: 1.35; opacity: .92; }}
+h1 {{ font-size: 118px; font-weight: 900; line-height: 1.02; letter-spacing: -.04em; margin-top: 18px; }}
+h1 em {{ font-style: normal; color: #1c1a16; }}
+.balls {{ display: flex; gap: 34px; margin-top: 64px; }}
+.ball {{ width: 268px; height: 268px; border-radius: 50%; background: #fff; color: #a83232; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: 0 14px 0 rgba(0,0,0,.18); text-align: center; }}
+.num {{ font-size: 120px; font-weight: 900; line-height: .95; letter-spacing: -.04em; white-space: nowrap; }}
+.cap {{ font-size: 27px; font-weight: 700; color: #1c1a16; margin-top: 8px; padding: 0 20px; line-height: 1.25; }}
+.bot {{ position: absolute; left: 84px; right: 84px; bottom: 70px; display: flex; justify-content: space-between; align-items: flex-end; gap: 30px; }}
+.bot .t {{ font-size: 30px; font-weight: 700; line-height: 1.45; }} .bot .t b {{ background: #1c1a16; padding: 2px 10px; }}
+.bot .m {{ font-weight: 900; font-size: 30px; text-align: right; white-space: nowrap; }} .bot .m span {{ display: block; font-size: 20px; font-weight: 500; opacity: .8; letter-spacing: .14em; }}
+</style>
+<div class="wrap">
+ <span class="k">{esc(img.get('kicker', '메딕수학 이야기'))}</span>
+ <div class="sub">{em(img.get('sub', ''))}</div>
+ <h1>{em(img['title'])}</h1>
+ <div class="balls">{balls}</div>
+</div>
+<div class="bot"><div class="t">{em(img.get('bottom', ''))}</div><div class="m">메딕수학<span>MEDIC MATH</span></div></div>"""
+
+
+KINDS = {"thumbnail": page_thumbnail, "bars": page_bars, "compare": page_compare, "stat": page_stat, "card": page_card,
+         "thumb_cells": page_thumb_cells, "thumb_exam": page_thumb_exam, "thumb_bold": page_thumb_bold}
+THUMB_KINDS = {"thumb_cells", "thumb_exam", "thumb_bold"}
+
+
+def pen_font_css():
+    """손글씨 글꼴(Nanum Pen Script, OFL) CSS 경로. 없으면 npm으로 한 번 받아 둔다. 실패하면 None(기본 글꼴로 대신)."""
+    base = os.environ.get("MEDIC_FONT_DIR", os.path.expanduser("~/.cache/medic-blog-fonts"))
+    css = os.path.join(base, "package", "index.css")
+    if os.path.exists(css):
+        return css
+    try:
+        import glob
+        import subprocess
+        import tarfile
+        os.makedirs(base, exist_ok=True)
+        subprocess.run(["npm", "pack", "@fontsource/nanum-pen-script"], cwd=base, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+        tgz = sorted(glob.glob(os.path.join(base, "fontsource-nanum-pen-script-*.tgz")))[-1]
+        with tarfile.open(tgz) as t:
+            t.extractall(base)
+        return css if os.path.exists(css) else None
+    except Exception as e:  # 네트워크 막힘 등
+        print(f"(손글씨 글꼴을 받지 못해 기본 글꼴로 그림: {e})")
+        return None
 
 
 def render(spec_path):
@@ -209,13 +382,24 @@ def render(spec_path):
     with sync_playwright() as p:
         b = p.chromium.launch()
         pg = b.new_page(viewport={"width": W, "height": H}, device_scale_factor=1)
+        font_css = pen_font_css() if any(im["kind"] == "thumb_exam" for im in spec["images"]) else None
+        font_link = f'<link rel="stylesheet" href="file://{font_css}">' if font_css else ""
+        tmpdir = tempfile.mkdtemp(prefix="medic-blog-")
         for i, img in enumerate(spec["images"]):
             body = KINDS[img["kind"]](spec, img)
-            pg.set_content(f"<!doctype html><html lang='ko'><head><meta charset='utf-8'><style>{BASE_CSS}</style></head><body>{body}</body></html>")
-            pg.wait_for_timeout(150)
-            # 넘침 검사: 내용이 아래 띠(footer)를 덮으면 경고
+            css = THUMB_CSS if img["kind"] in THUMB_KINDS else BASE_CSS
+            page_path = os.path.join(tmpdir, f"p{i:02d}.html")
+            open(page_path, "w", encoding="utf-8").write(
+                f"<!doctype html><html lang='ko'><head><meta charset='utf-8'>{font_link}<style>{css}</style></head><body>{body}</body></html>")
+            pg.goto("file://" + page_path)
+            pg.wait_for_timeout(700 if img["kind"] in THUMB_KINDS else 150)
+            # 넘침 검사: 내용이 아래 띠(footer)를 덮으면 경고 (대표 이미지 종류는 글자가 1080칸 밖으로 나가는지만 본다)
             over = pg.evaluate(
-                """() => { const f = document.querySelector('.footer').getBoundingClientRect().top;
+                """() => { const ft = document.querySelector('.footer');
+                 if (!ft) { const b = Math.max(...[...document.querySelectorAll('h1,.big,.balls,.bot,.grid,.leg,.paper,.wrap > *')].map(e => e.getBoundingClientRect().bottom), 0);
+                            const w = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
+                            return { bottom: w > 1080 ? 9999 : b, limit: 1080 }; }
+                 const f = ft.getBoundingClientRect().top;
                  const els = [...document.querySelectorAll('.page > *:not(.footer):not(.note):not(.rows):not(.groups), .rows > *, .groups > *')];
                  const b = Math.max(...els.map(e => e.getBoundingClientRect().bottom));
                  const n = document.querySelector('.note'); const nt = n ? n.getBoundingClientRect().top : f;
