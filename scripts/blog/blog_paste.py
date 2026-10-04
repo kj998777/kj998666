@@ -115,18 +115,32 @@ async function copy(i, btn){
 }
 function done(el){ el.closest('.step').classList.add('done'); }
 async function copyImg(btn){
-  const img = btn.closest('.step').querySelector('img');
+  const step = btn.closest('.step'), img = step.querySelector('img');
+  const ok = (msg) => { btn.textContent = msg || '복사됨 ✓'; btn.classList.add('ok'); step.classList.add('done'); };
   const toPng = () => new Promise((res, rej) => {
     const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
     c.getContext('2d').drawImage(img, 0, 0); c.toBlob(b => b ? res(b) : rej(new Error('blob')), 'image/png');
   });
+  let why = '';
+  // 1) 그림 자체(PNG)를 클립보드에 — Chrome·Safari·Edge 최신판
   try {
-    // Safari는 Promise를 바로 넘겨야 클릭 안에서 허용됨
+    if (!navigator.clipboard || !window.ClipboardItem) throw new Error('이 브라우저는 그림 복사를 지원하지 않음');
     await navigator.clipboard.write([new ClipboardItem({'image/png': toPng()})]);
-    btn.textContent = '복사됨 ✓'; btn.classList.add('ok'); btn.closest('.step').classList.add('done');
-  } catch (e) {
-    btn.textContent = '복사 안 됨 — 그림 오른쪽 클릭 → 이미지 복사';
-  }
+    return ok();
+  } catch (e) { why = e.name || e.message; }
+  // 2) 권한이 막힌 곳(앱 미리보기 창 등): 그림을 선택해서 복사 — 붙여넣으면 그림이 들어감
+  try {
+    const box = document.createElement('div');
+    box.contentEditable = 'true'; box.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+    const im = document.createElement('img'); im.src = img.src; box.appendChild(im); document.body.appendChild(box);
+    const r = document.createRange(); r.selectNode(im); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    const done = document.execCommand('copy'); sel.removeAllRanges(); box.remove();
+    if (done) return ok('복사됨 ✓');
+  } catch (e) {}
+  btn.textContent = '복사 안 됨';
+  const tip = step.querySelector('.tip');
+  if (tip && !step.querySelector('.why')) tip.insertAdjacentHTML('afterend',
+    '<div class="tip why" style="color:#a83232">이 화면에서는 그림 복사가 막혀 있어요(' + why + '). 맥 Finder에서 이 html을 크롬이나 사파리로 열거나, 그림 위에서 오른쪽 클릭 → "이미지 복사"를 쓰세요.</div>');
 }
 </script></body></html>"""
 
