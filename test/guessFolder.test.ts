@@ -58,6 +58,13 @@ check("공통수학이면 고1로 보충", () => {
   assert.equal(g.folder_grade, 1);
 });
 
+check("초등학교는 학교급으로 쓰지 않는다(2026-10-03)", () => {
+  const g = guessFolder("제주 제주시 아라초등학교 6학년 2025년 2학기 수학 중간");
+  assert.equal(g.school_level, null);
+  assert.equal(g.folder_term, 2); // 학기·구분 등 나머지는 그대로 읽는다
+  assert.equal(g.folder_kind, "중간");
+});
+
 check("mergeFolder: 사람이 고른 값이 우선, 빈 칸만 채움", () => {
   const chosen = { school_level: null, folder_year: "2026", folder_grade: null, folder_term: null, folder_kind: null } as const;
   const m = mergeFolder({ ...chosen }, guessFolder("휘문고 1학년 2025년 2학기 중간"));
