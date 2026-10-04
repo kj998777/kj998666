@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""메딕수학 블로그 '붙여넣기용' 페이지 생성기 (2026-10-01).
+"""메딕수학 블로그 '붙여넣기용' 페이지 생성기 (2026-10-01, 그림 복사 버튼 2026-10-04).
 
 사용법:  python3 blog_paste.py post.md 출력폴더
 → 출력폴더/올리기.html  (같은 폴더에 있는 PNG를 그림 자리마다 미리보기로 보여 줌)
@@ -8,6 +8,7 @@
 제목 복사 → 본문 1 복사 → 그림 끌어다 놓기 → 본문 2 복사 → … → 해시태그 복사.
 본문은 서식(■ 소제목 굵게) 있는 HTML과 일반 글 두 가지로 클립보드에 넣는다.
 """
+import base64
 import html
 import json
 import os
@@ -88,13 +89,15 @@ h1{font-size:22px;margin:0 0 6px}.lead{color:var(--muted);font-size:14px;margin:
 button{background:var(--ink);color:#fff;border:0;border-radius:8px;padding:9px 16px;font-size:14px;font-weight:700;cursor:pointer}
 button.ok{background:#3d7a4a}
 pre{white-space:pre-wrap;margin:0;font-family:inherit;font-size:14px;line-height:1.65;max-height:220px;overflow:auto;background:var(--bg);border-radius:6px;padding:10px 12px}
-.img{display:flex;gap:14px;align-items:center}.img img{width:170px;height:170px;border:1px solid var(--line);border-radius:6px;cursor:grab}
+.img{display:flex;gap:14px;align-items:center}.img img{width:170px;height:170px;border:1px solid var(--line);border-radius:6px;cursor:grab;flex:none}
+.head button+button{margin-left:6px}button.sub{background:#fff;color:var(--ink);border:1px solid var(--line)}
 .img .fn{font-family:ui-monospace,Menlo,monospace;font-size:13px;background:var(--bg);padding:2px 6px;border-radius:4px}
 .tip{font-size:13px;color:var(--muted);line-height:1.55;margin-top:6px}
 </style></head><body><div class="wrap">
 <h1>네이버 블로그 올리기</h1>
-<p class="lead">위에서부터 차례로: <b>복사</b> 누르고 → 네이버 글쓰기에 붙여넣기(⌘V). 그림 칸에서는 그림을 글쓰기 화면으로 <b>끌어다 놓거나</b>, 같은 폴더의 PNG 파일을 올리세요.
-다 한 칸은 흐리게 바뀝니다. 마지막에 <b>00번 그림을 대표 이미지</b>로 지정하고 발행하시면 됩니다.</p>
+<p class="lead">위에서부터 차례로 <b>복사</b> 누르고 → 네이버 글쓰기에 붙여넣기(⌘V). 글도 그림도 똑같이 <b>복사 → 붙여넣기</b>입니다.
+다 한 칸은 흐리게 바뀝니다. 마지막에 <b>첫 번째 그림(00번)을 대표 이미지</b>로 지정하고 발행하시면 됩니다.<br>
+그림 복사가 안 되면: 그림 위에서 오른쪽 클릭 → "이미지 복사", 또는 끌어다 놓기.</p>
 __STEPS__
 </div>
 <script>
@@ -111,6 +114,20 @@ async function copy(i, btn){
   btn.textContent='복사됨 ✓'; btn.classList.add('ok'); btn.closest('.step').classList.add('done');
 }
 function done(el){ el.closest('.step').classList.add('done'); }
+async function copyImg(btn){
+  const img = btn.closest('.step').querySelector('img');
+  const toPng = () => new Promise((res, rej) => {
+    const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.getContext('2d').drawImage(img, 0, 0); c.toBlob(b => b ? res(b) : rej(new Error('blob')), 'image/png');
+  });
+  try {
+    // Safari는 Promise를 바로 넘겨야 클릭 안에서 허용됨
+    await navigator.clipboard.write([new ClipboardItem({'image/png': toPng()})]);
+    btn.textContent = '복사됨 ✓'; btn.classList.add('ok'); btn.closest('.step').classList.add('done');
+  } catch (e) {
+    btn.textContent = '복사 안 됨 — 그림 오른쪽 클릭 → 이미지 복사';
+  }
+}
 </script></body></html>"""
 
 
@@ -137,14 +154,21 @@ def build(md_path, out_dir):
             add_copy(f"본문 {part} — 본문에 붙여넣기", plain(val), to_rich(val))
         else:
             n += 1
-            exists = os.path.exists(os.path.join(out_dir, val))
-            warn = "" if exists else '<div class="tip">⚠️ 이 폴더에 파일이 없습니다.</div>'
+            fp = os.path.join(out_dir, val)
+            if os.path.exists(fp):
+                # 그림을 html 안에 넣어 둔다 — 파일 하나만 열어도 보이고, '복사' 버튼으로 바로 클립보드에 넣을 수 있게
+                src = "data:image/png;base64," + base64.b64encode(open(fp, "rb").read()).decode()
+                warn = ""
+            else:
+                src = html.escape(val)
+                warn = '<div class="tip">⚠️ 이 폴더에 파일이 없습니다.</div>'
+            label = "그림 — 대표 이미지(00번)" if val.startswith("00") else "그림 — 본문에 붙여넣기"
             steps.append(
-                f'<div class="step"><div class="head"><span class="no">{n}</span><span class="what">그림 넣기</span>'
-                f'<button onclick="done(this)">넣었어요</button></div>'
-                f'<div class="img"><img src="{html.escape(val)}" alt="{html.escape(val)}" draggable="true">'
-                f'<div><span class="fn">{html.escape(val)}</span><div class="tip">왼쪽 그림을 글쓰기 화면의 커서 위치로 끌어다 놓거나,<br>'
-                f'네이버 글쓰기의 [사진] 버튼으로 같은 폴더의 이 파일을 올리세요.</div>{warn}</div></div></div>'
+                f'<div class="step"><div class="head"><span class="no">{n}</span><span class="what">{label}</span>'
+                f'<button onclick="copyImg(this)">복사</button><button class="sub" onclick="done(this)">넣었어요</button></div>'
+                f'<div class="img"><img src="{src}" alt="{html.escape(val)}" draggable="true">'
+                f'<div><span class="fn">{html.escape(val)}</span><div class="tip">[복사] 누르고 네이버 글쓰기에 ⌘V.<br>'
+                f'안 되면 그림을 끌어다 놓거나, [사진] 버튼으로 같은 폴더의 이 파일을 올리세요.</div>{warn}</div></div></div>'
             )
     if tags:
         add_copy("해시태그 — 본문 맨 끝(또는 태그 칸)에 붙여넣기", tags)
