@@ -5,6 +5,7 @@ import { buildStampedExamPdf, type Correction } from "@/lib/ai/pdfStamp";
 import { ensureTutorLinkToken, tutorSubmitPath } from "@/lib/tutor/link";
 import { contentDispositionAttachment } from "@/lib/http/contentDisposition";
 import { personLabel } from "@/lib/profile/label";
+import { examCodeVariants, pickExamByCode } from "@/lib/exams/codeVariants";
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +21,12 @@ export async function GET(request: Request, { params }: { params: { code: string
 
   const code = decodeURIComponent(params.code);
   const supabase = await createClient();
-  const { data: exam } = (await supabase
+  const { data: examRows } = (await supabase
     .from("exams")
     .select("id, code, name")
-    .eq("code", code)
-    .maybeSingle()) as any;
+    .in("code", examCodeVariants(code))
+    .limit(5)) as any;
+  const exam = pickExamByCode<any>(examRows, code);
   if (!exam) {
     return Response.json({ ok: false, msg: "시험을 찾을 수 없습니다." }, { status: 404 });
   }
