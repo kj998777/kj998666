@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { gradeSubmission, type AnswerKeyItem } from "@/lib/grading";
 import { isLevel, validGrade, cleanClassName, classKey, classLabel } from "@/lib/classLabel";
 import { tutorClassLabel, tutorIdFromToken } from "@/lib/tutor/link";
+import { examCodeVariants, pickExamByCode } from "@/lib/exams/codeVariants";
 
 // 학생 제출을 실제로 기록하는 유일한 경로. 서비스롤 키를 쓰므로 RLS를 우회하지만,
 // 그만큼 여기서 직접 모든 검증(반 존재, 시험 열림 여부, 문항 수, 채점)을 다시 한다.
@@ -70,7 +71,13 @@ export async function POST(request: Request, { params }: { params: { code: strin
 
   // 2) 시험 존재 + (열림 상태이거나 #109: 과외선생님 스토어에 판매 중) 확인
   //    실제 최종 검증은 submit_and_grade RPC가 잠금과 함께 다시 하므로, 여기서는 빠른 실패용.
-  const { data: exam } = await admin.from("exams").select("id, status, tutor_download_cost").eq("code", code).single();
+  // 코드가 NFC/NFD 어느 쪽으로 와도 찾고, 아래 RPC에는 DB에 저장된 코드 그대로 넘긴다(lib/exams/codeVariants.ts)
+  const { data: examRows } = await admin
+    .from("exams")
+    .select("id, code, status, tutor_download_cost")
+    .in("code", examCodeVariants(code))
+    .limit(5);
+  const exam = pickExamByCode(examRows, code);
   if (!exam) return NextResponse.json({ ok: false, msg: "존재하지 않는 시험입니다." }, { status: 404 });
   if (!tutorId && exam.status !== "열림" && exam.tutor_download_cost === null) {
     return NextResponse.json({ ok: false, msg: "제출이 마감된 시험입니다." }, { status: 409 });
@@ -103,7 +110,7 @@ export async function POST(request: Request, { params }: { params: { code: strin
   //    (같은 반+이름 중복 제출은 DB의 unique 제약 위반으로 여기서 걸러진다.)
   //    p_tutor_id는 과외선생님 링크일 때만 넘긴다(0017 이전 DB에서도 일반 제출이 그대로 동작하도록).
   const rpcArgs: Record<string, unknown> = {
-    p_exam_code: code,
+    p_exam_code: exam.code,
     p_class_label: class_label,
     p_student_name: name,
     p_answers: sanitizedAnswers,
