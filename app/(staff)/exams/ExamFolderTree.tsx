@@ -15,7 +15,7 @@ export type ExamRow = {
   folder_kind: "중간" | "기말" | "기타" | null;
 };
 
-const LEVEL_LABEL: Record<string, string> = { 초: "초등학교", 중: "중학교", 고: "고등학교" };
+const LEVEL_LABEL: Record<string, string> = { 중: "중학교", 고: "고등학교" }; // 초등학교는 뺌(2026-10-03)
 
 // 옛 학교별 기출 탭의 SCH_ALIAS 를 흉내낸 표 — 같은 학교를 가리키는 다른 표기를 하나로 합친다.
 // 필요할 때마다 여기에 항목을 추가하면 된다.
@@ -212,7 +212,7 @@ type FolderLevel = { key: (e: ExamRow) => string; order: string[] };
 const FOLDER_LEVELS: FolderLevel[] = [
   {
     key: (e) => (e.school_level ? LEVEL_LABEL[e.school_level] ?? e.school_level : "학교급 미지정"),
-    order: ["초등학교", "중학교", "고등학교", "학교급 미지정"],
+    order: ["중학교", "고등학교", "학교급 미지정"], // 2026-10-03: 초등학교 폴더는 뺌
   },
   { key: (e) => (e.folder_grade ? `${e.folder_grade}학년` : "학년 미지정"), order: ["1학년", "2학년", "3학년", "학년 미지정"] },
   { key: (e) => (e.folder_term ? `${e.folder_term}학기` : "학기 미지정"), order: ["1학기", "2학기", "학기 미지정"] },

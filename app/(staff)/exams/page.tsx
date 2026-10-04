@@ -9,7 +9,8 @@ import ExamFolderTree from "./ExamFolderTree";
 import JejuRetagPanel from "./JejuRetagPanel";
 import AutoClassifyPanel from "./AutoClassifyPanel";
 
-const LEVEL_LABEL: Record<string, string> = { 초: "초등학교", 중: "중학교", 고: "고등학교" };
+// 2026-10-03: 초등학교 탭은 뺌(학원은 중·고만)
+const LEVEL_LABEL: Record<string, string> = { 중: "중학교", 고: "고등학교" };
 
 export default async function ExamsPage({ searchParams }: { searchParams?: { level?: string } }) {
   const session = await requireRole("viewer");

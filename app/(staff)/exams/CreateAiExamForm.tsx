@@ -102,7 +102,6 @@ export default function CreateAiExamForm() {
         <label className="label">학교급</label>
         <select name="school_level" className="input" defaultValue="">
           <option value="">선택 안 함</option>
-          <option value="초">초등학교</option>
           <option value="중">중학교</option>
           <option value="고">고등학교</option>
         </select>
