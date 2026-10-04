@@ -150,7 +150,6 @@ export default function CreateAiExamBatchForm() {
           <label className="label">학교급 (비우면 파일마다 자동)</label>
           <select name="school_level" className="input" defaultValue="" disabled={running}>
             <option value="">선택 안 함</option>
-            <option value="초">초등학교</option>
             <option value="중">중학교</option>
             <option value="고">고등학교</option>
           </select>

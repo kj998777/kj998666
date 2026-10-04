@@ -24,7 +24,6 @@ export default function AddClassForm() {
       <div>
         <label className="label">학교급</label>
         <select name="level" className="input" value={level} onChange={(e) => setLevel(e.target.value)}>
-          <option value="초">초등학교</option>
           <option value="중">중학교</option>
           <option value="고">고등학교</option>
         </select>

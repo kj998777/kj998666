@@ -31,7 +31,7 @@ async function getExamByCode(code: string) {
 
 function schoolLevelField(formData: FormData): SchoolLevel | null {
   const v = String(formData.get("school_level") ?? "").trim();
-  return v === "초" || v === "중" || v === "고" ? v : null;
+  return v === "중" || v === "고" ? v : null; // 2026-10-03: 초등학교는 뺌
 }
 
 function folderFields(formData: FormData) {

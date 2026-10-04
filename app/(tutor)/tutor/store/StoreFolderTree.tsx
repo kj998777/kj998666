@@ -23,14 +23,14 @@ export type StoreExam = {
   folder_kind: string | null;
 };
 
-const LEVEL_LABEL: Record<string, string> = { 초: "초등학교", 중: "중학교", 고: "고등학교" };
+const LEVEL_LABEL: Record<string, string> = { 중: "중학교", 고: "고등학교" }; // 초등학교는 뺌(2026-10-03)
 
 type Level = { key: (e: StoreExam) => string; order: string[] };
 
 const LEVELS: Level[] = [
   {
     key: (e) => (e.school_level ? LEVEL_LABEL[e.school_level] ?? e.school_level : "학교급 미지정"),
-    order: ["초등학교", "중학교", "고등학교", "학교급 미지정"],
+    order: ["중학교", "고등학교", "학교급 미지정"], // 2026-10-03: 초등학교 폴더는 뺌
   },
   { key: (e) => (e.folder_grade ? `${e.folder_grade}학년` : "학년 미지정"), order: ["1학년", "2학년", "3학년", "학년 미지정"] },
   { key: (e) => (e.folder_term ? `${e.folder_term}학기` : "학기 미지정"), order: ["1학기", "2학기", "학기 미지정"] },

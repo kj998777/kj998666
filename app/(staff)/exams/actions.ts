@@ -10,7 +10,7 @@ import { folderLabel, guessFolder } from "@/lib/exams/guessFolder";
 
 function schoolLevelField(formData: FormData): SchoolLevel | null {
   const v = String(formData.get("school_level") ?? "").trim();
-  return v === "초" || v === "중" || v === "고" ? v : null;
+  return v === "중" || v === "고" ? v : null; // 2026-10-03: 초등학교는 뺌
 }
 
 export type FolderKind = "중간" | "기말" | "기타";

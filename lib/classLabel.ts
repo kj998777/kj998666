@@ -3,13 +3,15 @@
 
 export type Level = "초" | "중" | "고";
 
-export const LEVELS: Level[] = ["초", "중", "고"];
+// 2026-10-03 원장님 요청: 초등학교는 반 선택·폴더·학교급 선택에서 뺀다(학원은 중·고만).
+// 타입에는 "초"를 남겨 둔다(예전 기록 호환) — 새로 고를 수 있는 학교급은 중·고뿐.
+export const LEVELS: Level[] = ["중", "고"];
 
 /** 학교급별 학년 수 (초 6개, 중/고 3개씩) */
 export const GRADE_COUNT: Record<Level, number> = { 초: 6, 중: 3, 고: 3 };
 
 export function isLevel(v: unknown): v is Level {
-  return v === "초" || v === "중" || v === "고";
+  return v === "중" || v === "고";
 }
 
 /** 그 학교급에 실제로 존재하는 학년이면 정수로, 아니면 0(무효) */

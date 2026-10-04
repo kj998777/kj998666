@@ -122,7 +122,7 @@ export default function StudentList({ rows }: { rows: ListRow[] }) {
           </select>
         </div>
         <div className="flex flex-wrap gap-2">
-          {(["all", "고", "중", "초", "과외"] as Level[]).map((l) => (
+          {(["all", "고", "중", "과외"] as Level[]).map((l) => ( /* 2026-10-03: 초등 탭 뺌 */
             <button
               key={l}
               type="button"
@@ -133,7 +133,7 @@ export default function StudentList({ rows }: { rows: ListRow[] }) {
                 setCls("");
               }}
             >
-              {l === "all" ? "전체" : l === "과외" ? "과외 반" : l === "고" ? "고등" : l === "중" ? "중등" : "초등"}
+              {l === "all" ? "전체" : l === "과외" ? "과외 반" : l === "고" ? "고등" : l === "중" ? "중등" : l}
             </button>
           ))}
         </div>
