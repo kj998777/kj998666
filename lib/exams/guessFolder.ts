@@ -46,7 +46,8 @@ function fromName(raw: string): Partial<GuessedFolder> {
   const out: Partial<GuessedFolder> = {};
 
   // 학교급: "고등학교/여고/○○고", "중학교/여중/○○중", "초등학교". "중간"·"고사"의 중/고는 학교가 아니다.
-  if (/초등학교/.test(s)) out.school_level = "초";
+  // 2026-10-03: 초등학교는 학교급으로 쓰지 않는다(학원은 중·고만) — 초등 시험이면 학교급을 비워 둔다
+  if (/초등학교/.test(s)) out.school_level = null;
   else if (/고등학교|고교|[가-힣]고(?![가-힣])|(?:^|[^가-힣])고\s*[1-3](?![0-9])/.test(s)) out.school_level = "고";
   else if (/중학교|[가-힣]중(?![가-힣])|(?:^|[^가-힣])중\s*[1-3](?![0-9])/.test(s)) out.school_level = "중";
   // 과목으로도 알 수 있으면(공통수학·수학 I/II·미적분 등은 고등학교 과목)
