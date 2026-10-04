@@ -4,7 +4,8 @@ import { useState, useTransition } from "react";
 import { updateSchoolLevel } from "../actions";
 import type { SchoolLevel } from "@/lib/supabase/types";
 
-const LABEL: Record<SchoolLevel, string> = { 초: "초등학교", 중: "중학교", 고: "고등학교" };
+// 2026-10-03: 초등학교는 뺌(학원은 중·고만)
+const LABEL: Partial<Record<SchoolLevel, string>> = { 중: "중학교", 고: "고등학교" };
 
 export default function SchoolLevelSelect({ code, level }: { code: string; level: SchoolLevel | null }) {
   const [value, setValue] = useState<SchoolLevel | "">(level ?? "");
