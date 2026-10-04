@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import StudentSubmitForm from "./StudentSubmitForm";
 import { tutorIdFromToken } from "@/lib/tutor/link";
+import { examCodeVariants, pickExamByCode } from "@/lib/exams/codeVariants";
 
 // 학생이 QR/링크로 접속할 때마다 시험 상태(존재/열림·닫힘)를 항상 최신으로 봐야 하므로
 // 이 페이지는 절대 캐시하지 않는다 — createAdminClient()는 cookies()를 쓰지 않으므로
@@ -24,11 +25,13 @@ export default async function StudentSubmitPage({
   const code = decodeURIComponent(params.code);
   const admin = createAdminClient();
 
-  const { data: exam } = await admin
+  // 코드가 NFC/NFD 어느 쪽으로 들어와도 찾는다(휴대폰 QR은 한글을 NFC로 바꿔 보냄 — lib/exams/codeVariants.ts)
+  const { data: examRows } = await admin
     .from("exams")
     .select("id, code, name, status, tutor_download_cost")
-    .eq("code", code)
-    .single();
+    .in("code", examCodeVariants(code))
+    .limit(5);
+  const exam = pickExamByCode(examRows, code);
 
   if (!exam) {
     return <Wrap>존재하지 않는 시험입니다. 선생님께 받은 링크를 다시 확인해 주세요.</Wrap>;
