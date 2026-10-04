@@ -1,14 +1,14 @@
 // 2026-10-01 원장님 요청 "홍보배너 문구 만들기 및 메딕수학 홍보사이트와 블로그 링크 연결".
 // 메딕차트에서 학원 학생·학부모가 보는 곳(학생 답 제출 완료 화면, 학원 보고서 PDF)에 메딕수학 홍보 배너를 붙인다.
 // 2026-10-01 원장님: 과외선생님 링크·과외선생님 입학테스트로 들어온 학생에게도 똑같이 붙인다(학원·과외 구분 없음).
-// 문구는 홍보사이트(medicmath-site) 첫 화면과 같은 말("결심한 학생만 받습니다")을 쓴다. 바꾸려면 여기 한 곳만.
+// 문구는 홍보사이트(medicmath-site) 첫 화면과 같은 말("결심한 학생과 함께합니다")을 쓴다. 바꾸려면 여기 한 곳만.
 
 export const PROMO = {
   name: "메딕수학",
-  headline: "결심한 학생만 받습니다",
+  headline: "결심한 학생과 함께합니다",
   sub: "제주시 중·고등 수학 전문 · 학교 기출을 한 문제씩 직접 풀어 정리한 메딕차트로, 어디서 점수가 새는지 찾아 드립니다.",
-  siteUrl: "https://medicmath-site.vercel.app",
-  applyUrl: "https://medicmath-site.vercel.app/#consult",
+  siteUrl: "https://www.medicmath.com",
+  applyUrl: "https://www.medicmath.com/#consult",
   blogUrl: "https://blog.naver.com/yijean",
   phone: "064-702-3455",
   address: "제주시 중앙로 312",
