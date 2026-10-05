@@ -6,6 +6,11 @@ import "server-only";
 
 type Client = any;
 
+function similarCount(v: unknown): number {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return 0;
+  return Object.values(v as Record<string, unknown>).reduce<number>((a, x) => a + (Array.isArray(x) ? x.length : 0), 0);
+}
+
 export async function buildReportData(
   supabase: Client,
   exam: { id: string; code: string; name: string },
@@ -16,7 +21,7 @@ export async function buildReportData(
     supabase.from("item_explanations").select("*").eq("exam_id", exam.id),
     supabase
       .from("submissions")
-      .select("id, class_label, student_name, submitted_at, grading_results(total_score, per_item)")
+      .select("id, class_label, student_name, submitted_at, similar_picks, grading_results(total_score, per_item)")
       .eq("exam_id", exam.id)
       .order("class_label")
       .order("student_name")
@@ -56,6 +61,8 @@ export async function buildReportData(
       submitted_at: r.submitted_at as string,
       total_score: Number(gr?.total_score ?? 0),
       per_item: (gr?.per_item ?? []) as { item_label: string; given: string; correct: boolean; points: number; guessed?: boolean }[],
+      // 2026-10-05: 선생님이 고른 오답 유사문제 수(0051) — 있을 때만 개별 보고서에 QR을 넣는다
+      similar_count: similarCount(r.similar_picks),
     };
   });
 
