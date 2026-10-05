@@ -14,7 +14,7 @@ export async function GET() {
     const db = createAdminClient() as any;
     const [ex, ak, ie, gr] = await Promise.all([
       fetchAllPages((a, b) =>
-        db.from("exams").select("id, school_level, folder_grade, folder_year, is_jeju, created_at").order("id").range(a, b)
+        db.from("exams").select("id, school_level, folder_grade, folder_year, is_jeju, created_at, collection").order("id").range(a, b)
       ),
       fetchAllPages((a, b) => db.from("answer_key").select("id, exam_id, item_label, type, points").order("id").range(a, b)),
       fetchAllPages((a, b) =>
@@ -24,7 +24,12 @@ export async function GET() {
     ]);
     const err = ex.error || ak.error || ie.error || gr.error;
     if (err) throw err;
-    const stats = computeBlogStats(ex.data, ak.data, ie.data, gr.data);
+    // 0051(2026-10-05): 분류(collection)가 있는 시험은 학교 기출이 아닌 학원 자체 자료(예: 부교재 변형문제)라
+    // "학교 시험지 N개" 같은 블로그 숫자에 넣지 않는다.
+    const schoolExams = ((ex.data as any[]) ?? []).filter((e) => !e.collection);
+    const ids = new Set(schoolExams.map((e) => e.id));
+    const only = (rows: any[]) => (rows ?? []).filter((r) => ids.has(r.exam_id));
+    const stats = computeBlogStats(schoolExams, only(ak.data), only(ie.data), only(gr.data));
     return NextResponse.json(stats, {
       headers: {
         "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",

@@ -52,6 +52,7 @@ export type Database = {
           folder_grade: number | null;
           folder_term: number | null;
           folder_kind: "중간" | "기말" | "기타" | null;
+          collection: string | null;
           school_level: SchoolLevel | null;
           tutor_download_cost: number | null;
           is_jeju: boolean;
@@ -65,6 +66,7 @@ export type Database = {
           folder_grade?: number | null;
           folder_term?: number | null;
           folder_kind?: "중간" | "기말" | "기타" | null;
+          collection?: string | null;
           school_level?: SchoolLevel | null;
           tutor_download_cost?: number | null;
         };
@@ -75,6 +77,7 @@ export type Database = {
           folder_grade?: number | null;
           folder_term?: number | null;
           folder_kind?: "중간" | "기말" | "기타" | null;
+          collection?: string | null;
           school_level?: SchoolLevel | null;
           tutor_download_cost?: number | null;
           is_jeju?: boolean;

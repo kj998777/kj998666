@@ -19,6 +19,7 @@ import { getDigitizeJob } from "@/lib/ai/digitize";
 import SchoolLevelSelect from "./SchoolLevelSelect";
 import JejuToggle from "./JejuToggle";
 import FolderSelect from "./FolderSelect";
+import CollectionInput from "./CollectionInput";
 import ItemExplanationRow from "./ItemExplanationRow";
 import TutorDownloadCostInput from "./TutorDownloadCostInput";
 import { pageRangeLabel, trailingAnswerPages } from "@/lib/ai/answerPages";
@@ -179,6 +180,8 @@ export default async function ExamDetailPage({
           kind={exam.folder_kind ?? null}
         />
       )}
+
+      {canEdit && <CollectionInput code={exam.code} value={exam.collection ?? null} />}
 
       {session.role !== "admin" && exam.status === "검수대기" && (
         <div className="card border-amber-300 bg-amber-50 text-amber-800 text-sm">
