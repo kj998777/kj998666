@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { openExamIfAllConfirmed, tutorAnswerMatches } from "@/lib/review/confirm";
 import { regradeExam } from "@/lib/review/regrade";
-import { gradeGoldAttempt, judgeItemReviews } from "@/lib/review/majority";
+import { gradeGoldAttempt, judgeItemReviews, keyFromTutor } from "@/lib/review/majority";
 
 /** 0037: 원장님이 정한 정답으로 그 문항 선생님 제출들의 정답 여부를 기록(정답률·등급). 실패해도 확정은 그대로. */
 async function judgeAfterAdmin(itemId: string) {
@@ -376,6 +376,40 @@ export async function adminSolveItem(
   const examOpened = await openExamIfAllConfirmed(supabase, ie.exam_id);
   refresh(exam?.code);
   return { ok: true, regraded, examOpened };
+}
+
+/**
+ * 2026-10-05 원장님: "사후 검증 답이 처음 제출한 선생님 답과 불일치 → 다시 보니 사후 검증 선생님이 맞음 → 답·해설을
+ * 그 선생님 것으로 바꾸고 싶다". 과외선생님 제출(검토든 사후검증이든) 하나를 골라 그 답·풀이로 정답표·해설을 바꾸고
+ * 확정한다(adminSolveItem과 같은 길 — AI 원본 보관, 정답이 바뀌면 다시 채점, 선생님별 정답 여부 기록, 분쟁 목록에서 빠짐).
+ * 이미 확정된 문항도 바꿀 수 있다. 풀이 글이 없는(사진만 낸) 제출이면 지금 풀이는 그대로 두고 알려 준다.
+ */
+export async function adoptTutorReview(reviewId: string): Promise<Result & { regraded?: number; keptSolution?: boolean }> {
+  await requireRole("admin");
+  if (!/^[0-9a-f-]{36}$/i.test(String(reviewId))) return { ok: false, msg: "제출을 찾을 수 없습니다." };
+  const admin = createAdminClient();
+  const { data: r } = (await (admin.from("tutor_item_reviews") as any)
+    .select("id, item_explanation_id, answer_display, solution")
+    .eq("id", reviewId)
+    .maybeSingle()) as any;
+  if (!r) return { ok: false, msg: "제출을 찾을 수 없습니다." };
+  const { data: ie } = (await (admin.from("item_explanations") as any)
+    .select("id, exam_id, item_label, solution")
+    .eq("id", r.item_explanation_id)
+    .maybeSingle()) as any;
+  if (!ie) return { ok: false, msg: "문항을 찾을 수 없습니다." };
+  const { data: keyRow } = (await (admin.from("answer_key") as any)
+    .select("type")
+    .eq("exam_id", ie.exam_id)
+    .eq("item_label", ie.item_label)
+    .maybeSingle()) as any;
+  const type = keyRow?.type === "객관식" ? "객관식" : "주관식";
+  const display = String(r.answer_display ?? "").trim();
+  const key = keyFromTutor(type, display);
+  if (!display || !key) return { ok: false, msg: "이 제출의 답을 정답표 값으로 바꾸지 못했습니다. 문항 화면 아래 칸에 직접 적어 확정해 주세요." };
+  const own = String(r.solution ?? "").trim();
+  const res = await adminSolveItem(ie.id, { key, display, solution: own || String(ie.solution ?? "") });
+  return { ...res, keptSolution: !own };
 }
 
 // ---------------------------------------------------------------------------
