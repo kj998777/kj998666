@@ -82,6 +82,9 @@ export default async function StaffLayout({ children }: { children: React.ReactN
               <Link href="/admin/solution-check" className="nav-link">풀이 점검</Link>
             )}
             {session.role === "admin" && (
+              <Link href="/admin/logic-types" className="nav-link">유형 분류</Link>
+            )}
+            {session.role === "admin" && (
               <Link href="/admin/bug-reports" className="nav-link">
                 버그 신고
                 {bugCount > 0 && (

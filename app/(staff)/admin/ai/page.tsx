@@ -60,7 +60,7 @@ async function loadDigitizeJobs(supabase: any): Promise<UploadJobRow[]> {
     .filter((r: UploadJobRow | null): r is UploadJobRow => r !== null);
 }
 
-// 문항 영역 찾기(item_locate_jobs, 0024) — 시험별 작업 전부 + 좌표 없는 검토 대기 문항 수. 0024 전이면 available=false.
+// 문항 영역 찾기(item_locate_jobs, 0024) — 시험별 작업 전부 + 좌표 없는 문항 수(2026-10-05부터 확정 문항 포함). 0024 전이면 available=false.
 async function loadLocate(
   supabase: any
 ): Promise<{

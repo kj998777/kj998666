@@ -5,6 +5,8 @@ import { decodeKey } from "@/lib/students/analysis";
 import { loadTutorStudent } from "@/lib/tutor/students";
 import SubmittedExams, { type ExamLinks } from "@/app/_components/SubmittedExams";
 import DeleteStudentBox from "@/app/_components/DeleteStudentBox";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { loadPickedCounts } from "@/lib/similar/picked";
 import { deleteMyStudent, deleteMySubmission } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +28,7 @@ export default async function TutorStudentPage({ params }: { params: { id: strin
       reportUrl: own ? `/tutor/store/${encodeURIComponent(e.code)}/report-data` : null,
     };
   }
+  const picked = await loadPickedCounts(createAdminClient(), d.submitted.map((e) => e.submissionId));
   const rates = d.submitted.map((e) => e.rate).filter((x): x is number => x != null);
   const avg = rates.length ? Math.round((rates.reduce((a, b) => a + b, 0) / rates.length) * 100) : null;
 
@@ -40,7 +43,7 @@ export default async function TutorStudentPage({ params }: { params: { id: strin
           낸 시험 {d.submitted.length}개{avg != null ? ` · 평균 득점률 ${avg}%` : ""}
         </p>
       </div>
-      <SubmittedExams exams={d.submitted} links={links} deleteSubmission={deleteMySubmission} />
+      <SubmittedExams exams={d.submitted} links={links} deleteSubmission={deleteMySubmission} pickBase="/tutor/students/similar/" picked={picked} />
       <div className="pt-2">
         <DeleteStudentBox
           name={d.name}

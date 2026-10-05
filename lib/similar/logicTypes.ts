@@ -98,3 +98,33 @@ export const LOGIC_TYPES: Record<string, LogicType> = Object.fromEntries(
 export function logicTypeOf(key: string | null | undefined): LogicType | null {
   return key ? LOGIC_TYPES[key] ?? null : null;
 }
+
+/**
+ * 시험 이름(과 학년)으로 논리 유형 과목 정하기(2026-10-05 새 시험 AI 처리 때 유형까지 정하게) — 모르면 null.
+ * 예: "…고등학교 1학년 2025년 2학기 공통수학2 중간_" → "c2", "…고등학교 2학년 … 수학Ⅱ 기말" → "m2", "…중학교 3학년 …" → "j3".
+ */
+export function subjectOfExam(name: string | null | undefined, grade?: number | null): string | null {
+  const n = String(name ?? "").normalize("NFC").replace(/\s+/g, " ");
+  if (/공통\s*수학\s*(2|Ⅱ|II)(?![0-9I])/.test(n)) return "c2";
+  if (/공통\s*수학\s*(1|Ⅰ|I)(?![0-9I])/.test(n)) return "c1";
+  if (/(^|[^통])\s*수학\s*(Ⅱ|II|2)(?![0-9I])/.test(n) && !/공통/.test(n)) return "m2";
+  if (/중학교|여중|[가-힣]중\s*3/.test(n) && (/3\s*학년|중\s*3/.test(n) || grade === 3)) return "j3";
+  return null;
+}
+
+/** AI 풀이 요청에 넣을 유형표(과목을 모르면 전체). 한 줄에 하나: "c2.D1 | 접할 조건: 거리 = 반지름 | 설명" */
+export function logicTypeListFor(subject: string | null): string {
+  return Object.values(LOGIC_TYPES)
+    .filter((t) => !subject || t.subject === subject)
+    .map((t) => `${t.key} | ${subject ? "" : LOGIC_SUBJECTS[t.subject] + " · "}${t.group} · ${t.name} | ${t.logic}`)
+    .join("\n");
+}
+
+/** AI가 고른 유형이 표에 있고(과목을 알면 그 과목 것) 모양이 맞으면 그대로, 아니면 null */
+export function validLogicType(v: unknown, subject: string | null): string | null {
+  const k = String(v ?? "").trim();
+  const t = LOGIC_TYPES[k];
+  if (!t) return null;
+  if (subject && t.subject !== subject) return null;
+  return k;
+}

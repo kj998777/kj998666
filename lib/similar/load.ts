@@ -1,11 +1,16 @@
 import "server-only";
 import { fetchAllIn } from "@/lib/supabase/fetchAll";
 import { logicTypeOf } from "@/lib/similar/logicTypes";
-import { examTwins, pickSimilar, targetsOf, type PoolItem, type Tier } from "@/lib/similar/recommend";
+import { diffIndex, examTwins, hash32, pickSimilar, targetsOf, type PoolItem, type Tier } from "@/lib/similar/recommend";
 
-// 오답 유사문제 화면(/r/[sid])과 그 화면이 부르는 API(시험지 쪽·답 확인)가 함께 쓰는 서버 계산.
-// 학생 로그인이 없으므로 제출 id(추측할 수 없는 uuid)가 곧 열쇠다. 서비스롤 클라이언트로 읽되, 화면으로는
+// 오답 유사문제 화면(/r/[sid])과 그 화면이 부르는 API(시험지 쪽·답 확인), 그리고 선생님이 유사문제를 고르는 화면
+// (직원 /students/similar/[sid], 과외 /tutor/students/similar/[sid])이 함께 쓰는 서버 계산.
+// 학생 로그인이 없으므로 제출 id(추측할 수 없는 uuid)가 곧 열쇠다. 서비스롤 클라이언트로 읽되, 학생 화면으로는
 // 문항 id·시험 이름·번호·난이도·유형 이름만 내려 보내고 정답·풀이는 학생이 "확인"을 누를 때 그 문항 것만 준다.
+//
+// 2026-10-05 원장님 "학생이 아니라 선생님이 선택할 수 있게": 학생 화면은 선생님이 고른 문제(submissions.similar_picks,
+// 0051)만 보여 준다. 고르기 전에는 pending. 고르는 화면은 같은 유형의 쓸 수 있는 문항을 전부 후보로 보여 주고,
+// 예전 자동 추천(쉬운 것 1 → 같은 것 2 → 어려운 것 1, lib/similar/recommend.ts)은 "추천" 표시 + 처음 체크 상태로 쓴다.
 
 type Client = any;
 
@@ -38,10 +43,30 @@ export type SimilarPage = {
   examName: string;
   examCode: string;
   total: number;
+  /** 다시 볼 문항(틀림·무응답·찍어서 맞힘) 수 */
+  targets: number;
+  /** 선생님이 아직 유사문제를 고르지 않음 */
+  pending: boolean;
   groups: SimilarGroup[];
 };
 
+export type PickCandidate = SimilarCard & { recommended: boolean };
+export type PickGroup = Omit<SimilarGroup, "cards"> & { candidates: PickCandidate[]; picked: string[] };
+export type PickPage = {
+  submissionId: string;
+  examName: string;
+  studentName: string;
+  classLabel: string;
+  tutorId: string | null;
+  /** 선생님이 저장한 적이 있음(없으면 picked = 추천) */
+  saved: boolean;
+  pickedAt: string | null;
+  groups: PickGroup[];
+};
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** 고르는 화면에서 틀린 문항 하나당 보여 줄 후보 수 상한(추천은 항상 포함) */
+const MAX_CANDIDATES = 40;
 
 function boxOf(r: any): SimilarCard["bbox"] {
   return [r.bbox_x0, r.bbox_y0, r.bbox_x1, r.bbox_y1].every((v) => typeof v === "number")
@@ -49,17 +74,49 @@ function boxOf(r: any): SimilarCard["bbox"] {
     : null;
 }
 
-/** 제출 하나의 오답 유사문제 전체. 제출이 없거나 id 모양이 틀리면 null. */
-export async function loadSimilarPage(admin: Client, submissionId: string): Promise<SimilarPage | null> {
+function tierOf(src: string, d: string): Tier {
+  const a = diffIndex(src);
+  const b = diffIndex(d);
+  return b < a ? "easier" : b > a ? "harder" : "same";
+}
+
+/** similar_picks 값 다듬기: {번호: [uuid…]}만 남긴다 */
+export function cleanPicks(v: unknown): Record<string, string[]> | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out: Record<string, string[]> = {};
+  for (const [k, arr] of Object.entries(v as Record<string, unknown>)) {
+    if (!Array.isArray(arr) || k.length > 40) continue;
+    const ids = Array.from(new Set(arr.map((x) => String(x)).filter((x) => UUID_RE.test(x)))).slice(0, 12);
+    out[k] = ids;
+  }
+  return out;
+}
+
+type Core = {
+  sub: any;
+  exam: any;
+  perItem: { item_label: string; given: string; correct: boolean; guessed?: boolean }[];
+  targets: { label: string; kind: SimilarGroup["kind"] }[];
+  ownBy: Map<string, any>;
+  keyBy: Map<string, any>;
+  pool: PoolItem[];
+  poolRow: Map<string, any>;
+  examOf: Map<string, any>;
+  /** 학생 시험의 대표 id(같은 시험지를 두 번 올렸으면 묶음의 대표) */
+  self: string;
+  picks: Record<string, string[]> | null;
+};
+
+async function loadCore(admin: Client, submissionId: string): Promise<Core | null> {
   if (!UUID_RE.test(submissionId)) return null;
   const { data: sub } = await admin
     .from("submissions")
-    .select("id, exam_id, grading_results(per_item)")
+    .select("id, exam_id, class_label, student_name, tutor_id, similar_picks, similar_picked_at, grading_results(per_item)")
     .eq("id", submissionId)
     .maybeSingle();
   if (!sub) return null;
   const gr = Array.isArray(sub.grading_results) ? sub.grading_results[0] : sub.grading_results;
-  const perItem = (gr?.per_item ?? []) as { item_label: string; given: string; correct: boolean; guessed?: boolean }[];
+  const perItem = (gr?.per_item ?? []) as Core["perItem"];
 
   const [{ data: exam }, { data: own }, { data: ownKeys }] = await Promise.all([
     admin.from("exams").select("id, code, name, folder_year, folder_grade").eq("id", sub.exam_id).maybeSingle(),
@@ -70,8 +127,8 @@ export async function loadSimilarPage(admin: Client, submissionId: string): Prom
     admin.from("answer_key").select("item_label, correct_answers, sort_order").eq("exam_id", sub.exam_id),
   ]);
   if (!exam) return null;
-  const ownBy = new Map(((own as any[]) ?? []).map((r) => [String(r.item_label), r]));
-  const keyBy = new Map(((ownKeys as any[]) ?? []).map((k) => [String(k.item_label), k]));
+  const ownBy = new Map<string, any>(((own as any[]) ?? []).map((r) => [String(r.item_label), r]));
+  const keyBy = new Map<string, any>(((ownKeys as any[]) ?? []).map((k) => [String(k.item_label), k]));
   const sortOf = (label: string) => Number(keyBy.get(label)?.sort_order ?? 0);
 
   const targets = targetsOf(perItem).sort((a, b) => sortOf(a.label) - sortOf(b.label));
@@ -135,59 +192,151 @@ export async function loadSimilarPage(admin: Client, submissionId: string): Prom
         correctAnswers: String(k?.correct_answers ?? ""),
         year: e.folder_year ?? null,
         grade: e.folder_grade ?? null,
-        // 정답이 확정된 시험(검수대기 아님)·오류 의심 아님·정답 있음·쪽을 앎
-        usable: e.status !== "검수대기" && !r.exam_error_suspected && !!k && r.source_page != null,
+        // 정답이 확정된 문항(2026-10-05 0050부터 열린 시험에도 미확정 문항이 있음)·검수대기 아님·오류 의심 아님·
+        // 정답 있음·쪽을 앎
+        usable: e.status !== "검수대기" && !!r.review_confirmed && !r.exam_error_suspected && !!k && r.source_page != null,
       });
     }
   }
+  return {
+    sub,
+    exam,
+    perItem,
+    targets,
+    ownBy,
+    keyBy,
+    pool,
+    poolRow,
+    examOf,
+    self: canon.get(exam.id) ?? exam.id,
+    picks: cleanPicks(sub.similar_picks),
+  };
+}
 
+function cardOf(c: Core, item: PoolItem, tier: Tier): SimilarCard {
+  const r = c.poolRow.get(item.id);
+  return {
+    id: item.id,
+    examName: shortExamName(c.examOf.get(item.examId)?.name ?? ""),
+    label: item.label,
+    difficulty: item.difficulty,
+    type: r?.type === "객관식" || r?.type === "주관식" ? r.type : "",
+    sourcePage: Number(r?.source_page),
+    bbox: boxOf(r),
+    tier,
+  };
+}
+
+function groupHead(c: Core, t: Core["targets"][number]): Omit<SimilarGroup, "cards"> {
+  const o = c.ownBy.get(t.label);
+  const lt = logicTypeOf(o?.logic_type);
+  const given = c.perItem.find((p) => String(p.item_label) === t.label)?.given ?? "";
+  return {
+    label: t.label,
+    kind: t.kind,
+    given: String(given ?? ""),
+    difficulty: String(o?.difficulty ?? ""),
+    unit: String(o?.unit ?? ""),
+    logicName: lt?.name ?? null,
+    logic: lt?.logic ?? null,
+    original: o && o.source_page != null ? { id: o.id, sourcePage: Number(o.source_page), bbox: boxOf(o) } : null,
+  };
+}
+
+/** 틀린 문항 하나에 쓸 수 있는 후보 전부(같은 유형·다른 시험·쓸 수 있는 것) */
+function candidatesFor(c: Core, label: string): PoolItem[] {
+  const lt = c.ownBy.get(label)?.logic_type;
+  if (!lt) return [];
+  return c.pool.filter((p) => p.usable && p.logicType === lt && p.examId !== c.self);
+}
+
+/** 자동 추천(예전 학생 화면 규칙) — 틀린 문항 순서대로, 화면 안에서 겹치지 않게 */
+function recommendAll(c: Core): Map<string, { item: PoolItem; tier: Tier }[]> {
   const used = new Set<string>();
-  const groups: SimilarGroup[] = targets.map((t) => {
-    const o = ownBy.get(t.label);
-    const lt = logicTypeOf(o?.logic_type);
-    const picks = o
-      ? pickSimilar(
-          {
-            label: t.label,
-            logicType: o.logic_type ?? null,
-            difficulty: String(o.difficulty ?? "중"),
-            correctAnswers: String(keyBy.get(t.label)?.correct_answers ?? ""),
-            year: exam.folder_year ?? null,
-            grade: exam.folder_grade ?? null,
-          },
-          canon.get(exam.id) ?? exam.id,
-          pool,
-          submissionId,
-          used
-        )
-      : [];
-    const given = perItem.find((p) => String(p.item_label) === t.label)?.given ?? "";
-    return {
-      label: t.label,
-      kind: t.kind,
-      given: String(given ?? ""),
-      difficulty: String(o?.difficulty ?? ""),
-      unit: String(o?.unit ?? ""),
-      logicName: lt?.name ?? null,
-      logic: lt?.logic ?? null,
-      original: o && o.source_page != null ? { id: o.id, sourcePage: Number(o.source_page), bbox: boxOf(o) } : null,
-      cards: picks.map(({ item, tier }) => {
-        const r = poolRow.get(item.id);
-        return {
-          id: item.id,
-          examName: shortExamName(examOf.get(item.examId)?.name ?? ""),
-          label: item.label,
-          difficulty: item.difficulty,
-          type: r?.type === "객관식" || r?.type === "주관식" ? r.type : "",
-          sourcePage: Number(r?.source_page),
-          bbox: boxOf(r),
-          tier,
-        };
-      }),
-    };
-  });
+  const out = new Map<string, { item: PoolItem; tier: Tier }[]>();
+  for (const t of c.targets) {
+    const o = c.ownBy.get(t.label);
+    out.set(
+      t.label,
+      o
+        ? pickSimilar(
+            {
+              label: t.label,
+              logicType: o.logic_type ?? null,
+              difficulty: String(o.difficulty ?? "중"),
+              correctAnswers: String(c.keyBy.get(t.label)?.correct_answers ?? ""),
+              year: c.exam.folder_year ?? null,
+              grade: c.exam.folder_grade ?? null,
+            },
+            c.self,
+            c.pool,
+            c.sub.id,
+            used
+          )
+        : []
+    );
+  }
+  return out;
+}
 
-  return { submissionId, examName: exam.name, examCode: exam.code, total: perItem.length, groups };
+/** 학생 화면: 제출 하나의 오답 유사문제(선생님이 고른 것만). 제출이 없거나 id 모양이 틀리면 null. */
+export async function loadSimilarPage(admin: Client, submissionId: string): Promise<SimilarPage | null> {
+  const c = await loadCore(admin, submissionId);
+  if (!c) return null;
+  const base = { submissionId, examName: c.exam.name, examCode: c.exam.code, total: c.perItem.length, targets: c.targets.length };
+  if (!c.picks) return { ...base, pending: true, groups: [] };
+  const groups: SimilarGroup[] = [];
+  for (const t of c.targets) {
+    const ids = c.picks[t.label] ?? [];
+    if (!ids.length) continue;
+    const head = groupHead(c, t);
+    const allowed = new Map(candidatesFor(c, t.label).map((p) => [p.id, p]));
+    const cards = ids
+      .map((id) => allowed.get(id))
+      .filter((p): p is PoolItem => !!p)
+      .map((p) => cardOf(c, p, tierOf(head.difficulty || "중", p.difficulty)));
+    const order: Tier[] = ["easier", "same", "harder"];
+    cards.sort((a, b) => order.indexOf(a.tier) - order.indexOf(b.tier) || diffIndex(a.difficulty) - diffIndex(b.difficulty));
+    if (cards.length) groups.push({ ...head, cards });
+  }
+  return { ...base, pending: false, groups };
+}
+
+/** 선생님 고르기 화면: 틀린 문항마다 후보 전부 + 추천 표시 + 지금 고른 것. */
+export async function loadPickPage(admin: Client, submissionId: string): Promise<PickPage | null> {
+  const c = await loadCore(admin, submissionId);
+  if (!c) return null;
+  const rec = recommendAll(c);
+  const groups: PickGroup[] = c.targets.map((t) => {
+    const head = groupHead(c, t);
+    const src = head.difficulty || "중";
+    const recIds = new Set((rec.get(t.label) ?? []).map((x) => x.item.id));
+    const d = diffIndex(src);
+    const all = candidatesFor(c, t.label).sort(
+      (a, b) =>
+        Number(recIds.has(b.id)) - Number(recIds.has(a.id)) ||
+        Math.abs(diffIndex(a.difficulty) - d) - Math.abs(diffIndex(b.difficulty) - d) ||
+        diffIndex(a.difficulty) - diffIndex(b.difficulty) ||
+        hash32(c.sub.id + "|" + t.label + "|" + a.id) - hash32(c.sub.id + "|" + t.label + "|" + b.id)
+    );
+    const candidates = all.slice(0, Math.max(MAX_CANDIDATES, recIds.size)).map((p) => ({
+      ...cardOf(c, p, tierOf(src, p.difficulty)),
+      recommended: recIds.has(p.id),
+    }));
+    const valid = new Set(candidates.map((x) => x.id));
+    const picked = c.picks ? (c.picks[t.label] ?? []).filter((id) => valid.has(id)) : Array.from(recIds);
+    return { ...head, candidates, picked };
+  });
+  return {
+    submissionId,
+    examName: c.exam.name,
+    studentName: String(c.sub.student_name ?? ""),
+    classLabel: String(c.sub.class_label ?? ""),
+    tutorId: c.sub.tutor_id ?? null,
+    saved: !!c.picks,
+    pickedAt: c.sub.similar_picked_at ?? null,
+    groups,
+  };
 }
 
 /** 이 제출 화면에서 열어 볼 수 있는 문항인가(유사문제로 고른 것, 또는 학생이 틀린 원래 문항) */
@@ -198,6 +347,11 @@ export function allowedItem(page: SimilarPage, itemId: string): { kind: "similar
     if (c) return { kind: "similar", card: c };
   }
   return null;
+}
+
+/** 고르는 화면에서 열어 볼 수 있는 문항인가(후보 또는 원래 문항) */
+export function allowedPickItem(page: PickPage, itemId: string): boolean {
+  return page.groups.some((g) => g.original?.id === itemId || g.candidates.some((x) => x.id === itemId));
 }
 
 /** "서울_강남구_경기고등학교 1학년 2025년 2학기 공통수학2 중간_" → "경기고등학교 1학년 2025년 2학기 공통수학2 중간" */

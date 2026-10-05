@@ -37,9 +37,15 @@ export default function SubmittedExams({
   links,
   emptyText = "아직 제출한 시험이 없습니다.",
   deleteSubmission,
+  pickBase,
+  picked,
 }: {
   exams: SubmittedExam[];
   deleteSubmission?: DeleteSubmission;
+  /** 2026-10-05 오답 유사문제 고르기 화면 주소 앞부분(뒤에 제출 id를 붙임) — 없으면 버튼을 감춘다 */
+  pickBase?: string;
+  /** 제출 id → 선생님이 고른 유사문제 수(null = 아직 안 고름) */
+  picked?: Record<string, number | null>;
   /** 시험 코드 → 결과 화면 주소·보고서 데이터 주소(없으면 버튼을 감춘다) */
   links: ExamLinks;
   emptyText?: string;
@@ -56,7 +62,16 @@ export default function SubmittedExams({
   return (
     <div className="space-y-3">
       {exams.map((e) => (
-        <ExamCard key={e.submissionId} e={e} link={links[e.code]} open={open.has(e.submissionId)} onToggle={() => toggle(e.submissionId)} onDelete={deleteSubmission} />
+        <ExamCard
+          key={e.submissionId}
+          e={e}
+          link={links[e.code]}
+          open={open.has(e.submissionId)}
+          onToggle={() => toggle(e.submissionId)}
+          onDelete={deleteSubmission}
+          pickHref={pickBase ? pickBase + e.submissionId : null}
+          pickedN={picked ? picked[e.submissionId] ?? null : undefined}
+        />
       ))}
     </div>
   );
@@ -68,12 +83,16 @@ function ExamCard({
   open,
   onToggle,
   onDelete,
+  pickHref,
+  pickedN,
 }: {
   e: SubmittedExam;
   link?: ExamLinks[string];
   open: boolean;
   onToggle: () => void;
   onDelete?: DeleteSubmission;
+  pickHref?: string | null;
+  pickedN?: number | null;
 }) {
   const router = useRouter();
   const [asking, setAsking] = useState(false);
@@ -160,6 +179,14 @@ function ExamCard({
           <button type="button" className="btn-secondary" disabled={busy} onClick={onReport}>
             {busy ? "만드는 중…" : "개별 보고서 PDF"}
           </button>
+        )}
+        {pickHref && e.wrong + e.blank + e.guessedCorrect > 0 && (
+          <Link href={pickHref} className="btn-secondary">
+            유사문제 고르기
+            <span className={"ml-1.5 text-xs " + (pickedN == null ? "text-amber-700" : "text-slate-500")}>
+              {pickedN == null ? "아직 안 고름" : `${pickedN}문제`}
+            </span>
+          </Link>
         )}
         {link?.href && (
           <Link href={link.href} className="link-accent">

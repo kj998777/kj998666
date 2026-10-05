@@ -97,7 +97,7 @@ export default async function TutorExamResultsPage({ params }: { params: { code:
             </thead>
             <tbody>
               {submissions.map((s) => (
-                <ResultRow key={s.id} code={code} row={s} canDelete={false} />
+                <ResultRow key={s.id} code={code} row={s} canDelete={false} pickHref="/tutor/students/similar/" />
               ))}
             </tbody>
           </table>

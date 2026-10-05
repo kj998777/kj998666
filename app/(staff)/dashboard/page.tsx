@@ -151,6 +151,11 @@ export default async function DashboardPage({
         desc: "풀이 글의 결론(번호·마지막 값)이 정답표·정답 표시와 다른 문항을 모아 보여 줍니다. 직접 풀어 보고 고치세요.",
       },
       {
+        href: "/admin/logic-types",
+        title: "유형 분류",
+        desc: "논리 유형이 정해지지 않은 문항을 시험별로 모아, AI로 한꺼번에 분류하거나 직접 고릅니다. 유형이 있어야 오답 유사문제 후보가 됩니다.",
+      },
+      {
         href: "/admin/bug-reports",
         title: "버그 신고",
         desc: "과외선생님이 보낸 버그 신고를 보고 처리 상태와 답변을 남깁니다(답변은 선생님 화면에 보임).",

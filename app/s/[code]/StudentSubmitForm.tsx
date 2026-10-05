@@ -96,11 +96,16 @@ export default function StudentSubmitForm({
           <p className="font-medium">제출 완료했습니다.</p>
           <p className="text-sm text-slate-500 mt-1">{name} 학생, 수고했어요.</p>
         </div>
-        {/* 2026-10-05 원장님: 틀린 문제와 같은 논리 유형의 다른 학교 문제를 바로 풀어 볼 수 있게(app/r/[sid]) — 입학테스트는 제외 */}
+        {/* 2026-10-05 원장님: 틀린 문제와 같은 논리 유형의 다른 학교 문제(app/r/[sid]) — 입학테스트는 제외.
+            같은 날 "학생이 아니라 선생님이 선택": 문제는 선생님이 골라 주고, 학생은 이 링크(또는 보고서 QR)로 연다. */}
         {!endpoint && result.submissionId && (
-          <a href={`/r/${result.submissionId}`} className="btn-primary w-full mb-4">
-            틀린 문제 유사문제 풀어 보기
-          </a>
+          <div className="mb-4 rounded-md bg-slate-50 px-3 py-2 text-center text-sm text-slate-600">
+            선생님이 틀린 문제에 맞는 유사문제를 골라 주시면{" "}
+            <a href={`/r/${result.submissionId}`} className="link-accent">
+              이 링크
+            </a>
+            에서 풀 수 있어요.
+          </div>
         )}
         {promo && <PromoBanner />}
       </Wrap>

@@ -267,7 +267,7 @@ export async function rejectEditRequest(requestId: string): Promise<Result> {
 // ---------------------------------------------------------------------------
 
 /**
- * 검토 대기 시험 중 좌표 없는 문항이 있는 시험마다 영역 찾기 작업을 걸어 둔다(곧바로 끝남). 실제 진행은 화면이
+ * 시험(2026-10-05부터 열린·닫힌 시험 포함) 중 좌표 없는 문항이 있는 시험마다 영역 찾기 작업을 걸어 둔다(곧바로 끝남). 실제 진행은 화면이
  * locate-tick 라우트를 부르거나 크론이 돌 때 이루어진다 — 버튼이 수십 초씩 붙잡혀 있지 않도록(2026-09-29).
  */
 export async function startLocateItems(): Promise<Result & { queued?: number }> {
@@ -275,7 +275,7 @@ export async function startLocateItems(): Promise<Result & { queued?: number }> 
   const admin = createAdminClient();
   const { enqueueMissingLocateJobs } = await import("@/lib/ai/locate");
   const { queued, missingItems } = await enqueueMissingLocateJobs(admin);
-  if (!missingItems) return { ok: true, msg: "좌표가 없는 검토 대기 문항이 없습니다.", queued: 0 };
+  if (!missingItems) return { ok: true, msg: "좌표가 없는 문항이 없습니다.", queued: 0 };
   revalidatePath("/admin/review-status");
   revalidatePath("/admin/ai");
   return {

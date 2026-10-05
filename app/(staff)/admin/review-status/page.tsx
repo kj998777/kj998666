@@ -150,8 +150,8 @@ export default async function ReviewStatusPage({ searchParams }: { searchParams?
     examRows = data ?? [];
   }
   // 문항 잘라 보기 영역(좌표) 상태 — 0024 전이면 available=false라 패널이 안 보인다.
-  const pendingIds = ((pendingExamsRaw as any[]) ?? []).map((e) => e.id);
-  const locate = await getLocateSummary(supabase, pendingIds);
+  // 2026-10-05: 검수대기뿐 아니라 열린·닫힌 시험의 좌표 없는 문항도(오답 유사문제가 확정 문항을 잘라 보여 줌)
+  const locate = await getLocateSummary(supabase, null);
   const examNameById = new Map(examRows.map((e) => [e.id, e.name as string]));
   // 과외선생님 검토 배정과 같은 순서: 검수대기 → 제주 학교(+공통수학1·2 시험, 0044) → 고등 > 중등 > 그 밖 → 남은 검토대기 문항이 적은 시험(0032) → 이름
   const items: Item[] = itemsRaw ?? [];

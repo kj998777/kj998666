@@ -14,7 +14,8 @@ type Row = {
   per_item: PerItem[];
 };
 
-export default function ResultRow({ code, row, canDelete }: { code: string; row: Row; canDelete: boolean }) {
+// pickHref(2026-10-05): 오답 유사문제 고르기 화면 주소 앞부분 — 뒤에 제출 id를 붙인다. 없으면 링크를 감춘다.
+export default function ResultRow({ code, row, canDelete, pickHref }: { code: string; row: Row; canDelete: boolean; pickHref?: string }) {
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const g = guessSummary(row.per_item, Number(row.total_score));
@@ -39,7 +40,12 @@ export default function ResultRow({ code, row, canDelete }: { code: string; row:
           )}
         </td>
         <td className="py-2 pr-2 text-slate-500">{new Date(row.submitted_at).toLocaleString("ko-KR")}</td>
-        <td className="py-2 pr-2 text-right">
+        <td className="py-2 pr-2 text-right whitespace-nowrap">
+          {pickHref && row.per_item.some((it) => !it.correct || it.guessed) && (
+            <a href={pickHref + row.id} className="link-accent mr-3">
+              유사문제 고르기
+            </a>
+          )}
           {canDelete && (
             <button
               className="text-slate-400 hover:text-red-600"
