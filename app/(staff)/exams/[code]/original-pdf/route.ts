@@ -2,7 +2,8 @@ import { requireApiRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { getExamPdfBuffer, getExamPdfMeta, getScanPdfBuffer } from "@/lib/ai/pdf";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { pageResponse, pdfPageOf } from "@/lib/bank/singlePage";
+import { pageResponse } from "@/lib/bank/singlePage";
+import { examPage } from "@/lib/bank/pageCache";
 
 // "디지털 시험지 PDF" 를 브라우저에서 만들 때(그림을 원본 쪽에서 오려 내야 함) 원본 시험지
 // PDF의 원본 바이트가 필요해서 추가한 라우트. buildDigitizedPdf.ts 가 pdf.js로 이 바이트를
@@ -22,18 +23,24 @@ export async function GET(request: Request, { params }: { params: { code: string
 
   // ?scan=1 이 없으면 예전처럼 지금 원본(검토현황 문항 잘라 보기 등 — 문항 좌표가 지금 원본 기준).
   if (new URL(request.url).searchParams.get("scan") !== "1") {
+    // 2026-10-01: ?page=N 이면 그 쪽 하나만(검토 문항 화면·문항 은행 미리 보기가 시험지 전체를 받지 않게)
+    // 2026-10-05: 그 쪽도 잘라 둔 것을 쓴다(lib/bank/pageCache.ts — Storage 전송량 줄이기)
+    const pageParam = new URL(request.url).searchParams.get("page");
+    if (pageParam) {
+      let one: { bytes: Uint8Array; total: number } | null = null;
+      try {
+        one = await examPage(createAdminClient(), exam.id, Number(pageParam)); // 잘라 둔 쪽 저장은 서비스롤로(편집자 세션은 Storage 쓰기 권한이 없음)
+      } catch (e: any) {
+        return Response.json({ ok: false, msg: e?.message || "시험지 PDF를 불러오지 못했습니다." }, { status: 400 });
+      }
+      if (!one) return Response.json({ ok: false, msg: "그 쪽이 없습니다." }, { status: 404 });
+      return pageResponse(one);
+    }
     let cur: Buffer;
     try {
       cur = await getExamPdfBuffer(supabase, exam.id);
     } catch (e: any) {
       return Response.json({ ok: false, msg: e?.message || "시험지 PDF를 불러오지 못했습니다." }, { status: 400 });
-    }
-    // 2026-10-01: ?page=N 이면 그 쪽 하나만(검토 문항 화면·문항 은행 미리 보기가 시험지 전체를 받지 않게)
-    const pageParam = new URL(request.url).searchParams.get("page");
-    if (pageParam) {
-      const one = await pdfPageOf(cur, Number(pageParam)).catch(() => null);
-      if (!one) return Response.json({ ok: false, msg: "그 쪽이 없습니다." }, { status: 404 });
-      return pageResponse(one);
     }
     return new Response(cur as any, { headers: { "Content-Type": "application/pdf", "Cache-Control": "no-store" } });
   }
