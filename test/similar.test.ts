@@ -112,7 +112,8 @@ check("시험 이름으로 과목 정하기(새 시험 AI 유형 분류)", () =>
   assert.equal(subjectOfExam("서울_강남구_숙명여자고등학교 1학년 2025년 2학기 공통수학1 기말_"), "c1");
   assert.equal(subjectOfExam("제주_제주시_오현고등학교 2학년 2023년 2학기 수학Ⅱ 기말_"), "m2");
   assert.equal(subjectOfExam("제주_제주시_아라중학교 3학년 2025년 2학기 중간_"), "j3");
-  assert.equal(subjectOfExam("어떤고 2학년 미적분 기말"), null); // 모르는 과목은 유형을 정하지 않음
+  assert.equal(subjectOfExam("제주_제주시_남녕고등학교 2학년 2026년 2학기 미적분Ⅰ 부교재 변형 모의고사 1회"), "m2"); // 2022 개정 미적분Ⅰ = 예전 수학Ⅱ
+  assert.equal(subjectOfExam("어떤고 2학년 미적분 기말"), null); // 모르는 과목은 유형을 정하지 않음(예전 미적분은 표 없음)
 });
 
 check("AI가 고른 유형 확인", () => {
