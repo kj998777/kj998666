@@ -21,8 +21,8 @@ export async function saveSimilarPicks(submissionId: string, picks: Record<strin
     out[g.label] = ids;
     n += ids.length;
   }
-  const { error } = await admin
-    .from("submissions")
+  // submissions는 타입상 Update: never(앱이 직접 고치지 않는 표) — 이 칸(0051)만 서비스롤로 고친다
+  const { error } = await (admin.from("submissions") as any)
     .update({ similar_picks: out, similar_picked_at: new Date().toISOString(), similar_picked_by: auth.who.userId })
     .eq("id", submissionId);
   if (error) return { ok: false, msg: "저장하지 못했습니다: " + error.message };
