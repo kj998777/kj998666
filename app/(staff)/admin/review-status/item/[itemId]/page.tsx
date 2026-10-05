@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { toKeyAnswer } from "@/lib/review/confirm";
 import ProblemPageImage from "@/app/(tutor)/tutor/review/[itemId]/ProblemPageImage";
+import AdoptReviewButton from "../../AdoptReviewButton";
 import AdminSolveForm from "./AdminSolveForm";
 import AdminPhotos from "./AdminPhotos";
 import RedigitizeBox from "./RedigitizeBox";
@@ -214,6 +215,10 @@ export default async function AdminReviewItemPage({ params, searchParams }: { pa
                   )}
                 </p>
                 {r.solution && <p className="mt-1 whitespace-pre-wrap text-slate-700">{r.solution}</p>}
+                {/* 2026-10-05: 이 선생님 답·풀이로 정답표·해설을 바꾸고 확정(예: 사후검증 선생님이 맞을 때) */}
+                <div className="mt-1.5">
+                  <AdoptReviewButton reviewId={r.id} />
+                </div>
               </div>
             ))
           )}
