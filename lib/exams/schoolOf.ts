@@ -6,6 +6,7 @@
 const SCH_ALIAS: Record<string, string> = {
   제주제일고: "제주일고",
   제주중앙여자고: "제주중앙여고",
+  제주대학교사범대학부설고: "사대부고",
 };
 
 function normalizeSchool(raw: string): string {
