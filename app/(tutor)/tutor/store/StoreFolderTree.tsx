@@ -9,7 +9,7 @@ import { schoolOf } from "@/lib/exams/schoolOf";
 // 직원 시험 목록(app/(staff)/exams/ExamFolderTree.tsx)과 같은 순서로 나눈다:
 // 연도 → 중학교/고등학교 → 학년 → 학기 → 중간/기말 → 시험. 값이 없는 단계는 "… 미지정" 폴더로 모으고,
 // 연도가 없는 시험은 맨 아래 "폴더 미분류"에 둔다.
-// 분류(collection)가 있는 시험(2026-10-05): 연도 → 학교급 → 📚 분류 → 학년 → 학교 → 시험. 연도가 없으면 맨 위 📚 분류 폴더.
+// 분류(collection)가 있는 시험(2026-10-05): 연도 → 학교급 → 학년 → 📚 분류 → 학교 → 시험. 연도가 없으면 맨 위 📚 분류 폴더.
 
 export type StoreExam = {
   id: string;
@@ -37,7 +37,7 @@ type Level = {
 
 const COLLECTION_PREFIX = "📚 ";
 const SCHOOL_LEVEL: Level = { key: (e) => schoolOf(e.name), order: [] }; // 가나다순, "학교 미상"은 맨 뒤
-// 분류 폴더 아래(2026-10-05 요청): 학년 → 학교 → 시험
+// 연도 없는 분류 시험(맨 위 📚 폴더) 아래: 학년 → 학교 → 시험
 const GRADE_LEVEL: Level = {
   key: (e) => (e.folder_grade ? `${e.folder_grade}학년` : "학년 미지정"),
   order: ["1학년", "2학년", "3학년", "학년 미지정"],
@@ -50,11 +50,14 @@ const LEVELS: Level[] = [
     order: ["중학교", "고등학교", "학교급 미지정"], // 2026-10-03: 초등학교 폴더는 뺌
   },
   {
-    key: (e) => (e.collection ? COLLECTION_PREFIX + e.collection : e.folder_grade ? `${e.folder_grade}학년` : "학년 미지정"),
+    key: (e) => (e.folder_grade ? `${e.folder_grade}학년` : "학년 미지정"),
     order: ["1학년", "2학년", "3학년", "학년 미지정"],
-    branch: (label) => (label.startsWith(COLLECTION_PREFIX) ? COLLECTION_LEVELS : undefined),
   },
-  { key: (e) => (e.folder_term ? `${e.folder_term}학기` : "학기 미지정"), order: ["1학기", "2학기", "학기 미지정"] },
+  {
+    key: (e) => (e.collection ? COLLECTION_PREFIX + e.collection : e.folder_term ? `${e.folder_term}학기` : "학기 미지정"),
+    order: ["1학기", "2학기", "학기 미지정"],
+    branch: (label) => (label.startsWith(COLLECTION_PREFIX) ? [SCHOOL_LEVEL] : undefined),
+  },
   { key: (e) => e.folder_kind ?? "구분 미지정", order: ["중간", "기말", "기타", "구분 미지정"] },
 ];
 
@@ -138,7 +141,7 @@ function Nested({ exams, levels }: { exams: StoreExam[]; levels: Level[] }) {
       map.set(k, list);
     }
     const rank = (k: string) => {
-      if (k.startsWith(COLLECTION_PREFIX)) return -1; // 📚 분류 폴더는 학년 폴더들보다 앞에
+      if (k.startsWith(COLLECTION_PREFIX)) return -1; // 📚 분류 폴더는 학기 폴더들보다 앞에
       if (k === "학교 미상") return 1;
       const i = level.order.indexOf(k);
       return i === -1 ? (level.order.length ? level.order.length - 1 : 0) : i;
