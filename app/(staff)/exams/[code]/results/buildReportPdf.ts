@@ -5,6 +5,7 @@ import { guessSummary } from "@/lib/grading";
 import { guessStatsByItem, guessTotals, manyGuessed, pctOf } from "@/lib/report/guessStats";
 import { CONTENT_KIND_LABEL, MEDIC_PDF_CREDIT } from "@/lib/content/kinds";
 import { PROMO, promoReportHtml } from "@/lib/content/promo";
+import QRCode from "qrcode";
 // 브라우저에서 "성적 보고서"(종합/개별) PDF를 만든다.
 //
 // 옛 Apps Script 시스템의 파이썬 스크립트(claude/dg2025-report-content.md의 content.py/build.py/
@@ -686,6 +687,42 @@ function buildAdvice(items: ReportItem[], student: ReportStudent, idx: Map<strin
   return s;
 }
 
+// 2026-10-05 원장님: 틀린 문제와 같은 논리 유형의 다른 학교 문제를 학생이 휴대폰으로 풀어 보게(app/r/[sid]).
+// 개별 보고서에 그 학생 제출 화면으로 가는 QR을 넣는다. QR 그림은 동기 계산(QRCode.create)으로 캔버스에 그려 바로 넣는다.
+function qrDataUrl(text: string): string {
+  try {
+    const qr: any = (QRCode as any).create(text, { errorCorrectionLevel: "M" });
+    const n: number = qr.modules.size;
+    const cell = 6;
+    const margin = 4;
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = (n + margin * 2) * cell;
+    const ctx = cv.getContext("2d") as CanvasRenderingContext2D;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = "#1C1A16";
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.modules.get(r, c)) ctx.fillRect((c + margin) * cell, (r + margin) * cell, cell, cell);
+    return cv.toDataURL("image/png");
+  } catch {
+    return "";
+  }
+}
+
+function similarQrHtml(student: ReportStudent, count: number): string {
+  if (!count || typeof window === "undefined" || !student.id) return "";
+  const url = `${window.location.origin}/r/${student.id}`;
+  const img = qrDataUrl(url);
+  if (!img) return "";
+  const C = RPT_COLORS;
+  return (
+    `<div style="display:flex;align-items:center;gap:14px;border:1px solid ${C.line2};border-radius:8px;padding:10px 14px;margin:10px 0 4px;background:${C.paper}">` +
+    `<img src="${img}" alt="" style="width:92px;height:92px;flex:none" />` +
+    `<div><div style="font-weight:700;color:${C.ink};font-size:14px">틀린 문제, 비슷한 문제로 한 번 더</div>` +
+    `<div style="font-size:12px;color:${C.muted};line-height:1.6;margin-top:3px">휴대폰 카메라로 QR을 찍으면 다시 볼 문항 ${count}개마다 같은 생각으로 푸는 다른 학교 문제를 ` +
+    `<b>한 단계 쉬운 것 → 같은 난이도 → 한 단계 어려운 것</b> 순서로 풀어 볼 수 있어요. 답을 적으면 바로 채점하고 풀이를 보여 줍니다.</div></div></div>`
+  );
+}
+
 /** opts.promo: 맨 끝에 메딕수학 홍보 상자(2026-10-01부터 학원·과외선생님 보고서 모두 — ReportPanel) */
 export function buildIndividualHtml(katex: any, data: ReportData, student: ReportStudent, opts: { promo?: boolean } = {}): string {
   const items = data.items;
@@ -720,6 +757,9 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
       missed.length
     }개</div><div class="t">오답 ${wrongN} · 무응답 ${blankN}</div></div></div>`
   );
+
+  // 다시 볼 문항(틀림·무응답·찍어서 맞힘) — 오답 유사문제 QR(app/r/[sid])
+  b.push(similarQrHtml(student, missed.length + guessedOk.length));
 
   b.push("<h2>1. 종합 의견</h2>");
   b.push(
