@@ -155,6 +155,7 @@ export type Database = {
           unit: string;
           difficulty: Difficulty;
           difficulty_reason: string;
+          logic_type: string | null;
           problem_statement: string;
           answer_display: string;
           solution: string;
@@ -182,6 +183,7 @@ export type Database = {
           unit?: string;
           difficulty?: Difficulty;
           difficulty_reason?: string;
+          logic_type?: string | null;
           problem_statement?: string;
           answer_display?: string;
           solution?: string;
@@ -197,6 +199,7 @@ export type Database = {
           unit?: string;
           difficulty?: Difficulty;
           difficulty_reason?: string;
+          logic_type?: string | null;
           problem_statement?: string;
           answer_display?: string;
           solution?: string;
