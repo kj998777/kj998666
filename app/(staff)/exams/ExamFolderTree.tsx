@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { schoolOf } from "@/lib/exams/schoolOf";
 
 export type ExamRow = {
   id: string;
@@ -17,30 +18,6 @@ export type ExamRow = {
 };
 
 const LEVEL_LABEL: Record<string, string> = { 중: "중학교", 고: "고등학교" }; // 초등학교는 뺌(2026-10-03)
-
-// 옛 학교별 기출 탭의 SCH_ALIAS 를 흉내낸 표 — 같은 학교를 가리키는 다른 표기를 하나로 합친다.
-// 필요할 때마다 여기에 항목을 추가하면 된다.
-const SCH_ALIAS: Record<string, string> = {
-  제주제일고: "제주일고",
-};
-
-function normalizeSchool(raw: string): string {
-  const s = raw.replace(/고등학교$/, "고");
-  return SCH_ALIAS[s] ?? s;
-}
-
-// 시험 이름에서 학교 이름을 뽑아내는 옛 schoolOf() 흉내 — "…고" / "…고등학교" 형태의 토큰을 찾되,
-// 괄호 밖 텍스트를 먼저 보고, 없으면 괄호 안을 본다. 둘 다 없으면 "학교 미상".
-function schoolOf(name: string): string {
-  const parenMatch = name.match(/\(([^)]*)\)/);
-  const outside = parenMatch ? name.replace(parenMatch[0], "") : name;
-  const inside = parenMatch ? parenMatch[1] : "";
-  for (const text of [outside, inside]) {
-    const m = text.match(/[가-힣]{2,20}(고등학교|고)(?![가-힣])/);
-    if (m) return normalizeSchool(m[0]);
-  }
-  return "학교 미상";
-}
 
 function statusBadgeClass(status: string) {
   return status === "열림"
@@ -118,11 +95,13 @@ function Folder({
 export default function ExamFolderTree({ exams }: { exams: ExamRow[] }) {
   const [tab, setTab] = useState<"folder" | "school">("folder");
 
-  // 0051(2026-10-05): 분류(collection)가 있는 시험은 연도 폴더 대신 맨 위 분류 폴더에 모은다.
+  // 0051(2026-10-05): 분류(collection)가 있는 시험도 연도 폴더 안에 둔다 —
+  // 연도 → 학교급 → 📚 분류(예: 부교재 변형문제) → 학교 → 시험 (2026-10-05 요청).
+  // 연도가 없는 분류 시험만 맨 위 📚 분류 폴더에 모은다.
   const collections = useMemo(() => {
     const map = new Map<string, ExamRow[]>();
     for (const e of exams) {
-      if (!e.collection) continue;
+      if (!e.collection || e.folder_year) continue;
       const list = map.get(e.collection) ?? [];
       list.push(e);
       map.set(e.collection, list);
@@ -131,9 +110,8 @@ export default function ExamFolderTree({ exams }: { exams: ExamRow[] }) {
   }, [exams]);
 
   const { years, unclassified } = useMemo(() => {
-    const rest = exams.filter((e) => !e.collection);
-    const classified = rest.filter((e) => e.folder_year);
-    const unclassified = rest.filter((e) => !e.folder_year);
+    const classified = exams.filter((e) => e.folder_year);
+    const unclassified = exams.filter((e) => !e.folder_year && !e.collection);
     const byYear = new Map<string, ExamRow[]>();
     for (const e of classified) {
       const list = byYear.get(e.folder_year!) ?? [];
@@ -187,7 +165,7 @@ export default function ExamFolderTree({ exams }: { exams: ExamRow[] }) {
           )}
           {collections.map(([name, list]) => (
             <Folder key={"c:" + name} id={"c:" + name} label={`📚 ${name}`} exams={list} defaultOpen={false}>
-              <NestedGroups exams={list} levels={[]} />
+              <NestedGroups exams={list} levels={[SCHOOL_LEVEL]} />
             </Folder>
           ))}
           {years.map((y, idx) => (
@@ -227,15 +205,28 @@ export default function ExamFolderTree({ exams }: { exams: ExamRow[] }) {
 }
 
 // 폴더 순서(2026-09-28 원장님 요청): 연도 → 중학교/고등학교 → 학년 → 학기 → 중간/기말 → 시험.
+// 분류(collection)가 있는 시험(2026-10-05): 연도 → 학교급 → 📚 분류 → 학교 → 시험 — 학년 폴더들과 나란히, 맨 앞에 둔다.
 // 각 단계는 값이 없으면 "… 미지정" 폴더로 모은다.
-type FolderLevel = { key: (e: ExamRow) => string; order: string[] };
+type FolderLevel = {
+  key: (e: ExamRow) => string;
+  order: string[];
+  /** 이 단계의 폴더 이름에 따라 아래 단계를 바꿀 때(분류 폴더 아래는 학교별로) */
+  branch?: (label: string) => FolderLevel[] | undefined;
+};
+
+const COLLECTION_PREFIX = "📚 ";
+const SCHOOL_LEVEL: FolderLevel = { key: (e) => schoolOf(e.name), order: [] }; // 가나다순, "학교 미상"은 맨 뒤(rank 참고)
 
 const FOLDER_LEVELS: FolderLevel[] = [
   {
     key: (e) => (e.school_level ? LEVEL_LABEL[e.school_level] ?? e.school_level : "학교급 미지정"),
     order: ["중학교", "고등학교", "학교급 미지정"], // 2026-10-03: 초등학교 폴더는 뺌
   },
-  { key: (e) => (e.folder_grade ? `${e.folder_grade}학년` : "학년 미지정"), order: ["1학년", "2학년", "3학년", "학년 미지정"] },
+  {
+    key: (e) => (e.collection ? COLLECTION_PREFIX + e.collection : e.folder_grade ? `${e.folder_grade}학년` : "학년 미지정"),
+    order: ["1학년", "2학년", "3학년", "학년 미지정"],
+    branch: (label) => (label.startsWith(COLLECTION_PREFIX) ? [SCHOOL_LEVEL] : undefined),
+  },
   { key: (e) => (e.folder_term ? `${e.folder_term}학기` : "학기 미지정"), order: ["1학기", "2학기", "학기 미지정"] },
   { key: (e) => e.folder_kind ?? "구분 미지정", order: ["중간", "기말", "기타", "구분 미지정"] },
 ];
@@ -252,8 +243,10 @@ function NestedGroups({ exams, levels }: { exams: ExamRow[]; levels: FolderLevel
       map.set(k, list);
     }
     const rank = (k: string) => {
+      if (k.startsWith(COLLECTION_PREFIX)) return -1; // 📚 분류 폴더는 학년 폴더들보다 앞에
+      if (k === "학교 미상") return 1;
       const i = level.order.indexOf(k);
-      return i === -1 ? level.order.length - 1 : i;
+      return i === -1 ? (level.order.length ? level.order.length - 1 : 0) : i;
     };
     return Array.from(map.entries()).sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0], "ko"));
   }, [exams, level]);
@@ -274,7 +267,7 @@ function NestedGroups({ exams, levels }: { exams: ExamRow[]; levels: FolderLevel
     <div>
       {groups.map(([label, list]) => (
         <Folder key={label} id={label} label={label} exams={list} defaultOpen={groups.length === 1}>
-          <NestedGroups exams={list} levels={rest} />
+          <NestedGroups exams={list} levels={level.branch?.(label) ?? rest} />
         </Folder>
       ))}
     </div>
