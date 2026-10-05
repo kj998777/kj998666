@@ -41,7 +41,7 @@ export default function StudentSubmitForm({
   const [guessed, setGuessed] = useState<boolean[]>(() => items.map(() => false));
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; msg: string; submissionId?: string } | null>(null);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const gradesForLevel = useMemo(() => {
@@ -76,7 +76,11 @@ export default function StudentSubmitForm({
         ),
       });
       const json = await res.json();
-      setResult({ ok: !!json.ok, msg: json.msg ?? (json.ok ? "제출 완료" : "제출하지 못했습니다.") });
+      setResult({
+        ok: !!json.ok,
+        msg: json.msg ?? (json.ok ? "제출 완료" : "제출하지 못했습니다."),
+        submissionId: typeof json.submissionId === "string" ? json.submissionId : undefined,
+      });
     } catch {
       setResult({ ok: false, msg: "네트워크 오류로 제출하지 못했습니다. 다시 시도해 주세요." });
     } finally {
@@ -92,6 +96,12 @@ export default function StudentSubmitForm({
           <p className="font-medium">제출 완료했습니다.</p>
           <p className="text-sm text-slate-500 mt-1">{name} 학생, 수고했어요.</p>
         </div>
+        {/* 2026-10-05 원장님: 틀린 문제와 같은 논리 유형의 다른 학교 문제를 바로 풀어 볼 수 있게(app/r/[sid]) — 입학테스트는 제외 */}
+        {!endpoint && result.submissionId && (
+          <a href={`/r/${result.submissionId}`} className="btn-primary w-full mb-4">
+            틀린 문제 유사문제 풀어 보기
+          </a>
+        )}
         {promo && <PromoBanner />}
       </Wrap>
     );
