@@ -9,7 +9,7 @@ import { schoolOf } from "@/lib/exams/schoolOf";
 // 직원 시험 목록(app/(staff)/exams/ExamFolderTree.tsx)과 같은 순서로 나눈다:
 // 연도 → 중학교/고등학교 → 학년 → 학기 → 중간/기말 → 시험. 값이 없는 단계는 "… 미지정" 폴더로 모으고,
 // 연도가 없는 시험은 맨 아래 "폴더 미분류"에 둔다.
-// 분류(collection)가 있는 시험(2026-10-05): 연도 → 학교급 → 📚 분류 → 학교 → 시험. 연도가 없으면 맨 위 📚 분류 폴더.
+// 분류(collection)가 있는 시험(2026-10-05): 연도 → 학교급 → 📚 분류 → 학년 → 학교 → 시험. 연도가 없으면 맨 위 📚 분류 폴더.
 
 export type StoreExam = {
   id: string;
@@ -31,12 +31,18 @@ const LEVEL_LABEL: Record<string, string> = { 중: "중학교", 고: "고등학�
 type Level = {
   key: (e: StoreExam) => string;
   order: string[];
-  /** 이 단계의 폴더 이름에 따라 아래 단계를 바꿀 때(분류 폴더 아래는 학교별로) */
+  /** 이 단계의 폴더 이름에 따라 아래 단계를 바꿀 때(분류 폴더 아래는 학년 → 학교별로) */
   branch?: (label: string) => Level[] | undefined;
 };
 
 const COLLECTION_PREFIX = "📚 ";
 const SCHOOL_LEVEL: Level = { key: (e) => schoolOf(e.name), order: [] }; // 가나다순, "학교 미상"은 맨 뒤
+// 분류 폴더 아래(2026-10-05 요청): 학년 → 학교 → 시험
+const GRADE_LEVEL: Level = {
+  key: (e) => (e.folder_grade ? `${e.folder_grade}학년` : "학년 미지정"),
+  order: ["1학년", "2학년", "3학년", "학년 미지정"],
+};
+const COLLECTION_LEVELS: Level[] = [GRADE_LEVEL, SCHOOL_LEVEL];
 
 const LEVELS: Level[] = [
   {
@@ -46,7 +52,7 @@ const LEVELS: Level[] = [
   {
     key: (e) => (e.collection ? COLLECTION_PREFIX + e.collection : e.folder_grade ? `${e.folder_grade}학년` : "학년 미지정"),
     order: ["1학년", "2학년", "3학년", "학년 미지정"],
-    branch: (label) => (label.startsWith(COLLECTION_PREFIX) ? [SCHOOL_LEVEL] : undefined),
+    branch: (label) => (label.startsWith(COLLECTION_PREFIX) ? COLLECTION_LEVELS : undefined),
   },
   { key: (e) => (e.folder_term ? `${e.folder_term}학기` : "학기 미지정"), order: ["1학기", "2학기", "학기 미지정"] },
   { key: (e) => e.folder_kind ?? "구분 미지정", order: ["중간", "기말", "기타", "구분 미지정"] },
@@ -217,7 +223,7 @@ export default function StoreFolderTree({ exams }: { exams: StoreExam[] }) {
         <div>
           {collections.map(([name, list]) => (
             <Folder key={"c:" + name} label={`📚 ${name}`} exams={list} defaultOpen={false}>
-              <Nested exams={list} levels={[SCHOOL_LEVEL]} />
+              <Nested exams={list} levels={COLLECTION_LEVELS} />
             </Folder>
           ))}
           {years.map(([year, list], idx) => (
