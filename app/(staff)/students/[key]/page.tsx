@@ -8,6 +8,8 @@ import StudentTools from "./StudentTools";
 import ReviewCards from "./ReviewCards";
 import SubmittedExams, { type ExamLinks } from "@/app/_components/SubmittedExams";
 import DeleteStudentBox from "@/app/_components/DeleteStudentBox";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { loadPickedCounts } from "@/lib/similar/picked";
 import { deleteStudent, deleteStudentSubmission } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -94,6 +96,8 @@ export default async function StudentPage({ params, searchParams }: { params: { 
       href: `/exams/${encodeURIComponent(e.code)}/results`,
       reportUrl: `/exams/${encodeURIComponent(e.code)}/results/report-data`,
     };
+  // 2026-10-05 오답 유사문제 고르기(편집자 이상) — 제출마다 고른 수
+  const picked = canEdit && tab === "subs" ? await loadPickedCounts(createAdminClient(), detail.submitted.map((e) => e.submissionId)) : undefined;
   const bigChanges = a.areaChanges.filter((c) => Math.abs(c.delta) >= 0.2).slice(0, 5);
 
   return (
@@ -130,7 +134,13 @@ export default async function StudentPage({ params, searchParams }: { params: { 
       </div>
 
       {tab === "subs" ? (
-        <SubmittedExams exams={detail.submitted} links={links} deleteSubmission={isAdmin ? deleteStudentSubmission : undefined} />
+        <SubmittedExams
+          exams={detail.submitted}
+          links={links}
+          deleteSubmission={isAdmin ? deleteStudentSubmission : undefined}
+          pickBase={canEdit ? "/students/similar/" : undefined}
+          picked={picked}
+        />
       ) : (
       <>
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
