@@ -23,7 +23,7 @@ export default async function ExamsPage({ searchParams }: { searchParams?: { lev
   const { data: exams, error } = await fetchAllPages((a, b) => {
     let query = supabase
       .from("exams")
-      .select("id, code, name, status, school_level, created_at, folder_year, folder_grade, folder_term, folder_kind")
+      .select("id, code, name, status, school_level, created_at, folder_year, folder_grade, folder_term, folder_kind, collection")
       .order("created_at", { ascending: false })
       .order("id");
     if (levelFilter) query = query.eq("school_level", levelFilter);
@@ -63,7 +63,7 @@ export default async function ExamsPage({ searchParams }: { searchParams?: { lev
 
       {isAdmin && (
         <div className="card">
-          <AutoClassifyPanel unfiled={((exams ?? []) as any[]).filter((e) => !e.folder_year).length} />
+          <AutoClassifyPanel unfiled={((exams ?? []) as any[]).filter((e) => !e.folder_year && !e.collection).length} />
         </div>
       )}
 

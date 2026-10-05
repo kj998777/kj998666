@@ -21,6 +21,7 @@ export type StoreExam = {
   folder_grade: number | null;
   folder_term: number | null;
   folder_kind: string | null;
+  collection?: string | null; // 0051: 학교 기출이 아닌 메딕수학 자료 모음(예: 부교재 변형문제)
 };
 
 const LEVEL_LABEL: Record<string, string> = { 중: "중학교", 고: "고등학교" }; // 초등학교는 뺌(2026-10-03)
@@ -149,10 +150,18 @@ function Nested({ exams, levels }: { exams: StoreExam[]; levels: Level[] }) {
 export default function StoreFolderTree({ exams }: { exams: StoreExam[] }) {
   const [view, setView] = useState<"folder" | "list">("folder");
 
-  const { years, unclassified } = useMemo(() => {
+  const { years, unclassified, collections } = useMemo(() => {
     const byYear = new Map<string, StoreExam[]>();
+    const byCollection = new Map<string, StoreExam[]>();
     const unclassified: StoreExam[] = [];
     for (const e of exams) {
+      // 0051(2026-10-05): 분류(collection)가 있으면 연도 폴더 대신 맨 위 분류 폴더로
+      if (e.collection) {
+        const list = byCollection.get(e.collection) ?? [];
+        list.push(e);
+        byCollection.set(e.collection, list);
+        continue;
+      }
       if (!e.folder_year) {
         unclassified.push(e);
         continue;
@@ -162,7 +171,8 @@ export default function StoreFolderTree({ exams }: { exams: StoreExam[] }) {
       byYear.set(e.folder_year, list);
     }
     const years = Array.from(byYear.entries()).sort((a, b) => b[0].localeCompare(a[0]));
-    return { years, unclassified };
+    const collections = Array.from(byCollection.entries()).sort((a, b) => a[0].localeCompare(b[0], "ko"));
+    return { years, unclassified, collections };
   }, [exams]);
 
   return (
@@ -188,6 +198,11 @@ export default function StoreFolderTree({ exams }: { exams: StoreExam[] }) {
         <Nested exams={exams} levels={[]} />
       ) : (
         <div>
+          {collections.map(([name, list]) => (
+            <Folder key={"c:" + name} label={`📚 ${name}`} exams={list} defaultOpen={false}>
+              <Nested exams={list} levels={[]} />
+            </Folder>
+          ))}
           {years.map(([year, list], idx) => (
             <Folder key={year} label={`${year}년`} exams={list} defaultOpen={idx === 0}>
               <Nested exams={list} levels={LEVELS} />

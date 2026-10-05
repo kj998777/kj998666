@@ -112,6 +112,22 @@ export async function updateFolder(code: string, value: FolderValue) {
   return { ok: true };
 }
 
+/**
+ * 0051(2026-10-05 요청 "부교재 변형문제 폴더"): 학교 기출이 아닌 자체 자료를 이름 붙은 분류로 묶는다.
+ * 값이 있으면 시험 목록·기출 스토어에서 연도 폴더 대신 맨 위 분류 폴더에 보인다. 빈 값이면 분류 해제.
+ */
+export async function updateCollection(code: string, value: string | null) {
+  await requireRole("editor");
+  const clean = String(value ?? "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, 40) || null;
+  const supabase = await createClient();
+  const { error } = await (supabase.from("exams") as any).update({ collection: clean }).eq("code", code);
+  if (error) return { ok: false, msg: "바꾸지 못했습니다: " + error.message };
+  revalidatePath(`/exams/${code}`);
+  revalidatePath("/exams");
+  revalidatePath("/tutor/store");
+  return { ok: true };
+}
+
 /** 시험 자체 삭제(정답·제출·채점 결과까지 전부 함께 삭제됨) — 관리자 전용. */
 export async function deleteExam(examId: string) {
   await requireRole("admin");

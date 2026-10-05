@@ -24,7 +24,7 @@ export default async function TutorStorePage() {
     fetchAllPages((a, b) =>
       supabase
         .from("exams")
-        .select("id, code, name, tutor_download_cost, school_level, folder_year, folder_grade, folder_term, folder_kind")
+        .select("id, code, name, tutor_download_cost, school_level, folder_year, folder_grade, folder_term, folder_kind, collection")
         .neq("status", "검수대기")
         .order("name")
         .order("id")
@@ -63,6 +63,7 @@ export default async function TutorStorePage() {
     folder_grade: e.folder_grade ?? null,
     folder_term: e.folder_term ?? null,
     folder_kind: e.folder_kind ?? null,
+    collection: e.collection ?? null,
   }));
 
   return (

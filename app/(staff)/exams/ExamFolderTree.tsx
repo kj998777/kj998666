@@ -13,6 +13,7 @@ export type ExamRow = {
   folder_grade: number | null;
   folder_term: number | null;
   folder_kind: "중간" | "기말" | "기타" | null;
+  collection?: string | null; // 0051: 학교 기출이 아닌 자체 자료 모음(예: 부교재 변형문제)
 };
 
 const LEVEL_LABEL: Record<string, string> = { 중: "중학교", 고: "고등학교" }; // 초등학교는 뺌(2026-10-03)
@@ -117,9 +118,22 @@ function Folder({
 export default function ExamFolderTree({ exams }: { exams: ExamRow[] }) {
   const [tab, setTab] = useState<"folder" | "school">("folder");
 
+  // 0051(2026-10-05): 분류(collection)가 있는 시험은 연도 폴더 대신 맨 위 분류 폴더에 모은다.
+  const collections = useMemo(() => {
+    const map = new Map<string, ExamRow[]>();
+    for (const e of exams) {
+      if (!e.collection) continue;
+      const list = map.get(e.collection) ?? [];
+      list.push(e);
+      map.set(e.collection, list);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], "ko"));
+  }, [exams]);
+
   const { years, unclassified } = useMemo(() => {
-    const classified = exams.filter((e) => e.folder_year);
-    const unclassified = exams.filter((e) => !e.folder_year);
+    const rest = exams.filter((e) => !e.collection);
+    const classified = rest.filter((e) => e.folder_year);
+    const unclassified = rest.filter((e) => !e.folder_year);
     const byYear = new Map<string, ExamRow[]>();
     for (const e of classified) {
       const list = byYear.get(e.folder_year!) ?? [];
@@ -168,7 +182,14 @@ export default function ExamFolderTree({ exams }: { exams: ExamRow[] }) {
 
       {tab === "folder" && (
         <div>
-          {years.length === 0 && unclassified.length === 0 && <p className="text-sm text-slate-500">해당하는 시험이 없습니다.</p>}
+          {years.length === 0 && unclassified.length === 0 && collections.length === 0 && (
+            <p className="text-sm text-slate-500">해당하는 시험이 없습니다.</p>
+          )}
+          {collections.map(([name, list]) => (
+            <Folder key={"c:" + name} id={"c:" + name} label={`📚 ${name}`} exams={list} defaultOpen={false}>
+              <NestedGroups exams={list} levels={[]} />
+            </Folder>
+          ))}
           {years.map((y, idx) => (
             <Folder key={y.year} id={y.year} label={`${y.year}년`} exams={y.exams} defaultOpen={idx === 0}>
               <NestedGroups exams={y.exams} levels={FOLDER_LEVELS} />
