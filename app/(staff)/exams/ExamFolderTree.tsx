@@ -96,7 +96,7 @@ export default function ExamFolderTree({ exams }: { exams: ExamRow[] }) {
   const [tab, setTab] = useState<"folder" | "school">("folder");
 
   // 0051(2026-10-05): 분류(collection)가 있는 시험도 연도 폴더 안에 둔다 —
-  // 연도 → 학교급 → 📚 분류(예: 부교재 변형문제) → 학교 → 시험 (2026-10-05 요청).
+  // 연도 → 학교급 → 📚 분류(예: 부교재 변형문제) → 학년 → 학교 → 시험 (2026-10-05 요청).
   // 연도가 없는 분류 시험만 맨 위 📚 분류 폴더에 모은다.
   const collections = useMemo(() => {
     const map = new Map<string, ExamRow[]>();
@@ -165,7 +165,7 @@ export default function ExamFolderTree({ exams }: { exams: ExamRow[] }) {
           )}
           {collections.map(([name, list]) => (
             <Folder key={"c:" + name} id={"c:" + name} label={`📚 ${name}`} exams={list} defaultOpen={false}>
-              <NestedGroups exams={list} levels={[SCHOOL_LEVEL]} />
+              <NestedGroups exams={list} levels={COLLECTION_LEVELS} />
             </Folder>
           ))}
           {years.map((y, idx) => (
@@ -205,17 +205,23 @@ export default function ExamFolderTree({ exams }: { exams: ExamRow[] }) {
 }
 
 // 폴더 순서(2026-09-28 원장님 요청): 연도 → 중학교/고등학교 → 학년 → 학기 → 중간/기말 → 시험.
-// 분류(collection)가 있는 시험(2026-10-05): 연도 → 학교급 → 📚 분류 → 학교 → 시험 — 학년 폴더들과 나란히, 맨 앞에 둔다.
+// 분류(collection)가 있는 시험(2026-10-05): 연도 → 학교급 → 📚 분류 → 학년 → 학교 → 시험 — 학년 폴더들과 나란히, 맨 앞에 둔다.
 // 각 단계는 값이 없으면 "… 미지정" 폴더로 모은다.
 type FolderLevel = {
   key: (e: ExamRow) => string;
   order: string[];
-  /** 이 단계의 폴더 이름에 따라 아래 단계를 바꿀 때(분류 폴더 아래는 학교별로) */
+  /** 이 단계의 폴더 이름에 따라 아래 단계를 바꿀 때(분류 폴더 아래는 학년 → 학교별로) */
   branch?: (label: string) => FolderLevel[] | undefined;
 };
 
 const COLLECTION_PREFIX = "📚 ";
 const SCHOOL_LEVEL: FolderLevel = { key: (e) => schoolOf(e.name), order: [] }; // 가나다순, "학교 미상"은 맨 뒤(rank 참고)
+// 분류 폴더 아래(2026-10-05 요청): 학년 → 학교 → 시험
+const GRADE_LEVEL: FolderLevel = {
+  key: (e) => (e.folder_grade ? `${e.folder_grade}학년` : "학년 미지정"),
+  order: ["1학년", "2학년", "3학년", "학년 미지정"],
+};
+const COLLECTION_LEVELS: FolderLevel[] = [GRADE_LEVEL, SCHOOL_LEVEL];
 
 const FOLDER_LEVELS: FolderLevel[] = [
   {
@@ -225,7 +231,7 @@ const FOLDER_LEVELS: FolderLevel[] = [
   {
     key: (e) => (e.collection ? COLLECTION_PREFIX + e.collection : e.folder_grade ? `${e.folder_grade}학년` : "학년 미지정"),
     order: ["1학년", "2학년", "3학년", "학년 미지정"],
-    branch: (label) => (label.startsWith(COLLECTION_PREFIX) ? [SCHOOL_LEVEL] : undefined),
+    branch: (label) => (label.startsWith(COLLECTION_PREFIX) ? COLLECTION_LEVELS : undefined),
   },
   { key: (e) => (e.folder_term ? `${e.folder_term}학기` : "학기 미지정"), order: ["1학기", "2학기", "학기 미지정"] },
   { key: (e) => e.folder_kind ?? "구분 미지정", order: ["중간", "기말", "기타", "구분 미지정"] },
