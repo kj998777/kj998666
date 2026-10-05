@@ -27,6 +27,8 @@ export type CombinedFlag = {
   ai?: string;
   pa?: string;
   use?: "re" | "pa";
+  /** 2026-10-05(0050): 시험지에 인쇄된 정답이 있고 AI 답이 그것과 같다 — 이때만 "AI 확신"으로 바로 확정한다 */
+  pm?: boolean;
 };
 
 export type CombinedRow = {
@@ -140,6 +142,7 @@ export function autoCombine(
     const c2 = confOf(s2);
     row.flag = { c: agree && c2 !== "low" ? c2 : "low", rs: 1, a1: ai, ai: ai2, use };
     if (pa) row.flag.pa = pa;
+    if (pa && p2) row.flag.pm = true;
     row.notes = notesArr(sx.notes).slice(0, 5).map((t) => q.label + "번: " + t);
     if (!agree || c2 === "low") {
       row.notes.push(
@@ -160,6 +163,7 @@ export function autoCombine(
     row.answer = pa || ai;
     row.notes = notesArr(s.notes).slice(0, 5).map((t) => q.label + "번: " + t);
     row.flag = { c: confOf(s) };
+    if (pa && ai && isCorrect(ai, pa)) row.flag.pm = true;
     if (pa && ai && !isCorrect(ai, pa)) {
       row.flag.c = "low";
       row.flag.pa = pa;

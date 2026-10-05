@@ -405,7 +405,9 @@ async function finishExam(
   });
   // #8 (2026-09-28): 과외선생님 검토가 필요한 문항만 검토 큐로 — AI 확신도 low/fail이거나 시험지 오류
   // 정정(정오표)이 만들어진 문항. 나머지(high/medium)는 "AI 확신"으로 바로 정답 확정한다(0016/0018).
-  const needsReview = (r: (typeof rows)[number]) => r.flag.c === "low" || r.flag.c === "fail" || !!r.fix;
+  // 2026-10-05(0050): AI가 "확신"으로 확정한 문항이 시험마다 30~50% 틀린 것으로 드러나(정답 전체 점검), 이제는
+  // 시험지에 인쇄된 정답과 AI 답이 같을 때(flag.pm)만 바로 확정하고 나머지는 전부 과외선생님 검토로 보낸다.
+  const needsReview = (r: (typeof rows)[number]) => r.flag.c === "low" || r.flag.c === "fail" || !!r.fix || !r.flag.pm;
   const confirmedAt = new Date().toISOString();
   const reviewCount = rows.filter(needsReview).length;
   const explanationRows = rows.map((r) => ({
@@ -510,8 +512,8 @@ async function finishExam(
     (fail ? ` 중 ${fail}개 실패` : "") +
     (low ? `, 확신 낮음 ${low}개` : "") +
     (reviewCount
-      ? ` — 검토가 필요한 ${reviewCount}문항만 과외선생님 검토 큐에 올라갑니다(나머지는 AI 확신으로 정답 확정). 검토현황에서 진행 상황을 볼 수 있습니다.`
-      : " — 모든 문항의 AI 확신도가 높아 검토 없이 정답을 확정했습니다.");
+      ? ` — 검토가 필요한 ${reviewCount}문항만 과외선생님 검토 큐에 올라갑니다(나머지는 시험지 인쇄 정답과 AI 답이 같아 정답 확정). 검토현황에서 진행 상황을 볼 수 있습니다.`
+      : " — 모든 문항이 시험지 인쇄 정답과 AI 답이 같아 검토 없이 정답을 확정했습니다.");
   await setJob(client, examId, "review", msg, state);
 
   // #8: 검토가 필요한 문항이 하나도 없으면 #1 규칙대로 바로 연다(0016 전이면 조용히 건너뜀).
