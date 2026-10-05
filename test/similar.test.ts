@@ -1,7 +1,7 @@
 // 오답 유사문제 고르기(lib/similar/recommend.ts) — npx tsx test/similar.test.ts
 import assert from "node:assert/strict";
 import { examTwins, pickSimilar, targetsOf, type PoolItem, type SourceItem } from "../lib/similar/recommend";
-import { LOGIC_TYPES } from "../lib/similar/logicTypes";
+import { LOGIC_TYPES, logicTypeListFor, subjectOfExam, validLogicType } from "../lib/similar/logicTypes";
 
 let n = 0;
 function check(name: string, fn: () => void) {
@@ -105,6 +105,21 @@ check("틀린·무응답·찍어서 맞힌 문항만 고른다", () => {
 check("유형표 키 모양", () => {
   assert.ok(LOGIC_TYPES["c2.D1"] && LOGIC_TYPES["m2.D"] && LOGIC_TYPES["j3.K"] && LOGIC_TYPES["c1.H"]);
   assert.ok(!LOGIC_TYPES["c2.D"]); // 공통수학2 원(D)은 D1~D4로 나뉨
+});
+
+check("시험 이름으로 과목 정하기(새 시험 AI 유형 분류)", () => {
+  assert.equal(subjectOfExam("제주_제주시_제주여자고등학교 1학년 2025년 2학기 공통수학2 중간_"), "c2");
+  assert.equal(subjectOfExam("서울_강남구_숙명여자고등학교 1학년 2025년 2학기 공통수학1 기말_"), "c1");
+  assert.equal(subjectOfExam("제주_제주시_오현고등학교 2학년 2023년 2학기 수학Ⅱ 기말_"), "m2");
+  assert.equal(subjectOfExam("제주_제주시_아라중학교 3학년 2025년 2학기 중간_"), "j3");
+  assert.equal(subjectOfExam("어떤고 2학년 미적분 기말"), null); // 모르는 과목은 유형을 정하지 않음
+});
+
+check("AI가 고른 유형 확인", () => {
+  assert.equal(validLogicType("c2.D1", "c2"), "c2.D1");
+  assert.equal(validLogicType("c2.D1", "m2"), null); // 다른 과목 유형
+  assert.equal(validLogicType("c2.D", "c2"), null); // 표에 없음
+  assert.ok(logicTypeListFor("c2").split("\n").every((l) => l.startsWith("c2.")));
 });
 
 console.log(`similar: ${n}개 통과`);
