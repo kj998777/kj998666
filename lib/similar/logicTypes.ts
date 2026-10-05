@@ -5,7 +5,7 @@
 
 export type LogicType = { key: string; subject: string; name: string; logic: string; group: string };
 
-export const LOGIC_SUBJECTS: Record<string, string> = {"c2": "공통수학2", "c1": "공통수학1", "m2": "수학Ⅱ", "j3": "중3"};
+export const LOGIC_SUBJECTS: Record<string, string> = {"c2": "공통수학2", "c1": "공통수학1", "m2": "수학Ⅱ·미적분Ⅰ", "j3": "중3"};
 
 const RAW: [string, string, string, string, string][] = [
   ["c2", "A", "공식 바로 대입", "거리·내분점·무게중심·점과 직선 거리 공식을 한두 번 쓰면 끝난다.", "좌표와 직선"],
@@ -108,6 +108,8 @@ export function subjectOfExam(name: string | null | undefined, grade?: number | 
   if (/공통\s*수학\s*(2|Ⅱ|II)(?![0-9I])/.test(n)) return "c2";
   if (/공통\s*수학\s*(1|Ⅰ|I)(?![0-9I])/.test(n)) return "c1";
   if (/(^|[^통])\s*수학\s*(Ⅱ|II|2)(?![0-9I])/.test(n) && !/공통/.test(n)) return "m2";
+  // 2022 개정 교육과정 "미적분Ⅰ"(2026~ 고2)은 예전 수학Ⅱ(극한·연속·미분·적분)와 같은 내용 → 같은 유형표(2026-10-05)
+  if (/미적분\s*(Ⅰ|I|1)(?![0-9I])/.test(n)) return "m2";
   if (/중학교|여중|[가-힣]중\s*3/.test(n) && (/3\s*학년|중\s*3/.test(n) || grade === 3)) return "j3";
   return null;
 }
