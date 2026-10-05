@@ -107,6 +107,10 @@ export const SOLVE_TOOL = {
       solution: { type: "string", description: "핵심 단계 위주 풀이" },
       confidence: { type: "string", enum: ["high", "medium", "low"] },
       notes: { type: "array", items: { type: "string" } },
+      logic_type: {
+        type: "string",
+        description: "논리 유형 코드(규칙에 준 유형표의 맨 앞 코드 그대로, 예 c2.D1). 유형표가 없으면 생략",
+      },
       exam_fix: {
         type: "object",
         description:
@@ -135,7 +139,11 @@ export function qName(label: string): string {
   return /^\d/.test(label) ? label + "번" : label + " (시험지에서 서답형·서술형·단답형 등으로 따로 번호가 매겨진 문항)";
 }
 
-export function solvePrompt(q: QuestionMeta, again?: boolean): string {
+/**
+ * logicList(2026-10-05): 이 시험 과목의 논리 유형표(lib/similar/logicTypes.ts logicTypeListFor). 주면 문항마다
+ * 풀 때 쓰는 핵심 논리로 유형 하나를 고르게 한다(오답 유사문제 — 같은 유형의 다른 학교 문제를 골라 줌).
+ */
+export function solvePrompt(q: QuestionMeta, again?: boolean, logicList?: string | null): string {
   const typ = q.type === "mc" ? "객관식" : "단답·서술형";
   const lines = [
     '첨부한 PDF는 한국 고등학교 수학 시험지입니다. 그중 "' +
@@ -160,6 +168,10 @@ export function solvePrompt(q: QuestionMeta, again?: boolean): string {
       : null,
     '- exam_fix: 시험지 자체에 명백한 오류가 있을 때만 씁니다(선택지 누락·중복, 조건 모순·빠진 조건, 그림과 문장 불일치, 문제가 성립하지 않는 오탈자 등). issue = 무엇이 잘못됐는지 한두 문장, fix = 학생에게 알려 줄 정정 내용(어떻게 고쳐 읽으면 되는지, 누락된 선택지는 "④ 값"처럼 보충). 이 내용은 학생들이 정오표로 보고 그 문제를 직접 풀기 때문에, 정답·풀이·계산 결과·정답 선택지 번호·답을 짐작하게 하는 표현(예: "정답은 ③", "따라서 x=3", "고치면 답이 ⑤가 된다")은 issue·fix 어디에도 절대 쓰지 말고, 문제에 인쇄된 조건·선택지·그림 설명 자체를 바로잡는 내용만 쓰세요. 선생님만 알아야 할 답·풀이 관련 내용은 teacher_note 에 쓰세요(학생에게 보이지 않음). 수식 기호($)·HTML 없이 √ ² ① ≤ 같은 일반 문자로만 쓰세요. 풀이(answer, solution)는 정정한 문제 기준으로 하고, 확신이 없으면 exam_fix 를 쓰지 말고 notes 에만 적으세요. 오류가 없으면 exam_fix 를 생략하세요. "없음", "오류 없음", "정정 사항 없음", "문제 자체는 성립" 같은 항목을 exam_fix 에 쓰지 마세요 — 그런 경우에는 exam_fix 자체를 빼야 합니다(정오표에 그대로 실려 학생에게 보입니다).',
     "- confidence: 풀이에 확신이 있으면 high, 애매하면 medium, 확신이 없거나 문제 해석이 불확실하면 low. notes: 시험지 오탈자·가정한 점·서술형 채점 안내 등 선생님이 알아야 할 것(없으면 빈 배열).",
+    logicList
+      ? "- logic_type: 이 문항을 풀 때 쓰는 핵심 논리(단원 이름이 아니라 '어떤 생각으로 푸는가')에 가장 가까운 유형 하나를 아래 유형표에서 골라 맨 앞 코드를 그대로 쓰세요. 여러 개가 섞였으면 가장 결정적인 단계(막히는 지점)의 유형을, 딱 맞는 것이 없으면 가장 가까운 것을 고르세요(표에 \"기타\"가 있으면 단원 밖 문항은 기타).\n유형표(코드 | 단원 · 이름 | 설명):\n" +
+        logicList
+      : null,
   ];
   return lines.filter((t): t is string => t !== null).join("\n");
 }

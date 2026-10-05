@@ -53,6 +53,9 @@ export const LOCATE_TOOL = {
 
 type Target = { label: string; page: number | null; hint: string };
 
+/** 영역을 찾는 시험 상태 — 2026-10-05부터 열린·닫힌 시험도(0050으로 검수대기 시험이 없어지고, 오답 유사문제가 확정 문항을 씀) */
+const LOCATE_STATUSES = ["검수대기", "열림", "닫힘"];
+
 function locatePrompt(targets: Target[]): string {
   const list = targets
     .map((t) => `- label "${t.label}"` + (t.page ? ` (추정 쪽: ${t.page})` : "") + (t.hint ? ` — 문제 내용 요약: ${t.hint}` : ""))
@@ -130,7 +133,9 @@ async function setLocateJob(client: Client, examId: string, patch: Record<string
   await (client.from(TABLE) as any).update({ ...patch, updated_at: new Date().toISOString() }).eq("exam_id", examId);
 }
 
-/** 이 시험에서 좌표를 찾아야 하는 문항: 과외선생님 검토 대기(미검토·미확정)이면서 좌표가 없는 문항 */
+/** 이 시험에서 좌표를 찾아야 하는 문항: 좌표가 없는 문항.
+ *  2026-10-05: 전에는 과외선생님 검토 대기(미검토·미확정) 문항만 찾았는데, 오답 유사문제(학생 화면·선생님 고르기)가
+ *  정답이 확정된 문항을 시험지에서 잘라 보여 주므로 확정된 문항도 찾는다(원장님 "영역찾기 해주고"). */
 async function targetsOf(client: Client, examId: string): Promise<Target[]> {
   const { data, error } = (await client
     .from("item_explanations")
@@ -138,7 +143,7 @@ async function targetsOf(client: Client, examId: string): Promise<Target[]> {
     .eq("exam_id", examId)) as any;
   if (error) throw new Error(error.message);
   return ((data as any[]) ?? [])
-    .filter((r) => r.bbox_x0 == null && !r.tutor_reviewed && !r.review_confirmed)
+    .filter((r) => r.bbox_x0 == null)
     .map((r) => ({
       label: String(r.item_label),
       page: typeof r.source_page === "number" && r.source_page > 0 ? r.source_page : null,
@@ -149,7 +154,7 @@ async function targetsOf(client: Client, examId: string): Promise<Target[]> {
 }
 
 /**
- * 검토 대기(미검토·미확정)이면서 좌표가 없는 문항의 exam_id 목록(문항 하나당 한 줄).
+ * 좌표가 없는 문항의 exam_id 목록(문항 하나당 한 줄). 2026-10-05부터 검토 대기가 아닌(확정된) 문항도 포함.
  * 2026-09-29: 전에는 문항 전체를 한 번에 읽어 앱에서 걸렀는데, Supabase는 한 번에 최대 1000줄만 돌려줘서
  * 검토 대기 문항이 많으면 일부 시험이 통째로 빠져 영역 찾기가 아예 안 걸릴 수 있었다. 조건을 DB에서 걸고
  * 1000줄씩 나눠 읽는다(시험 id도 100개씩 나눠 주소 길이 초과를 막음).
@@ -165,8 +170,6 @@ async function missingItemExamIds(client: Client, examIds: string[]): Promise<st
         .select("id, exam_id")
         .in("exam_id", chunk)
         .is("bbox_x0", null)
-        .eq("tutor_reviewed", false)
-        .eq("review_confirmed", false)
         .order("id")
         .range(from, from + PAGE - 1)) as any;
       if (error) throw new Error(error.message);
@@ -181,7 +184,7 @@ async function missingItemExamIds(client: Client, examIds: string[]): Promise<st
 /** 검토 대기 시험들에서 좌표 없는 검토 문항 수(화면 표시용). */
 export async function countMissingLocateItems(client: Client): Promise<number> {
   const { data: exams } = await fetchAllPages((f: number, t: number) =>
-    client.from("exams").select("id").eq("status", "검수대기").order("id").range(f, t)
+    client.from("exams").select("id").in("status", LOCATE_STATUSES).order("id").range(f, t)
   );
   const ids: string[] = ((exams as any[]) ?? []).map((e) => e.id);
   if (!ids.length) return 0;
@@ -198,7 +201,7 @@ export async function countMissingLocateItems(client: Client): Promise<number> {
  */
 export async function enqueueMissingLocateJobs(client: Client): Promise<{ queued: number; missingItems: number }> {
   const { data: exams } = await fetchAllPages((f: number, t: number) =>
-    client.from("exams").select("id").eq("status", "검수대기").order("id").range(f, t)
+    client.from("exams").select("id").in("status", LOCATE_STATUSES).order("id").range(f, t)
   );
   const examIds: string[] = ((exams as any[]) ?? []).map((e) => e.id);
   if (!examIds.length) return { queued: 0, missingItems: 0 };
@@ -451,17 +454,25 @@ export async function tickLocateJobs(client: Client, deadline: number): Promise<
 
 export type LocateSummary = {
   available: boolean; // 0024 적용 여부
-  missingItems: number; // 검토 대기 중 좌표 없는 문항 수
+  missingItems: number; // 좌표 없는 문항 수(2026-10-05부터 확정 문항 포함)
   jobs: { examId: string; stage: string; message: string; updatedAt: string }[];
 };
 
 /** 검토현황 화면용 요약 */
-export async function getLocateSummary(client: Client, examIds: string[]): Promise<LocateSummary> {
+export async function getLocateSummary(client: Client, examIdsIn: string[] | null): Promise<LocateSummary> {
   const { data: jobs, error } = (await client
     .from(TABLE)
     .select("exam_id, stage, message, updated_at")
     .order("updated_at", { ascending: false })) as any;
   if (error) return { available: false, missingItems: 0, jobs: [] };
+  // null이면 영역을 찾는 모든 시험(LOCATE_STATUSES) — 2026-10-05
+  let examIds = examIdsIn;
+  if (examIds === null) {
+    const { data: exs } = await fetchAllPages((f: number, t: number) =>
+      client.from("exams").select("id").in("status", LOCATE_STATUSES).order("id").range(f, t)
+    );
+    examIds = ((exs as any[]) ?? []).map((e) => e.id);
+  }
   let missingItems = 0;
   if (examIds.length) {
     missingItems = (await missingItemExamIds(client, examIds).catch(() => [])).length;

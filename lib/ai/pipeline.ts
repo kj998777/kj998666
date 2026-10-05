@@ -16,6 +16,7 @@ import {
   uploadPdfFile,
 } from "./anthropic";
 import { EXTRACT_PROMPT, EXTRACT_TOOL, QuestionMeta, SOLVE_TOOL, solvePrompt } from "./prompts";
+import { logicTypeListFor, subjectOfExam, validLogicType } from "@/lib/similar/logicTypes";
 import { autoBaseCount, autoNormQs, autoStrList, autoTotalOf } from "./normalize";
 import { AiSolution, CombinedFlag, autoCombine } from "./combine";
 import { assignPoints } from "./points";
@@ -293,11 +294,22 @@ async function stepExtractWait(client: Client, examId: string, state: JobState):
   await setJob(client, examId, "solve_submit", `문항 ${qs.length}개를 찾았습니다. 풀이를 AI에 요청하는 중…`, state);
 }
 
+/** 2026-10-05: 시험 과목(논리 유형표) — 시험 이름·학년, 없으면 시험지 제목으로. 모르면 null(유형은 정하지 않음). */
+async function logicSubjectOf(client: Client, examId: string, state: JobState): Promise<string | null> {
+  if (state.lsub !== undefined) return state.lsub;
+  const { data: ex } = (await client.from("exams").select("name, folder_grade").eq("id", examId).maybeSingle()) as any;
+  const sub = subjectOfExam(ex?.name, ex?.folder_grade ?? null) ?? subjectOfExam(state.title, ex?.folder_grade ?? null);
+  state.lsub = sub;
+  return sub;
+}
+
 async function stepSolveSubmit(client: Client, examId: string, state: JobState): Promise<void> {
   const qs: QuestionMeta[] = state.qs;
+  const lsub = await logicSubjectOf(client, examId, state).catch(() => null);
+  const list = lsub ? logicTypeListFor(lsub) : null;
   const ids = await createBatchesChunked(client, examId, state, qs.length, (i, doc) => ({
     custom_id: "q" + (i + 1),
-    params: buildParams(state, doc, SOLVE_TOOL, solvePrompt(qs[i]), "high", 32000, state.tc !== "auto"),
+    params: buildParams(state, doc, SOLVE_TOOL, solvePrompt(qs[i], false, list), "high", 32000, state.tc !== "auto"),
   }));
   state.slBatches = ids;
   state.slRetry = 0;
@@ -355,9 +367,11 @@ async function stepSolveWait(client: Client, examId: string, state: JobState): P
     state.slRetry = 1;
     state.tc = "auto";
     state.miss = missing.slice();
+    const lsub = await logicSubjectOf(client, examId, state).catch(() => null);
+    const list = lsub ? logicTypeListFor(lsub) : null;
     const ids = await createBatchesChunked(client, examId, state, missing.length, (k, doc) => {
       const i2 = missing[k];
-      return { custom_id: "q" + (i2 + 1), params: buildParams(state, doc, SOLVE_TOOL, solvePrompt(qs[i2]), "high", 32000, false) };
+      return { custom_id: "q" + (i2 + 1), params: buildParams(state, doc, SOLVE_TOOL, solvePrompt(qs[i2], false, list), "high", 32000, false) };
     });
     state.slBatches = [...state.slBatches, ...ids];
     await setJob(client, examId, "solve_wait", `실패한 ${missing.length}문항을 다시 요청했습니다… (AI 처리 대기)`, state);
@@ -424,6 +438,8 @@ async function finishExam(
     answer_display: r.disp,
     solution: r.sol,
     points_assigned: !!r.assigned,
+    // 2026-10-05: AI가 고른 논리 유형(이 시험 과목의 유형표에 있는 것만 — 과목을 모르면 null)
+    logic_type: validLogicType(r.lt, state.lsub ?? null),
     source_page: r.page || null,
     bbox_x0: r.bbox ? r.bbox.x0 : null,
     bbox_y0: r.bbox ? r.bbox.y0 : null,

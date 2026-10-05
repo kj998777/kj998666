@@ -17,6 +17,7 @@ export type AiSolution = {
   solution?: string;
   confidence?: "high" | "medium" | "low";
   notes?: string[];
+  logic_type?: string;
   exam_fix?: { issue?: string; fix?: string; teacher_note?: string };
 };
 
@@ -49,6 +50,8 @@ export type CombinedRow = {
   sol: string;
   notes: string[];
   fix?: { issue: string; fix: string };
+  /** AI가 고른 논리 유형 코드(그대로 — 표에 있는지는 pipeline이 과목과 함께 확인) */
+  lt?: string;
 };
 
 const DIFF_SET: Difficulty[] = ["하", "중하", "중", "중상", "상"];
@@ -192,6 +195,7 @@ export function autoCombine(
     row.disp = cleanText(q.type === "mc" ? CIRC[mcDigitOf(row.answer)] || row.answer : row.answer);
   }
   row.sol = cleanText(String(sx.solution || "").slice(0, 6000));
+  row.lt = String(sx.logic_type || s.logic_type || s2?.logic_type || "").trim().slice(0, 12) || undefined;
 
   const ef = sx.exam_fix || s.exam_fix || s2?.exam_fix;
   if (ef && typeof ef === "object") {
