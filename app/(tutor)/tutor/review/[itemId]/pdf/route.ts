@@ -2,7 +2,8 @@ import { requireTutorApi } from "@/lib/auth/requireTutor";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getExamPdfBuffer } from "@/lib/ai/pdf";
-import { pageResponse, pdfPageOf } from "@/lib/bank/singlePage";
+import { pageResponse } from "@/lib/bank/singlePage";
+import { examPage } from "@/lib/bank/pageCache";
 
 // 검토 중인 문항의 원본 시험지 PDF를 새 탭에서 바로 볼 수 있게 스트림한다(다운로드가 아니라 뷰어용
 // 이라 Content-Disposition을 일부러 붙이지 않음 — original-pdf/route.ts와 같은 패턴).
@@ -30,19 +31,25 @@ export async function GET(request: Request, { params }: { params: { itemId: stri
   }
 
   const admin = createAdminClient();
+  // 2026-10-01: ?page=N 이면 그 쪽 하나만(휴대폰에서 문항마다 시험지 전체를 받지 않게 — ProblemPageImage pageUrl)
+  // 2026-10-05: 그 쪽도 잘라 둔 것을 쓴다(lib/bank/pageCache.ts — Storage 전송량 줄이기)
+  const pageParam = new URL(request.url).searchParams.get("page");
+  if (pageParam) {
+    let one: { bytes: Uint8Array; total: number } | null = null;
+    try {
+      one = await examPage(admin, item.exam_id, Number(pageParam));
+    } catch (e: any) {
+      return Response.json({ ok: false, msg: e?.message || "PDF를 불러오지 못했습니다." }, { status: 404 });
+    }
+    if (!one) return Response.json({ ok: false, msg: "그 쪽이 없습니다." }, { status: 404 });
+    return pageResponse(one);
+  }
+
   let bytes: Buffer;
   try {
     bytes = await getExamPdfBuffer(admin, item.exam_id);
   } catch (e: any) {
     return Response.json({ ok: false, msg: e?.message || "PDF를 불러오지 못했습니다." }, { status: 404 });
-  }
-
-  // 2026-10-01: ?page=N 이면 그 쪽 하나만(휴대폰에서 문항마다 시험지 전체를 받지 않게 — ProblemPageImage pageUrl)
-  const pageParam = new URL(request.url).searchParams.get("page");
-  if (pageParam) {
-    const one = await pdfPageOf(bytes, Number(pageParam)).catch(() => null);
-    if (!one) return Response.json({ ok: false, msg: "그 쪽이 없습니다." }, { status: 404 });
-    return pageResponse(one);
   }
 
   return new Response(bytes as any, {
