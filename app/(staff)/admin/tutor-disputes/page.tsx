@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import ResolveButton from "./ResolveButton";
+import AdoptReviewButton from "../review-status/AdoptReviewButton";
 
 // "선반영 후 사후 샘플 검증" 모델의 안전망. kind='primary' 이면서 verified=true(=검증이 끝났음)인데
 // resolved=false(=검증 결과가 불일치였음 — resolve_tutor_verification이 일치일 때만 resolved=true로
@@ -55,8 +56,9 @@ export default async function TutorDisputesPage() {
       <div>
         <h1 className="text-lg font-semibold">과외선생님 검토 불일치</h1>
         <p className="text-sm text-slate-500">
-          사후 샘플 검증에서 최초 제출과 다른 답이 나온 문항입니다. 시험 상세에서 해설을 최종
-          확정한 뒤 &quot;확인함&quot;을 눌러 주세요.
+          사후 샘플 검증에서 최초 제출과 다른 답이 나온 문항입니다. 맞는 쪽의 <b>이 답·풀이로 확정</b>을 누르면
+          정답표·해설이 그 선생님 것으로 바뀌고 확정됩니다(정답이 바뀌면 다시 채점, 이 목록에서도 빠짐). 직접 고쳤다면
+          &quot;확인함&quot;만 눌러 주세요.
         </p>
       </div>
 
@@ -69,11 +71,9 @@ export default async function TutorDisputesPage() {
               <h2 className="font-medium">
                 {exam?.name ?? "시험"} · {p.item_label}번
               </h2>
-              {exam && (
-                <Link href={`/exams/${encodeURIComponent(exam.code)}`} className="text-sm link-accent whitespace-nowrap">
-                  시험 상세에서 고치기 →
-                </Link>
-              )}
+              <Link href={`/admin/review-status/item/${p.item_explanation_id}`} className="text-sm link-accent whitespace-nowrap">
+                문제 보며 직접 고치기 →
+              </Link>
             </div>
             <div className="grid gap-3 md:grid-cols-2 text-sm">
               <div className="border border-slate-200 rounded px-3 py-2">
@@ -92,6 +92,9 @@ export default async function TutorDisputesPage() {
                     첨부 사진 보기 →
                   </a>
                 )}
+                <div className="mt-2">
+                  <AdoptReviewButton reviewId={p.id} label="최초 제출 답·풀이로 확정" />
+                </div>
               </div>
               <div className="border border-slate-200 rounded px-3 py-2">
                 <p className="text-slate-500 mb-1">
@@ -110,6 +113,11 @@ export default async function TutorDisputesPage() {
                   >
                     첨부 사진 보기 →
                   </a>
+                )}
+                {v && (
+                  <div className="mt-2">
+                    <AdoptReviewButton reviewId={v.id} label="사후 검증 답·풀이로 확정" />
+                  </div>
                 )}
               </div>
             </div>
