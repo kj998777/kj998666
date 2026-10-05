@@ -54,7 +54,7 @@ export default function LocatePanel({ missingItems, jobs }: { missingItems: numb
         <div>
           <h2 className="font-medium text-sky-900">문항 잘라 보기 영역</h2>
           <p className="text-sm text-sky-800">
-            검토 대기 문항 중 {missingItems}개는 문항 영역 좌표가 없어, 과외선생님 화면에 문항 대신 쪽 전체가 보입니다.
+            문항 {missingItems}개는 문항 영역 좌표가 없어, 과외선생님 검토 화면에 문항 대신 쪽 전체가 보이고 오답 유사문제 후보로도 쓰지 못합니다.
           </p>
         </div>
         <button
