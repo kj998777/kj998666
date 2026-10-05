@@ -103,7 +103,7 @@ export default async function ResultsPage({ params }: { params: { code: string }
             </thead>
             <tbody>
               {submissions.map((s) => (
-                <ResultRow key={s.id} code={code} row={s} canDelete={session.role === "admin"} />
+                <ResultRow key={s.id} code={code} row={s} canDelete={session.role === "admin"} pickHref={session.role === "admin" || session.role === "editor" ? "/students/similar/" : undefined} />
               ))}
             </tbody>
           </table>

@@ -47,6 +47,8 @@ export type ReportStudent = {
   submitted_at: string;
   total_score: number;
   per_item: ReportPerItem[];
+  /** 선생님이 고른 오답 유사문제 수(2026-10-05, 0051) — 0이면 개별 보고서에 QR을 넣지 않는다 */
+  similar_count?: number;
 };
 
 export type ReportData = {
@@ -708,7 +710,8 @@ function qrDataUrl(text: string): string {
   }
 }
 
-function similarQrHtml(student: ReportStudent, count: number): string {
+function similarQrHtml(student: ReportStudent): string {
+  const count = Number(student.similar_count ?? 0);
   if (!count || typeof window === "undefined" || !student.id) return "";
   const url = `${window.location.origin}/r/${student.id}`;
   const img = qrDataUrl(url);
@@ -718,8 +721,8 @@ function similarQrHtml(student: ReportStudent, count: number): string {
     `<div style="display:flex;align-items:center;gap:14px;border:1px solid ${C.line2};border-radius:8px;padding:10px 14px;margin:10px 0 4px;background:${C.paper}">` +
     `<img src="${img}" alt="" style="width:92px;height:92px;flex:none" />` +
     `<div><div style="font-weight:700;color:${C.ink};font-size:14px">틀린 문제, 비슷한 문제로 한 번 더</div>` +
-    `<div style="font-size:12px;color:${C.muted};line-height:1.6;margin-top:3px">휴대폰 카메라로 QR을 찍으면 다시 볼 문항 ${count}개마다 같은 생각으로 푸는 다른 학교 문제를 ` +
-    `<b>한 단계 쉬운 것 → 같은 난이도 → 한 단계 어려운 것</b> 순서로 풀어 볼 수 있어요. 답을 적으면 바로 채점하고 풀이를 보여 줍니다.</div></div></div>`
+    `<div style="font-size:12px;color:${C.muted};line-height:1.6;margin-top:3px">휴대폰 카메라로 QR을 찍으면 선생님이 틀린 문항에 맞춰 고른 ` +
+    `<b>같은 생각으로 푸는 다른 학교 문제 ${count}개</b>를 쉬운 것부터 풀어 볼 수 있어요. 답을 적으면 바로 채점하고 풀이를 보여 줍니다.</div></div></div>`
   );
 }
 
@@ -758,8 +761,8 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
     }개</div><div class="t">오답 ${wrongN} · 무응답 ${blankN}</div></div></div>`
   );
 
-  // 다시 볼 문항(틀림·무응답·찍어서 맞힘) — 오답 유사문제 QR(app/r/[sid])
-  b.push(similarQrHtml(student, missed.length + guessedOk.length));
+  // 선생님이 고른 오답 유사문제가 있으면 QR(app/r/[sid])
+  b.push(similarQrHtml(student));
 
   b.push("<h2>1. 종합 의견</h2>");
   b.push(
