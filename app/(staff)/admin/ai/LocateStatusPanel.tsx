@@ -157,7 +157,7 @@ export default function LocateStatusPanel({
       </div>
 
       <div className="flex flex-wrap gap-2 text-xs">
-        <span className="badge bg-slate-100 text-slate-700">좌표 없는 검토 대기 문항 {missingItems}개</span>
+        <span className="badge bg-slate-100 text-slate-700">좌표 없는 문항 {missingItems}개</span>
         <span className={"badge " + BADGE.submit}>AI에 보내는 중 {nSubmit}</span>
         <span className={"badge " + BADGE.wait}>AI 결과 대기 {nWait}</span>
         <span className={"badge " + BADGE.error}>오류 {nError}</span>
