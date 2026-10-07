@@ -27,8 +27,48 @@ const BOOKS = {
 };
 const LS_OFF = 'jbmid.pdfoff';
 const OFF = lsGet(LS_OFF) || {};
-const LINK = {};      // book key -> File (this page load only)
+const LINK = {};      // book key -> File (attached, remembered, or fetched built-in)
 const DOCS = {};      // book key -> pdf.js document promise
+const BUILTIN = window.__BUILTIN || /*BUILTIN*/{};   // book key -> asset url uploaded with this page
+const REMEMBERED = new Set();
+
+/* attached textbooks are kept in this browser (IndexedDB) so they need picking only once per device */
+const IDB = {db: null};
+function idb(){
+  if (!IDB.db) IDB.db = new Promise((res, rej) => {
+    let rq; try { rq = indexedDB.open('jbmid-books', 1); } catch (e) { rej(e); return; }
+    rq.onupgradeneeded = () => rq.result.createObjectStore('files');
+    rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error);
+  }).catch(e => { IDB.db = null; throw e; });
+  return IDB.db;
+}
+async function idbReq(mode, fn){
+  const db = await idb();
+  return new Promise((res, rej) => { const tx = db.transaction('files', mode); const r = fn(tx.objectStore('files')); tx.oncomplete = () => res(r && r.result); tx.onerror = tx.onabort = () => rej(tx.error); });
+}
+async function restoreLinks(){
+  try {
+    const db = await idb();
+    await new Promise((res, rej) => {
+      const tx = db.transaction('files', 'readonly'), st = tx.objectStore('files'), cur = st.openCursor();
+      cur.onsuccess = () => { const c = cur.result; if (c) { if (!LINK[c.key] && BOOKS[c.key]) { LINK[c.key] = c.value; REMEMBERED.add(c.key); } c.continue(); } };
+      tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+    });
+  } catch (e) {}
+}
+async function remember(k, f){ try { await idbReq('readwrite', st => st.put(f, k)); REMEMBERED.add(k); return true; } catch (e) { return false; } }
+async function forget(k){ try { await idbReq('readwrite', st => st.delete(k)); } catch (e) {} REMEMBERED.delete(k); delete LINK[k]; delete DOCS[k]; }
+function hasSrc(k){ return !!(LINK[k] || BUILTIN[k]); }
+async function fileOf(k){
+  if (LINK[k]) return LINK[k];
+  if (BUILTIN[k]) {
+    const r = await fetch(BUILTIN[k]);
+    if (!r.ok) throw new Error(`내장 파일을 불러오지 못했어요 (${r.status})`);
+    const b = await r.blob();
+    return (LINK[k] = new File([b], BOOKS[k].name + '.pdf', {type: 'application/pdf'}));
+  }
+  throw new Error('파일 미연결');
+}
 
 function parseRefs(text){
   const out = [], seen = new Set();
@@ -65,14 +105,14 @@ function libs(){
 }
 function openDoc(key){
   if (!DOCS[key]) {
-    const file = LINK[key];
-    const lib = window.pdfjsLib;
-    class FileRange extends lib.PDFDataRangeTransport {
-      requestDataRange(begin, end){ file.slice(begin, end).arrayBuffer().then(b => this.onDataRange(begin, new Uint8Array(b))); }
-    }
-    const range = new FileRange(file.size, null);
-    DOCS[key] = lib.getDocument({range, length: file.size, rangeChunkSize: 1 << 20, disableAutoFetch: true, disableStream: true, isEvalSupported: false}).promise
-      .catch(e => { delete DOCS[key]; throw e; });
+    DOCS[key] = fileOf(key).then(file => {
+      const lib = window.pdfjsLib;
+      class FileRange extends lib.PDFDataRangeTransport {
+        requestDataRange(begin, end){ file.slice(begin, end).arrayBuffer().then(b => this.onDataRange(begin, new Uint8Array(b))); }
+      }
+      const range = new FileRange(file.size, null);
+      return lib.getDocument({range, length: file.size, rangeChunkSize: 1 << 20, disableAutoFetch: true, disableStream: true, isEvalSupported: false}).promise;
+    }).catch(e => { delete DOCS[key]; throw e; });
   }
   return DOCS[key];
 }
@@ -97,6 +137,11 @@ function assignFiles(files){
     if (k) { LINK[k] = f; delete DOCS[k]; } else unknown.push(f);
   }
   return unknown;
+}
+async function rememberAll(keys){
+  let bad = 0;
+  for (const k of keys) if (LINK[k] && !BUILTIN[k] && !(await remember(k, LINK[k]))) bad++;
+  return bad;
 }
 
 /* ---- canvas text helpers for the question pages ---- */
@@ -198,12 +243,16 @@ function openPdfMaker(list, title){
   const fileIn = el('input', {type:'file', accept:'application/pdf,.pdf', multiple:true, class:'hidden'});
   const status = el('div', {class:'msg'});
   const tableBox = el('div');
-  fileIn.addEventListener('change', () => {
+  fileIn.addEventListener('change', async () => {
     const unknown = assignFiles([...fileIn.files]);
     fileIn.value = '';
-    status.className = 'msg' + (unknown.length ? ' err' : '');
-    status.textContent = unknown.length ? `알아보지 못한 파일 ${unknown.length}개: ${unknown.map(f => f.name).join(', ')} — 아래 목록에서 직접 지정해 주세요.` : '파일을 연결했어요.';
     pending = unknown; drawTable();
+    status.className = 'msg' + (unknown.length ? ' err' : '');
+    status.textContent = '이 기기에 기억하는 중…';
+    const bad = await rememberAll(Object.keys(LINK).filter(k => !REMEMBERED.has(k) && !BUILTIN[k]));
+    status.textContent = (unknown.length ? `알아보지 못한 파일 ${unknown.length}개: ${unknown.map(f => f.name).join(', ')} — 아래 목록에서 직접 지정해 주세요. ` : '파일을 연결했어요. ')
+      + (bad ? `(${bad}개는 저장공간이 부족해 이 기기에 기억하지 못했어요 — 다음에 다시 골라야 해요)` : '다음부터는 이 기기에서 다시 고를 필요가 없어요.');
+    drawTable();
   });
   let pending = [];
   const needed = () => {
@@ -223,7 +272,7 @@ function openPdfMaker(list, title){
         el('button', {class:'btn sm', onclick: () => setOff(-1)}, '−'),
         el('span', {class:'sv', text: k === 'RA' ? `책 쪽 + ${OFF[k] || 0} = PDF 쪽` : `쪽 보정 ${(OFF[k] || 0) >= 0 ? '+' : ''}${OFF[k] || 0}`}),
         el('button', {class:'btn sm', onclick: () => setOff(1)}, '+'),
-        f && refEx ? el('button', {class:'btn sm ghost', onclick: preview}, `${refLabel(refEx)} 미리보기`) : null);
+        (f || BUILTIN[k]) && refEx ? el('button', {class:'btn sm ghost', onclick: preview}, `${refLabel(refEx)} 미리보기`) : null);
       function setOff(d){ OFF[k] = (OFF[k] || 0) + d; lsSet(LS_OFF, OFF); drawOff(); if (pv.childNodes.length) preview(); summary(); }
       async function preview(){
         pv.replaceChildren(el('div', {class:'note', text:'불러오는 중…'}));
@@ -231,11 +280,14 @@ function openPdfMaker(list, title){
         catch (er) { pv.replaceChildren(el('div', {class:'msg err', text:'미리보기 실패: ' + (er.message || er)})); }
       }
       drawOff();
-      const showOff = f && (k === 'RA' || k === 'GR' || k === 'GL' || k === 'O1' || k === 'O2');
+      const showOff = (f || BUILTIN[k]) && (k === 'RA' || k === 'GR' || k === 'GL' || k === 'O1' || k === 'O2');
+      const builtin = !!BUILTIN[k];
       return el('li', {style:'flex-wrap:wrap'},
-        el('span', {class:'chip ' + (f ? 'ok' : 'warn'), text: f ? '연결됨' : '미연결'}),
-        el('div', {class:'t'}, el('div', null, BOOKS[k] ? BOOKS[k].name : k), el('small', null, `필요한 쪽 ${need[k].size}개` + (f ? ` · ${f.name}` : '')),
-          showOff ? offRow : null, pv));
+        el('span', {class:'chip ' + (f || builtin ? 'ok' : 'warn'), text: builtin ? '내장' : f ? (REMEMBERED.has(k) ? '기억됨' : '연결됨') : '미연결'}),
+        el('div', {class:'t'}, el('div', null, BOOKS[k] ? BOOKS[k].name : k),
+          el('small', null, `필요한 쪽 ${need[k].size}개` + (builtin ? ' · 채점기에 들어 있어 자동으로 불러와요' : f ? ` · ${f.name}` : ' · 아래 📎 버튼으로 한 번만 연결하면 돼요')),
+          showOff ? offRow : null, pv),
+        f && !builtin ? el('button', {class:'btn sm ghost', title:'이 기기에서 이 파일 연결 해제', onclick: async ev => { ev.stopPropagation(); await forget(k); drawTable(); }}, '해제') : null);
     });
     const assign = pending.map(f => {
       const s = el('select', null, el('option', {value:'', text:`"${f.name}"는 어떤 자료인가요?`}), Object.keys(BOOKS).map(k => el('option', {value:k, text:BOOKS[k].name})));
@@ -249,7 +301,7 @@ function openPdfMaker(list, title){
   function summary(){
     const need = needed();
     let tot = 0, miss = 0;
-    for (const k in need) { tot += need[k].size; if (!LINK[k]) miss += need[k].size; }
+    for (const k in need) { tot += need[k].size; if (!hasSrc(k)) miss += need[k].size; }
     sumBox.textContent = `${list.length}문제 · 참고 쪽 ${tot}개` + (miss ? ` (그중 ${miss}개는 파일 미연결 — 문제 페이지에 쪽수만 적혀요)` : '') + (opts.sheet ? ` · 문제·해설 페이지 ${list.length}장` : '');
   }
   const chk = (label, key) => {
@@ -265,8 +317,8 @@ function openPdfMaker(list, title){
     el('div', {class:'panel', style:'padding:14px'},
       el('h3', {style:'margin:0 0 6px;font-size:17px', text:'📄 참고 페이지 PDF 만들기'}),
       el('div', {class:'note', style:'margin:0 0 10px', text:'문제마다 [문제·정답·해설·내 메모] 한 장 뒤에, 해설이 근거로 든 국소해부학·그란트·골학·길라잡이 쪽과 강의·발표 PPT 슬라이드를 이어 붙여 PDF 하나로 만들어요.'}),
-      el('div', {class:'actions', style:'margin:0'}, el('button', {class:'btn', onclick: () => fileIn.click()}, '📎 교재·PPT PDF 연결'), fileIn),
-      el('div', {class:'note', text:'갖고 있는 PDF를 한꺼번에 골라도 돼요(국소해부학 5판, 그란트, 골학 1·2, 길라잡이, 강의·발표 PPT). 파일은 이 기기 안에서만 읽고 어디에도 올리지 않아요. 큰 교재도 필요한 쪽만 읽어요.'}),
+      el('div', {class:'actions', style:'margin:0'}, el('button', {class:'btn', onclick: () => fileIn.click()}, '📎 교재 PDF 연결 (한 번만)'), fileIn),
+      el('div', {class:'note', text:'강의·발표 PPT는 채점기에 들어 있어 자동으로 쓰여요. 교재(국소해부학 5판, 그란트, 골학 1·2, 길라잡이)는 이 기기에서 한 번만 골라 두면 기억해요. 교재 파일은 이 기기 안에서만 읽고 어디에도 올리지 않아요.'}),
       status),
     el('div', {style:'margin-top:10px'}, tableBox),
     el('div', {class:'panel', style:'padding:6px 0;margin-top:10px'}, chk('문제·정답·해설 페이지 넣기', 'sheet'), chk('같은 쪽은 한 번만 넣기', 'dedupe')),
@@ -274,6 +326,7 @@ function openPdfMaker(list, title){
     sumBox,
     el('div', {class:'actions'}, goBtn, prog));
   drawTable();
+  restoreLinks().then(() => { if (REMEMBERED.size) { status.className = 'msg'; status.textContent = `이 기기에 기억된 교재 ${REMEMBERED.size}개를 연결했어요.`; } drawTable(); });
 
   async function build(){
     if (busy) return; busy = true; goBtn.disabled = true;
@@ -295,7 +348,7 @@ function openPdfMaker(list, title){
         if (opts.sheet) pageNo++;
         for (const r of refs) {
           const pn = pdfPageOf(r), id = r.b + ':' + pn;
-          if (!LINK[r.b]) { notes.set(r, '파일 미연결'); continue; }
+          if (!hasSrc(r.b)) { notes.set(r, '파일 미연결'); continue; }
           if (opts.dedupe && used.has(id)) { notes.set(r, `${used.get(id)}쪽에 이미 있음`); continue; }
           pageNo++; used.set(id, pageNo); notes.set(r, `${pageNo}쪽`);
           items.push({r, pn});
