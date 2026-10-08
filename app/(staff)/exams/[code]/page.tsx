@@ -44,12 +44,29 @@ export default async function ExamDetailPage({
   const { data: exam } = (await supabase.from("exams").select("*").eq("code", code).single()) as any;
   if (!exam) notFound();
 
-  const { data: keys } = await supabase
-    .from("answer_key")
-    .select("*")
-    .eq("exam_id", exam.id)
-    .order("sort_order")
-    .order("item_label");
+  // 2026-10-08 최적화: 시험 정보 다음의 조회들은 서로 기다릴 필요가 없어 한꺼번에 보낸다(예전엔 하나씩 차례로 ~8번 왕복).
+  const wantReview = isAdmin && exam.status === "검수대기";
+  const [
+    { data: keys },
+    { data: explanations },
+    pdfMetaAndQr,
+    job,
+    { data: checks },
+    { data: noteRows },
+    { data: correctionRows },
+  ] = await Promise.all([
+    supabase.from("answer_key").select("*").eq("exam_id", exam.id).order("sort_order").order("item_label"),
+    supabase.from("item_explanations").select("*").eq("exam_id", exam.id).order("item_label"),
+    canEdit ? Promise.all([getExamPdfMeta(supabase, exam.id), getQrBoxes(supabase, exam.id)]) : Promise.resolve(null),
+    isAdmin ? getJob(supabase, exam.id) : Promise.resolve(null),
+    isAdmin ? supabase.from("item_checks").select("*").eq("exam_id", exam.id) : Promise.resolve({ data: null }),
+    wantReview
+      ? supabase.from("exam_notes").select("id, note").eq("exam_id", exam.id).order("sort_order")
+      : Promise.resolve({ data: null }),
+    wantReview
+      ? supabase.from("exam_corrections").select("id, item_label, issue, fix").eq("exam_id", exam.id).order("item_label")
+      : Promise.resolve({ data: null }),
+  ]);
 
   const totalPoints = (keys ?? []).reduce((s: number, k: any) => s + Number(k.points), 0);
   // 2026-10-03: 문항 해설 줄에서 정답 표시가 정답표와 다른지 보여 주기 위해 번호별 정답표 칸을 넘긴다.
@@ -57,40 +74,14 @@ export default async function ExamDetailPage({
   for (const k of (keys as any[]) ?? []) keyByLabel[k.item_label] = { type: k.type, correct_answers: String(k.correct_answers ?? "") };
   const studentPath = `/s/${encodeURIComponent(exam.code)}`;
 
-  const { data: explanations } = await supabase
-    .from("item_explanations")
-    .select("*")
-    .eq("exam_id", exam.id)
-    .order("item_label");
-
-  let job = null as Awaited<ReturnType<typeof getJob>>;
-  let pdfMeta: Awaited<ReturnType<typeof getExamPdfMeta>> = null;
-  let notes: { id: string; note: string }[] = [];
-  let corrections: { id: string; item_label: string; issue: string; fix: string }[] = [];
-  const checksByLabel: Record<string, Awaited<ReturnType<typeof getItemCheck>>> = {};
-  let digitizeJob: Awaited<ReturnType<typeof getDigitizeJob>> = null;
+  const pdfMeta: Awaited<ReturnType<typeof getExamPdfMeta>> = pdfMetaAndQr ? pdfMetaAndQr[0] : null;
   // 원본 속 QR 가리기(0031): 찾아 둔 위치·진행 상태
-  let qr: Awaited<ReturnType<typeof getQrBoxes>> = { status: "unavailable", boxes: [], message: "" };
-  if (canEdit) {
-    [pdfMeta, qr] = await Promise.all([getExamPdfMeta(supabase, exam.id), getQrBoxes(supabase, exam.id)]);
-  }
+  const qr: Awaited<ReturnType<typeof getQrBoxes>> = pdfMetaAndQr ? pdfMetaAndQr[1] : { status: "unavailable", boxes: [], message: "" };
+  const notes: { id: string; note: string }[] = (noteRows as any) ?? [];
+  const corrections: { id: string; item_label: string; issue: string; fix: string }[] = (correctionRows as any) ?? [];
+  const checksByLabel: Record<string, Awaited<ReturnType<typeof getItemCheck>>> = {};
+  for (const c of (checks as any[]) ?? []) checksByLabel[c.item_label] = { examId: c.exam_id, label: c.item_label, stage: c.stage, message: c.message, state: c.state, updatedAt: c.updated_at };
   const qrPages = Array.from(new Set(qr.boxes.map((b) => b.page))).sort((a, b) => a - b);
-  if (isAdmin) {
-    job = await getJob(supabase, exam.id);
-    if (pdfMeta) digitizeJob = await getDigitizeJob(supabase, exam.id);
-    if ((explanations ?? []).length > 0) {
-      const { data: checks } = await supabase.from("item_checks").select("*").eq("exam_id", exam.id);
-      for (const c of (checks as any[]) ?? []) checksByLabel[c.item_label] = { examId: c.exam_id, label: c.item_label, stage: c.stage, message: c.message, state: c.state, updatedAt: c.updated_at };
-    }
-    if (exam.status === "검수대기") {
-      const [{ data: n }, { data: c }] = await Promise.all([
-        supabase.from("exam_notes").select("id, note").eq("exam_id", exam.id).order("sort_order"),
-        supabase.from("exam_corrections").select("id, item_label, issue, fix").eq("exam_id", exam.id).order("item_label"),
-      ]);
-      notes = (n as any) ?? [];
-      corrections = (c as any) ?? [];
-    }
-  }
   const jobPoll = job
     ? {
         stage: job.stage,
@@ -110,14 +101,16 @@ export default async function ExamDetailPage({
       : [];
 
   // 2026-09-29: 원본으로 적용하면서 스캔본이 지워진 예전 시험인지(그림 다시 오리기·그림 자리 고치기에 스캔본이 필요)
-  let scanMissing = false;
-  if (isAdmin && pdfMeta?.replaced_with_digitized) {
-    try {
-      scanMissing = !(await hasScanPdf(createAdminClient(), exam.id));
-    } catch {
-      scanMissing = false;
-    }
-  }
+  // 원본 PDF 정보가 있어야 알 수 있는 두 가지는 그다음에 한꺼번에 묻는다.
+  const [digitizeJob, scanMissing] = await Promise.all([
+    isAdmin && pdfMeta ? getDigitizeJob(supabase, exam.id) : Promise.resolve(null),
+    isAdmin && pdfMeta?.replaced_with_digitized
+      ? hasScanPdf(createAdminClient(), exam.id).then(
+          (has) => !has,
+          () => false
+        )
+      : Promise.resolve(false),
+  ]);
   const digitizePoll = digitizeJob
     ? {
         stage: digitizeJob.stage,
