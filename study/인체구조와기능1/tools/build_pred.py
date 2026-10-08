@@ -24,8 +24,8 @@ def answers(text):
 
 def clean(t):
     t = re.sub(r'\*\*', '', t)
-    t = re.sub(r'\n?-{3,}\s*$', '', t.strip())
     t = re.sub(r'\n#+ .*$', '', t, flags=re.S)          # trailing section headers
+    t = re.sub(r'\n?-{3,}\s*$', '', t.strip())
     return t.strip()
 
 def nchoices(q):
@@ -60,7 +60,13 @@ MULTI = re.compile(r'1\)|두 |세 |네 |두 가지|세 가지|각각|모두|와 
 def make(qid, c, g, s, qtext, ans, extra_is=''):
     qtext = clean(qtext)
     full = re.sub(r'\*\*', '', ans).strip()
+    src = ''
+    m = re.search(r'\s*근거:.*$', full)
+    if m:
+        src, full = m.group(0).strip(), full[:m.start()].strip()
     d, x = split_ans(full)
+    if src:
+        x = ((x or full) + ' ' + src).strip()
     n = nchoices(qtext)
     item = {'id': qid, 'c': c, 'g': g, 's': s, 'es': 'pred', 'cf': 'high', 'is': extra_is,
             'v': 'agree', 'vr': '', 'ni': 0, 'tx': qtext}
@@ -140,7 +146,14 @@ ys = D / '윤상필p_길라잡이기반_예상문제.md'
 if ys.exists():
     t = ys.read_text()
     qpart, apart = t.split('## 정답 및 해설', 1)
+    leads = {}
+    for m in re.finditer(r'\*\*(\d+)~(\d+)\. \(연계\)\*\*(.*?)(?=\n\*\*\d+\.\*\*)', qpart, flags=re.S):
+        for k in range(int(m.group(1)), int(m.group(2)) + 1):
+            leads[k] = clean(m.group(3))
+    qpart = re.sub(r'\*\*\d+~\d+\. \(연계\)\*\*.*?(?=\n\*\*\d+\.\*\*)', '', qpart, flags=re.S)
     qs, ans = blocks(qpart), answers(apart)
+    for k, v in leads.items():
+        qs[k] = v + '\n\n' + qs[k]
     sections = [(m.start(), m.group(1), m.group(2)) for m in re.finditer(r'^## ([A-Z])\. (.*)$', qpart, flags=re.M)]
     ycode = {'A': 'Y1', 'B': 'Y2', 'C': 'Y3', 'D': 'Y4', 'E': 'Y5'}
     for num in sorted(qs):
@@ -173,6 +186,19 @@ OVR = {
     91410: ['costodiaphragmatic recess', '갈비가로막오목', '늑골횡격막오목'],
     91420: ['axillary process', 'axillary tail', '겨드랑돌기', '겨드랑꼬리', 'axillary tail of Spence'],
     91419: 'essay',
+    93001: ['continuous capillary', '연속모세혈관'],
+    93004: ['thoracic duct', '가슴관', '흉관'],
+    93007: ['transversalis fascia', '가로근막', '배가로근막'],
+    93008: ['inferior epigastric a.', 'inferior epigastric artery', '아래배벽동맥'],
+    93011: ['internal oblique m.', 'internal abdominal oblique', '배속빗근'],
+    93012: ['direct inguinal hernia', '직접샅굴탈장', '직접고샅탈장'],
+    93014: ['indirect inguinal hernia', '간접샅굴탈장', '간접고샅탈장'],
+    93021: ['inferior vena cava', 'IVC', '아래대정맥'],
+    93028: ['T11', '열한째등뼈', '11번 등뼈'],
+    93032: ['cecopexy', '막창자고정술', '맹장고정술'],
+    93034: ['taeniae coli', 'taenia coli', 'teniae coli', '잘록창자띠'],
+    93039: ['falciform ligament', 'falciform lig.', '낫인대'],
+    93045: ['hepatopancreatic ampulla', 'ampulla of Vater', '쓸개이자관팽대'],
 }
 for q in Q:
     o = OVR.get(q['id'])

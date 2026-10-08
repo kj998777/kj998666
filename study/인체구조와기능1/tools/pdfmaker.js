@@ -87,7 +87,7 @@ function parseRefs(text){
   return out;
 }
 function refsOf(q){
-  if (q.rf) return q.rf.map(([b, p]) => ({b, p, raw: true}));
+  if (q.rf && q.rf.length) return q.rf.map(([b, p]) => ({b, p, raw: true}));
   return parseRefs(eff(q).x);
 }
 function pdfPageOf(r){ return r.b === 'RA' && r.raw ? r.p : r.p + (OFF[r.b] || 0); }
