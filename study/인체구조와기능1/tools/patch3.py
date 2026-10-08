@@ -24,6 +24,19 @@ rep("  if (mode === 'review') pool = pool.filter(q => P[q.id] && P[q.id].r !== 1
 rep("(prefs.mode === 'unsolved' || prefs.mode === 'review' ? ` → 이 모드로 ${n}문항`",
     "(prefs.mode === 'unsolved' || prefs.mode === 'review' || prefs.mode === 'due' ? ` → 이 모드로 ${n}문항`")
 
+# ---- 4) 추가 공부: pick which questions go into the PDF ----
+rep("      el('button', {class:'btn sm', onclick: () => openPdfMaker(list, '추가 공부')}, '📄 PDF로 묶기'),",
+    "      el('button', {class:'btn sm', onclick: () => { STUDYSEL.size === list.length ? STUDYSEL.clear() : list.forEach(q => STUDYSEL.add(q.id)); renderStudy(); }}, STUDYSEL.size === list.length ? '선택 해제' : '전체 선택'),\n"
+    "      el('button', {class:'btn sm' + (STUDYSEL.size ? ' primary' : ''), disabled: !STUDYSEL.size, title: STUDYSEL.size ? '' : '아래 목록 왼쪽 네모를 눌러 PDF에 넣을 문제를 고르세요', onclick: () => openPdfMaker(list.filter(q => STUDYSEL.has(q.id)), `추가 공부 ${STUDYSEL.size}문제`)}, STUDYSEL.size ? `📄 선택 ${STUDYSEL.size}문제 PDF로 묶기` : '📄 PDF로 묶기 (문제 선택)'),")
+rep("  let list = Q.filter(q => inStudy(q.id));\n  if (studyOrder === 'added')",
+    "  let list = Q.filter(q => inStudy(q.id));\n  for (const id of [...STUDYSEL]) if (!inStudy(id)) STUDYSEL.delete(id);\n  if (studyOrder === 'added')")
+rep("'를 누르면 해설이 근거로 든 교재·PPT 쪽을 한 파일로 모아 줘요.'));\n  if (!list.length) { box.append(el('div', {class:'panel empty', text:'아직 추가 공부로 보낸 문제가 없어요.'})); return; }",
+    "'는 왼쪽 네모로 고른 문제만 해설이 근거로 든 교재·PPT 쪽을 한 파일로 모아 줘요.'));\n  if (!list.length) { box.append(el('div', {class:'panel empty', text:'아직 추가 공부로 보낸 문제가 없어요.'})); return; }")
+rep("    ul.append(el('li', {onclick: () => startSession(list, '추가 공부', i, {openExp: true})},\n      el('span', {class:'chip', text:q.c}),",
+    "    ul.append(el('li', {onclick: () => startSession(list, '추가 공부', i, {openExp: true})},\n"
+    "      el('span', {class:'chk' + (STUDYSEL.has(q.id) ? ' on' : ''), role:'checkbox', 'aria-checked': String(STUDYSEL.has(q.id)), title:'PDF에 넣기', style:'cursor:pointer;flex:none', onclick: ev => { ev.stopPropagation(); STUDYSEL.has(q.id) ? STUDYSEL.delete(q.id) : STUDYSEL.add(q.id); renderStudy(); }}),\n"
+    "      el('span', {class:'chip', text:q.c}),")
+
 # ---- 3) plan panel + shuffle toggle ----
 rep('    <div id="pickView">\n      <div id="regions"></div>',
     '    <div id="pickView">\n      <div id="planBox"></div>\n      <div id="regions"></div>')
@@ -49,6 +62,7 @@ css = """
 rep('</style>', css + '</style>')
 
 js = r"""
+const STUDYSEL = new Set();   // 추가 공부 items picked for the PDF
 /* ---- study plan, spaced review, shuffled options ---- */
 const EXAM = {date: '2026-10-28', label: '10/28(수) 중간고사'};
 const ALLP = ['K1','K2','K3','K4','K5','K6','K7','J1','J2','J3','J4','Y1','Y2','Y3','Y4','Y5'];
