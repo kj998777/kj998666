@@ -7,7 +7,7 @@ from pathlib import Path
 
 pred_path, up = Path(sys.argv[1]), Path(sys.argv[2])
 FILES = {  # key: (glob in uploads, label)
-    'KO': '67e04702-*', 'K1': 'eb693876-*', 'K2': '6de499de-*', 'K3': 'ea0cb1e9-*', 'K4': 'afc2f29d-*', 'KT': '8dfa5399-*',
+    'KO': '67e04702-*', 'K1': 'eb693876-*', 'K2': '6de499de-*', 'K3': 'ea0cb1e9-*', 'K4': 'afc2f29d-*', 'KT': '8dfa5399-*', 'KH': '9a1b14ee-*',
     'SA': 'f319a673-*', 'SB': 'bb44e2e7-*', 'SC': 'a5546b12-*', 'SD': '1b51f06c-*',
 }
 pages = {}
@@ -54,6 +54,8 @@ def best(q, keys, top=2):
             seen.add((k, p)); out.append([k, p])
     return out
 
+MANUAL = {91386: [3], 91387: [4], 91388: [4], 91389: [5], 91394: [10], 91399: [17], 91401: [21, 22],
+          91402: [23], 91410: [35], 91414: [42, 43], 91419: [53]}
 d = json.loads(pred_path.read_text())
 stats = {'deck': 0, 'match': 0, 'none': 0}
 for q in d['q']:
@@ -65,13 +67,15 @@ for q in d['q']:
                 break
         stats['deck' if rf else 'none'] += 1
     elif q['c'][0] == 'K':
-        rf = best(q, ['KO', 'K1', 'K2', 'K3', 'K4', 'KT'])
+        rf = best(q, ['KO', 'K1', 'K2', 'K3', 'K4', 'KT', 'KH'])
         stats['match' if rf else 'none'] += 1
     elif q['c'] == 'J3':
         rf = best(q, ['SA', 'SB', 'SC', 'SD'])
         stats['match' if rf else 'none'] += 1
     else:
         stats['none'] += 1
+    if not rf and q['id'] in MANUAL:
+        rf = [['KH', n] for n in MANUAL[q['id']]]
     q['rf'] = rf
 pred_path.write_text(json.dumps(d, ensure_ascii=False))
 print(stats)

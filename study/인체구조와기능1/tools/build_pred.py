@@ -86,12 +86,12 @@ qs, ans = blocks(qpart), answers(apart)
 sec_of = {}
 for m in re.finditer(r'^## ([A-E])\. (.*)$', qpart, flags=re.M):
     pass
-sections = [(m.start(), m.group(1), m.group(2)) for m in re.finditer(r'^## ([A-E])\. (.*)$', qpart, flags=re.M)]
-code = {'A': 'K1', 'B': 'K2', 'C': 'K3', 'D': 'K4', 'E': 'K5'}
+sections = [(m.start(), m.group(1), m.group(2)) for m in re.finditer(r'^## ([A-F])\. (.*)$', qpart, flags=re.M)]
+code = {'A': 'K1', 'B': 'K2', 'C': 'K3', 'D': 'K4', 'E': 'K5', 'F': 'K7'}
 for num in sorted(qs):
     pos = qpart.index(f'**{num}.**')
     sec = [s for s in sections if s[0] < pos][-1]
-    Q.append(make(91000 + num, code[sec[1]], sec[2].split('(')[0].strip(), f'김정태p PPT 기반 예상 {num}번', qs[num], ans[num]))
+    Q.append(make((91000 if num <= 85 else 91300) + num, code[sec[1]], sec[2].split('(')[0].strip(), f'김정태p PPT 기반 예상 {num}번', qs[num], ans[num]))
 
 # ---------- 김진우p 학생발표 ----------
 kj = (D / '김진우p_학생발표기반_예상문제.md').read_text()
@@ -167,6 +167,12 @@ OVR = {
     91117: ['iliofemoral ligament', 'iliofemoral lig.', 'Y ligament of Bigelow', '엉덩넙다리인대'],
     91127: ['L4', 'L4 가시돌기', 'supracristal plane', '넷째 허리뼈', 'L4 spinous process'],
     92206: ['L5', 'L5 신경뿌리', 'L5 nerve root', 'L5 뿌리'],
+    91391: ['crista terminalis', '분계능선'],
+    91404: ['oblique pericardial sinus', '빗심장막굴', 'oblique sinus'],
+    91408: ['pulmonary ligament', '허파인대', '폐인대'],
+    91410: ['costodiaphragmatic recess', '갈비가로막오목', '늑골횡격막오목'],
+    91420: ['axillary process', 'axillary tail', '겨드랑돌기', '겨드랑꼬리', 'axillary tail of Spence'],
+    91419: 'essay',
 }
 for q in Q:
     o = OVR.get(q['id'])
@@ -179,7 +185,7 @@ for q in Q:
 
 regions = {'K': '김정태p (하지·가슴)', 'J': '김진우p (상지·등·학생발표)'}
 subs = {'K1': '골학(다리뼈·가슴우리뼈)', 'K2': '넙다리·볼기', 'K3': '종아리·발', 'K4': '다리의 관절', 'K5': '가슴우리·가슴벽',
-        'K6': '실습·임상 주관식(카땡 대비)',
+        'K6': '실습·임상 주관식(카땡 대비)', 'K7': '심장·허파·가슴막·젖',
         'J1': '학생발표 문제 원문', 'J2': '학생발표 문제 변형', 'J3': '상지 조합형', 'J4': '총론·등'}
 if any(q['c'][0] == 'Y' for q in Q):
     regions['Y'] = '윤상필p (배·총론 · 길라잡이)'

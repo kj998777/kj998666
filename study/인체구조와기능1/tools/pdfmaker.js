@@ -20,6 +20,7 @@ const BOOKS = {
   K3: {name:'김정태p Lower limb III', sizes:[6199591], rx:/lower[-_ ]?limb[-_ ]?iii/i},
   K4: {name:'김정태p Lower limb IV', sizes:[10449247], rx:/lower[-_ ]?limb[-_ ]?iv/i},
   KT: {name:'김정태p Thoracic cage', sizes:[9398902], rx:/thoracic[-_ ]?cage/i},
+  KH: {name:'김정태p Heart, Lung', sizes:[9169259], rx:/heart[-_ ,]*lung/i},
   SA: {name:'학생발표 · 상지 관절', sizes:[11735325], rx:null},
   SB: {name:'학생발표 · 팔이음뼈·자유팔뼈·근막', sizes:[7630386], rx:null},
   SC: {name:'학생발표 · 팔오금~손', sizes:[3987489], rx:null},
