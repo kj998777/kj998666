@@ -126,54 +126,85 @@ function optText(q){
   const parts = q.tx.split(/([①②③④⑤])/), c = '①②③④⑤'[q.a[0] - 1], i = parts.indexOf(c);
   return i >= 0 ? (parts[i + 1] || '') : '';
 }
-function hlTerms(q){
-  let e = q; try { e = eff(q); } catch (er) {}
-  const src = [optText(q), e.d || q.d || '', e.x || q.x || ''].join(' ').replace(/근거:[^\n]*/g, ' ').replace(/\(주관식→5지선다 변환\)/g, ' ');
-  const terms = new Set();
-  for (const m of src.matchAll(/[A-Za-z][A-Za-z'’\-]{3,}/g)) { const w = m[0].toLowerCase().replace(/’/g, "'"); if (!HL_STOP.has(w)) terms.add(w); }
-  for (const m of src.matchAll(/[가-힣]{2,}/g)) {
-    let w = m[0]; if (w.length > 3) w = w.replace(KPART, '');
-    if (w.length >= 3 && !HL_STOP.has(w)) terms.add(w);
-  }
-  for (const m of src.matchAll(/\b[TLCS]\d{1,2}\b/g)) terms.add(m[0].toLowerCase());
-  return [...terms].sort((a, b) => b.length - a.length).slice(0, 60);
+function termsOf(text, w, out){
+  const src = (text || '').replace(/근거:[^\n]*/g, ' ').replace(/\(주관식→5지선다 변환\)/g, ' ');
+  const add = (t, wt) => { if (!HL_STOP.has(t)) out.set(t, Math.max(out.get(t) || 0, wt)); };
+  for (const m of src.matchAll(/[A-Za-z][A-Za-z'’\-]{3,}/g)) { const t = m[0].toLowerCase().replace(/’/g, "'"); add(t, w * Math.min(t.length, 12) / 5); }
+  for (const m of src.matchAll(/[가-힣]{2,}/g)) { let t = m[0]; if (t.length > 3) t = t.replace(KPART, ''); if (t.length >= 3) add(t, w * Math.min(t.length, 8) / 3); }
+  for (const m of src.matchAll(/\b[TLCS]\d{1,2}\b/g)) add(m[0].toLowerCase(), w * 1.2);
+  for (const m of src.matchAll(/\d+(?:\.\d+)?\s?(?:cm|mm|ml|%|kg|g)\b/g)) add(m[0].replace(/\s/g, '').toLowerCase(), w * 1.5);
 }
-async function highlightPage(page, vp, ctx, terms){
-  if (!terms || !terms.length) return 0;
+/* what to look for on a cited page: the answer side weighs most, the stem gives context */
+function hlSpec(q){
+  let e = q; try { e = eff(q); } catch (er) {}
+  const m = new Map();
+  termsOf(e.tx || q.tx || '', 0.4, m);
+  termsOf(e.x || q.x || '', 0.8, m);
+  termsOf(e.d || q.d || '', 1, m);
+  termsOf(optText(q), 1.3, m);
+  return [...m.entries()];
+}
+/* group the page's text into sentences (bullet / line based), score each against every question's spec,
+   and paint the whole best-matching sentences */
+async function highlightPage(page, vp, ctx, specs){
+  if (!specs || !specs.length) return 0;
   const tc = await page.getTextContent();
   const U = window.pdfjsLib.Util;
-  let hits = 0;
-  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = 'rgba(255, 221, 0, 0.55)';
+  // 1) lines
+  const lines = [];
+  let cur = null;
   for (const it of tc.items) {
-    const str = it.str; if (!str || str.trim().length < 2) continue;
-    const low = str.toLowerCase(), ranges = [];
-    for (const t of terms) {
-      let i = low.indexOf(t);
-      while (i >= 0) {
-        // whole-word for short latin terms so 'l1' does not light up 'l12'
-        const pre = low[i - 1], post = low[i + t.length];
-        const latin = /[a-z0-9]/;
-        if (!(t.length <= 4 && /^[a-z0-9]+$/.test(t) && ((pre && latin.test(pre)) || (post && latin.test(post))))) ranges.push([i, i + t.length]);
-        i = low.indexOf(t, i + t.length);
-      }
-    }
-    if (!ranges.length) continue;
-    ranges.sort((a, b) => a[0] - b[0]);
-    const merged = [];
-    for (const r of ranges) { const l = merged[merged.length - 1]; if (l && r[0] <= l[1]) l[1] = Math.max(l[1], r[1]); else merged.push(r.slice()); }
+    if (it.str === undefined) continue;
     const tx = U.transform(vp.transform, it.transform);
-    const fh = Math.hypot(tx[2], tx[3]) || 10, w = it.width * vp.scale, x0 = tx[4], yb = tx[5];
-    const ang = Math.atan2(tx[1], tx[0]);
-    for (const [a, b] of merged) {
-      ctx.save(); ctx.translate(x0, yb); ctx.rotate(ang);
-      ctx.fillRect(w * a / str.length - 1, -fh * 0.95, w * (b - a) / str.length + 2, fh * 1.2);
-      ctx.restore(); hits++;
-    }
+    const fh = Math.hypot(tx[2], tx[3]) || 10, x = tx[4], y = tx[5], w = it.width * vp.scale;
+    if (cur && (Math.abs(y - cur.y) > fh * 0.6 || x < cur.x1 - fh * 2)) { lines.push(cur); cur = null; }
+    if (it.str.trim()) {
+      if (!cur) cur = {text: '', x0: x, x1: x + w, y, top: y - fh, bot: y + fh * 0.25, fh};
+      cur.text += it.str; cur.x0 = Math.min(cur.x0, x); cur.x1 = Math.max(cur.x1, x + w);
+      cur.top = Math.min(cur.top, y - fh); cur.bot = Math.max(cur.bot, y + fh * 0.25);
+    } else if (cur) cur.text += ' ';
+    if (it.hasEOL && cur) { lines.push(cur); cur = null; }
   }
+  if (cur) lines.push(cur);
+  if (!lines.length) return 0;
+  // 2) sentences: a new one starts at a bullet/number, or after a line that ended a sentence, or after a big gap
+  const START = /^\s*(?:[•·▪◦■□●○\-–*※→]|[①-⑳]|\d+[).]|[가-하][.)]|[A-Za-z][).]\s)/;
+  const sents = [];
+  lines.forEach((ln, i) => {
+    const prev = lines[i - 1], s = sents[sents.length - 1];
+    const brk = !s || START.test(ln.text) || /[.。!?:]\s*$|다\.?\s*$/.test(prev.text) || ln.top - prev.bot > ln.fh * 0.9 || Math.abs(ln.x0 - prev.x0) > ln.fh * 6;
+    if (brk) sents.push({text: ln.text, lines: [ln]});
+    else { s.text += ' ' + ln.text; s.lines.push(ln); }
+  });
+  // 3) score per question, keep that question's best sentences
+  const pick = new Set();
+  for (const spec of specs) {
+    const scored = sents.map((s, i) => {
+      const low = s.text.toLowerCase();
+      let sc = 0, n = 0;
+      for (const [t, w] of spec) {
+        let k = low.indexOf(t), ok = false;
+        while (k >= 0 && !ok) {
+          const pre = low[k - 1], post = low[k + t.length];
+          ok = !(t.length <= 4 && /^[a-z0-9]+$/.test(t) && ((pre && /[a-z0-9]/.test(pre)) || (post && /[a-z0-9]/.test(post))));
+          k = low.indexOf(t, k + 1);
+        }
+        if (ok) { sc += w; n++; }
+      }
+      // long sentences collect terms by chance; damp them a little
+      return {i, sc: n >= 2 || sc >= 3 ? sc / Math.pow(Math.max(s.text.length, 40) / 40, 0.25) : 0};
+    }).filter(o => o.sc > 0).sort((a, b) => b.sc - a.sc);
+    if (!scored.length) continue;
+    const top = scored[0].sc;
+    scored.filter(o => o.sc >= Math.max(top * 0.6, 1.5)).slice(0, 3).forEach(o => pick.add(o.i));
+  }
+  // 4) paint
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = 'rgba(255, 221, 0, 0.5)';
+  for (const i of pick) for (const ln of sents[i].lines) ctx.fillRect(ln.x0 - 3, ln.top - 1, ln.x1 - ln.x0 + 6, ln.bot - ln.top + 2);
   ctx.restore();
-  return hits;
+  return pick.size;
 }
-async function renderPage(key, n, width, terms){
+async function renderPage(key, n, width, specs){
   const doc = await openDoc(key);
   if (n < 1 || n > doc.numPages) throw new Error(`없는 쪽 (PDF ${n} / ${doc.numPages})`);
   const page = await doc.getPage(n);
@@ -183,7 +214,7 @@ async function renderPage(key, n, width, terms){
   c.width = Math.round(vp.width); c.height = Math.round(vp.height);
   const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
   await page.render({canvasContext: ctx, viewport: vp}).promise;
-  if (terms) { try { c.hits = await highlightPage(page, vp, ctx, terms); } catch (er) {} }
+  if (specs) { try { c.hits = await highlightPage(page, vp, ctx, specs); } catch (er) {} }
   page.cleanup();
   return c;
 }
@@ -334,7 +365,7 @@ function openPdfMaker(list, title){
       function setOff(d){ OFF[k] = (OFF[k] || 0) + d; lsSet(LS_OFF, OFF); drawOff(); if (pv.childNodes.length) preview(); summary(); }
       async function preview(){
         pv.replaceChildren(el('div', {class:'note', text:'불러오는 중…'}));
-        try { await libs(); const qx = list.find(q => refsOf(q).some(r => r.b === k && !(k === 'RA' && r.raw))); const c = await renderPage(k, pdfPageOf(refEx), 700, opts.hl && qx ? hlTerms(qx) : null); c.style.maxWidth = '100%'; c.style.border = '1px solid var(--line)'; pv.replaceChildren(el('div', {class:'note', text:`PDF ${pdfPageOf(refEx)}쪽 — 해설이 가리키는 내용인지 확인하고, 아니면 −/+로 맞춰 주세요.`}), c); }
+        try { await libs(); const qx = list.find(q => refsOf(q).some(r => r.b === k && !(k === 'RA' && r.raw))); const c = await renderPage(k, pdfPageOf(refEx), 700, opts.hl && qx ? [hlSpec(qx)] : null); c.style.maxWidth = '100%'; c.style.border = '1px solid var(--line)'; pv.replaceChildren(el('div', {class:'note', text:`PDF ${pdfPageOf(refEx)}쪽 — 해설이 가리키는 내용인지 확인하고, 아니면 −/+로 맞춰 주세요.`}), c); }
         catch (er) { pv.replaceChildren(el('div', {class:'msg err', text:'미리보기 실패: ' + (er.message || er)})); }
       }
       drawOff();
@@ -379,7 +410,7 @@ function openPdfMaker(list, title){
       el('div', {class:'note', text:'강의·발표 PPT는 채점기에 들어 있어 자동으로 쓰여요. 교재(국소해부학 5판, 그란트, 골학 1·2, 길라잡이)는 이 기기에서 한 번만 골라 두면 기억해요. 교재 파일은 이 기기 안에서만 읽고 어디에도 올리지 않아요.'}),
       status),
     el('div', {style:'margin-top:10px'}, tableBox),
-    el('div', {class:'panel', style:'padding:6px 0;margin-top:10px'}, chk('문제·정답·해설 페이지 넣기', 'sheet'), chk('같은 쪽은 한 번만 넣기', 'dedupe'), chk('정답·해설 용어에 형광펜 칠하기', 'hl')),
+    el('div', {class:'panel', style:'padding:6px 0;margin-top:10px'}, chk('문제·정답·해설 페이지 넣기', 'sheet'), chk('같은 쪽은 한 번만 넣기', 'dedupe'), chk('정답 근거 문장에 형광펜 칠하기', 'hl')),
     el('div', {class:'field', style:'margin-top:10px'}, el('label', {text:'화질'}), qual),
     sumBox,
     el('div', {class:'actions'}, goBtn, prog));
@@ -407,7 +438,7 @@ function openPdfMaker(list, title){
         if (opts.sheet) pageNo++;
         for (const r of refs) {
           const pn = pdfPageOf(r), id = r.b + ':' + pn;
-          if (opts.hl) { const st = PT[id] = PT[id] || new Set(); hlTerms(q).forEach(t => st.add(t)); }
+          if (opts.hl) (PT[id] = PT[id] || []).push(hlSpec(q));
           if (!hasSrc(r.b)) { notes.set(r, '파일 미연결'); continue; }
           if (opts.dedupe && used.has(id)) { notes.set(r, `${used.get(id)}쪽에 이미 있음`); continue; }
           pageNo++; used.set(id, pageNo); notes.set(r, `${pageNo}쪽`);
@@ -433,7 +464,7 @@ function openPdfMaker(list, title){
         if (opts.sheet) { add(await questionSheet(p.q, i + 1, plan.length, p.refs, p.notes), 0.88); done++; }
         for (const it of p.items) {
           prog.textContent = `${done + 1} / ${total}쪽 만드는 중… (${BOOKS[it.r.b].name} ${it.pn}쪽)`;
-          try { add(await renderPage(it.r.b, it.pn, W, opts.hl && PT[it.r.b + ':' + it.pn] ? [...PT[it.r.b + ':' + it.pn]].sort((a, b) => b.length - a.length) : null)); }
+          try { add(await renderPage(it.r.b, it.pn, W, opts.hl ? PT[it.r.b + ':' + it.pn] : null)); }
           catch (er) { failed.push(`${refLabel(it.r)}: ${er.message || er}`); const [c, x] = newSheet(); drawBlock(x, 200, '이 쪽을 불러오지 못했어요', `${refLabel(it.r)} (PDF ${it.pn}쪽)\n${er.message || er}`); add(c); }
           done++;
           await new Promise(r => setTimeout(r, 0));
