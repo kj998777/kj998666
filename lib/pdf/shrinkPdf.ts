@@ -5,7 +5,6 @@
 // 50MB를 넘는 PDF는 거의 스캔본(쪽 전체가 그림)이라 다시 그려도 잃는 것이 없다. 글자 PDF라면 글자 층이 그림이 되지만
 // 문항 자리 찾기·AI 처리는 스캔본처럼 그대로 된다. 해상도는 200dpi부터 시작해 안 들어가면 150 → 120 → 96dpi로 낮춘다.
 
-import { PDFDocument } from "pdf-lib";
 import { PDF_MAX_BYTES } from "@/lib/supabase/uploadPdf";
 
 export type ShrinkResult = { file: Blob; shrunk: boolean; before: number; after: number; dpi?: number };
@@ -26,6 +25,8 @@ export async function fitPdfForUpload(file: Blob, onMsg?: (m: string) => void, l
   const target = Math.floor(limit * 0.95); // 바깥 정보(쪽 구조 등) 몫을 남긴다
   const say = (m: string) => onMsg && onMsg(m);
   say(`PDF가 ${mb(before)}라 50MB 이하로 줄이는 중…`);
+  // pdf-lib(약 200KB)는 50MB를 넘는 드문 경우에만 쓰므로 그때 불러온다 — 시험 화면이 처음 열릴 때 무거워지지 않게.
+  const { PDFDocument } = await import("pdf-lib");
   const { loadPdfJs } = await import("@/app/(staff)/exams/[code]/buildDigitizedPdf");
   const lib = await loadPdfJs();
   const doc = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;

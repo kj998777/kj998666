@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import PdfDropInput from "./PdfDropInput";
 import { createExamRow, finalizeAiExamUpload, type JobPoll } from "./ai-actions";
-import { pollJob } from "@/lib/jobPoll";
+import { pageVisible, pollJob } from "@/lib/jobPoll";
 import { pdfTooLarge, uploadPdfDirect } from "@/lib/supabase/uploadPdf";
 import { fitPdfForUpload } from "@/lib/pdf/shrinkPdf";
 import { ACTIVE, STAGE_LABEL } from "./aiJobStage";
@@ -274,12 +274,20 @@ function BatchAiJobPanel({ codes }: { codes: string[] }) {
     let cancelled = false;
     // 2026-09-29 최적화: fetch로 확인(화면 이동을 막지 않음), 앞선 확인이 끝나기 전에는 새로 부르지 않음
     let busy = false;
+    // 2026-10-08 최적화: 끝난(완료·검수 대기·오류) 시험은 더 묻지 않고, 다른 탭을 보는 동안은 쉰다. 다 끝나면 확인을 멈춘다.
+    const finished = new Set<string>();
     async function tick() {
-      if (busy) return;
+      if (busy || !pageVisible()) return;
+      const pending = codes.filter((c) => !finished.has(c));
+      if (pending.length === 0) {
+        if (timer.current) clearInterval(timer.current);
+        return;
+      }
       busy = true;
       try {
-        const entries = await Promise.all(codes.map(async (c) => [c, await pollJob<JobPoll>(c, "ai")] as const));
+        const entries = await Promise.all(pending.map(async (c) => [c, await pollJob<JobPoll>(c, "ai")] as const));
         if (cancelled) return;
+        for (const [c, r] of entries) if (r.ok && r.data && !ACTIVE.has(r.data.stage)) finished.add(c);
         setJobs((prev) => {
           const next = { ...prev };
           for (const [c, r] of entries) if (r.ok) next[c] = r.data;

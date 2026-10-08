@@ -556,7 +556,10 @@ const STAGE_FN: Partial<Record<ExamJobStage, (client: Client, examId: string, st
 export async function tickExamJob(client: Client, examId: string, minIntervalMs = 2000): Promise<Job | null> {
   const job = await getJob(client, examId);
   if (!job || !isActiveStage(job.stage)) return job;
-  if (Date.now() - new Date(job.updatedAt).getTime() < minIntervalMs) return job;
+  // 2026-10-08 최적화: "~_wait"(AI 배치 처리 대기, 보통 10~40분) 단계는 화면이 5초마다 물어도 AI 쪽 상태 확인은
+  // 15초에 한 번만 한다. 1분 자동 작업(cron, minIntervalMs=0)은 그대로 매번 진행한다.
+  const gap = minIntervalMs > 0 && job.stage.endsWith("_wait") ? Math.max(minIntervalMs, 15_000) : minIntervalMs;
+  if (Date.now() - new Date(job.updatedAt).getTime() < gap) return job;
 
   const fn = STAGE_FN[job.stage];
   if (!fn) return job;

@@ -10,6 +10,10 @@ export async function middleware(request: NextRequest) {
   // Supabase 인증 서버에 다녀오지 않고 바로 넘긴다.
   if (!request.cookies.getAll().some((c) => c.name.startsWith("sb-"))) return response;
 
+  // 2026-10-08 최적화: 진행 상황 확인(/exams/<코드>/poll)은 화면이 5초마다 부르고, 그 안의 requireRole이 로그인을
+  // 다시 확인한다(라우트 핸들러라 세션 쿠키 갱신도 거기서 된다). 여기서 한 번 더 인증 서버에 다녀오지 않는다.
+  if (request.method === "POST" && /^\/exams\/[^/]+\/poll$/.test(request.nextUrl.pathname)) return response;
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
