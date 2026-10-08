@@ -399,3 +399,91 @@ function openPdfMaker(list, title){
     } finally { busy = false; goBtn.disabled = false; }
   }
 }
+
+/* ---- 길라잡이 → Claude: page text (or a picture of a scanned page) saved to the owner-only db path gl/ ---- */
+const GLS = 10;   // pages per db document
+function glText(tc){
+  let s = '';
+  for (const it of tc.items) s += (it.str || '') + (it.hasEOL ? '\n' : '');
+  return s.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 20000);
+}
+async function openGlSync(){
+  S = null;
+  $('#home').classList.add('hidden');
+  $('#quiz').classList.remove('hidden');
+  window.scrollTo(0, 0);
+  const box = $('#quiz');
+  const fileIn = el('input', {type:'file', accept:'application/pdf,.pdf', class:'hidden'});
+  const status = el('div', {class:'msg'});
+  const prog = el('div', {class:'note', id:'glProg'});
+  const goBtn = el('button', {class:'btn primary', id:'glGo', onclick: run}, '보내기 시작');
+  let busy = false, stop = false;
+  const stopBtn = el('button', {class:'btn sm ghost hidden', onclick: () => { stop = true; }}, '멈추기');
+  function showFile(){
+    const f = LINK.GL;
+    status.className = 'msg' + (f ? '' : ' err');
+    status.textContent = f ? `연결된 파일: ${f.name} (${(f.size / 1048576).toFixed(0)}MB)` : '아직 길라잡이 파일이 연결되지 않았어요. 📎 버튼으로 한 번만 골라 주세요.';
+  }
+  fileIn.addEventListener('change', async () => {
+    const f = fileIn.files[0]; fileIn.value = '';
+    if (!f) return;
+    LINK.GL = f; delete DOCS.GL; showFile();
+    await remember('GL', f);
+  });
+  box.replaceChildren(
+    el('div', {class:'qtop'}, el('button', {class:'btn sm', onclick: exitQuiz}, '← 목록'), el('div', {class:'pos', text:'길라잡이 → Claude'})),
+    el('div', {class:'panel', style:'padding:14px'},
+      el('h3', {style:'margin:0 0 6px;font-size:17px', text:'🤖 길라잡이 통째로 Claude에게 보내기'}),
+      el('div', {class:'note', style:'margin:0 0 10px', text:'쪼갤 필요 없어요. 이 기기에 있는 길라잡이 PDF를 브라우저 안에서 한 쪽씩 읽어 글자만 뽑아 Claude가 읽을 수 있는 곳에 저장해요. 글자가 없는 스캔 쪽만 작은 사진으로 올려요. 저장된 내용은 이 채점기 주인만 볼 수 있어요.'}),
+      el('div', {class:'actions', style:'margin:0'}, el('button', {class:'btn', onclick: () => fileIn.click()}, '📎 길라잡이 PDF 고르기'), fileIn),
+      status),
+    el('div', {class:'actions'}, goBtn, stopBtn, prog));
+  await restoreLinks(); showFile();
+
+  async function run(){
+    if (busy) return;
+    if (!LINK.GL) { showFile(); return; }
+    busy = true; stop = false; goBtn.disabled = true; stopBtn.classList.remove('hidden');
+    try {
+      const db = await window.claude.use('db');
+      if (!db) throw new Error('저장소에 연결하지 못했어요 (로그인 확인)');
+      const assets = await window.claude.use('assets').catch(() => null);
+      prog.textContent = '라이브러리 불러오는 중…';
+      await libs();
+      const doc = await openDoc('GL');
+      const N = doc.numPages, f = LINK.GL;
+      const metaRef = db.doc('gl/meta');
+      const old = await metaRef.get().catch(() => null);
+      const prev = old && old.exists ? old.data() : null;
+      let from = prev && prev.size === f.size && prev.done ? prev.done + 1 : 1;
+      let scans = prev && prev.size === f.size ? prev.scans || 0 : 0;
+      await metaRef.set({name: f.name, size: f.size, pages: N, done: from - 1, scans, at: Date.now()});
+      for (let a = from; a <= N && !stop; a += GLS) {
+        const pages = [];
+        for (let p = a; p < a + GLS && p <= N; p++) {
+          prog.textContent = `${p} / ${N}쪽 읽는 중… (스캔 쪽 ${scans}개)`;
+          const page = await doc.getPage(p);
+          const t = glText(await page.getTextContent());
+          const row = {p, t};
+          if (t.replace(/\s/g, '').length < 30 && assets) {
+            try {
+              const c = await renderPage('GL', p, 1100);
+              const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.7));
+              const up = await assets.upload(blob);
+              row.img = up.id; scans++;
+            } catch (er) { row.err = String(er && (er.code || er.message) || er).slice(0, 200); }
+          }
+          page.cleanup();
+          pages.push(row);
+          await new Promise(r => setTimeout(r, 0));
+        }
+        await db.doc('gl/c' + String(a).padStart(4, '0')).set({from: a, pages});
+        await metaRef.set({name: f.name, size: f.size, pages: N, done: Math.min(a + GLS - 1, N), scans, at: Date.now()});
+      }
+      prog.textContent = stop ? '멈췄어요. 다시 누르면 이어서 보내요.' : `다 보냈어요 · ${N}쪽 (스캔 쪽 ${scans}개). 이제 Claude에게 "보냈어"라고 말해 주세요.`;
+    } catch (er) {
+      prog.textContent = '보내지 못했어요: ' + (er.message || er.code || er) + ' — 다시 누르면 이어서 보내요.';
+    } finally { busy = false; goBtn.disabled = false; stopBtn.classList.add('hidden'); }
+  }
+}
+{ const b = document.getElementById('glSyncBtn'); if (b) b.addEventListener('click', openGlSync); }

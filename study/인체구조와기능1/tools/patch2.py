@@ -32,6 +32,7 @@ rep("""        list.length ? bulkStudyBtn(list) : null,
         list.length ? el('button', {class:'btn sm', onclick: () => openPdfMaker(list, `틀린 횟수 ${prefs.wmin}회 이상`)}, '📄 PDF로 묶기') : null,
         list.length ? el('button', {class:'btn sm primary', onclick: () => startSession(list, `틀린 횟수 ${prefs.wmin}회 이상`)}, `${list.length}문제 풀기`) : null)));""")
 # study tab intro text mentions the PDF
+rep('    <div class="foot" id="foot"></div>', '    <div class="actions" id="glBar" style="justify-content:center"><button class="btn sm ghost" id="glSyncBtn">🤖 길라잡이 통째로 Claude에게 보내기</button></div>\n    <div class="foot" id="foot"></div>')
 rep("""'으로 빼면 돼요.'));""", """'으로 빼면 돼요. ', el('b', null, '📄 PDF로 묶기'), '를 누르면 해설이 근거로 든 교재·PPT 쪽을 한 파일로 모아 줘요.'));""")
 # explanation: list the cited pages
 rep("    if (q.ni) box.append(notionImgBox(q));",
