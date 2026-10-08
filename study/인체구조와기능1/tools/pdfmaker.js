@@ -117,7 +117,63 @@ function openDoc(key){
   }
   return DOCS[key];
 }
-async function renderPage(key, n, width){
+/* ---- highlight: terms from the answer, the correct option and the explanation, marked on the page's text layer ---- */
+const HL_STOP = new Set(('artery arteries nerve nerves muscle muscles ligament vein veins branch branches part with from that this which into lateral medial anterior posterior superior inferior left right deep superficial major minor common external internal between through above below about when then them they their there have has also only more most than each both other these those such dorsal ventral proximal distal level levels area region side upper lower front back '
+  + '다음 설명 옳은 옳지 않은 것은 모두 고른 것을 쓰시오 무엇인가 대한 으로 에서 하는 있는 이다 근거 길라잡이 해설 정답 문항 보기 변환 주관식 지선다 슬라이드 원문 변형 때문 경우 부분 위해 따라 통해 사이 아래 위쪽 아래쪽 안쪽 가쪽 앞쪽 뒤쪽 오른쪽 왼쪽 그리고 하지만 이므로 이므로 있다 없다 된다 한다 같은 다른').split(' '));
+const KPART = /(에서는|으로는|에서|으로|에게|까지|부터|이다|은|는|이|가|을|를|의|에|로|와|과|도|만)$/;
+function optText(q){
+  if (q.t !== 'mcq' || !q.tx || !q.a || !q.a.length) return '';
+  const parts = q.tx.split(/([①②③④⑤])/), c = '①②③④⑤'[q.a[0] - 1], i = parts.indexOf(c);
+  return i >= 0 ? (parts[i + 1] || '') : '';
+}
+function hlTerms(q){
+  let e = q; try { e = eff(q); } catch (er) {}
+  const src = [optText(q), e.d || q.d || '', e.x || q.x || ''].join(' ').replace(/근거:[^\n]*/g, ' ').replace(/\(주관식→5지선다 변환\)/g, ' ');
+  const terms = new Set();
+  for (const m of src.matchAll(/[A-Za-z][A-Za-z'’\-]{3,}/g)) { const w = m[0].toLowerCase().replace(/’/g, "'"); if (!HL_STOP.has(w)) terms.add(w); }
+  for (const m of src.matchAll(/[가-힣]{2,}/g)) {
+    let w = m[0]; if (w.length > 3) w = w.replace(KPART, '');
+    if (w.length >= 3 && !HL_STOP.has(w)) terms.add(w);
+  }
+  for (const m of src.matchAll(/\b[TLCS]\d{1,2}\b/g)) terms.add(m[0].toLowerCase());
+  return [...terms].sort((a, b) => b.length - a.length).slice(0, 60);
+}
+async function highlightPage(page, vp, ctx, terms){
+  if (!terms || !terms.length) return 0;
+  const tc = await page.getTextContent();
+  const U = window.pdfjsLib.Util;
+  let hits = 0;
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = 'rgba(255, 221, 0, 0.55)';
+  for (const it of tc.items) {
+    const str = it.str; if (!str || str.trim().length < 2) continue;
+    const low = str.toLowerCase(), ranges = [];
+    for (const t of terms) {
+      let i = low.indexOf(t);
+      while (i >= 0) {
+        // whole-word for short latin terms so 'l1' does not light up 'l12'
+        const pre = low[i - 1], post = low[i + t.length];
+        const latin = /[a-z0-9]/;
+        if (!(t.length <= 4 && /^[a-z0-9]+$/.test(t) && ((pre && latin.test(pre)) || (post && latin.test(post))))) ranges.push([i, i + t.length]);
+        i = low.indexOf(t, i + t.length);
+      }
+    }
+    if (!ranges.length) continue;
+    ranges.sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    for (const r of ranges) { const l = merged[merged.length - 1]; if (l && r[0] <= l[1]) l[1] = Math.max(l[1], r[1]); else merged.push(r.slice()); }
+    const tx = U.transform(vp.transform, it.transform);
+    const fh = Math.hypot(tx[2], tx[3]) || 10, w = it.width * vp.scale, x0 = tx[4], yb = tx[5];
+    const ang = Math.atan2(tx[1], tx[0]);
+    for (const [a, b] of merged) {
+      ctx.save(); ctx.translate(x0, yb); ctx.rotate(ang);
+      ctx.fillRect(w * a / str.length - 1, -fh * 0.95, w * (b - a) / str.length + 2, fh * 1.2);
+      ctx.restore(); hits++;
+    }
+  }
+  ctx.restore();
+  return hits;
+}
+async function renderPage(key, n, width, terms){
   const doc = await openDoc(key);
   if (n < 1 || n > doc.numPages) throw new Error(`없는 쪽 (PDF ${n} / ${doc.numPages})`);
   const page = await doc.getPage(n);
@@ -127,6 +183,7 @@ async function renderPage(key, n, width){
   c.width = Math.round(vp.width); c.height = Math.round(vp.height);
   const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
   await page.render({canvasContext: ctx, viewport: vp}).promise;
+  if (terms) { try { c.hits = await highlightPage(page, vp, ctx, terms); } catch (er) {} }
   page.cleanup();
   return c;
 }
@@ -239,7 +296,7 @@ function openPdfMaker(list, title){
   $('#quiz').classList.remove('hidden');
   window.scrollTo(0, 0);
   const box = $('#quiz');
-  const opts = {sheet: true, dedupe: true, width: 1240};
+  const opts = {sheet: true, dedupe: true, hl: true, width: 1240};
   let busy = false;
   const fileIn = el('input', {type:'file', accept:'application/pdf,.pdf', multiple:true, class:'hidden'});
   const status = el('div', {class:'msg'});
@@ -277,7 +334,7 @@ function openPdfMaker(list, title){
       function setOff(d){ OFF[k] = (OFF[k] || 0) + d; lsSet(LS_OFF, OFF); drawOff(); if (pv.childNodes.length) preview(); summary(); }
       async function preview(){
         pv.replaceChildren(el('div', {class:'note', text:'불러오는 중…'}));
-        try { await libs(); const c = await renderPage(k, pdfPageOf(refEx), 700); c.style.maxWidth = '100%'; c.style.border = '1px solid var(--line)'; pv.replaceChildren(el('div', {class:'note', text:`PDF ${pdfPageOf(refEx)}쪽 — 해설이 가리키는 내용인지 확인하고, 아니면 −/+로 맞춰 주세요.`}), c); }
+        try { await libs(); const qx = list.find(q => refsOf(q).some(r => r.b === k && !(k === 'RA' && r.raw))); const c = await renderPage(k, pdfPageOf(refEx), 700, opts.hl && qx ? hlTerms(qx) : null); c.style.maxWidth = '100%'; c.style.border = '1px solid var(--line)'; pv.replaceChildren(el('div', {class:'note', text:`PDF ${pdfPageOf(refEx)}쪽 — 해설이 가리키는 내용인지 확인하고, 아니면 −/+로 맞춰 주세요.`}), c); }
         catch (er) { pv.replaceChildren(el('div', {class:'msg err', text:'미리보기 실패: ' + (er.message || er)})); }
       }
       drawOff();
@@ -322,7 +379,7 @@ function openPdfMaker(list, title){
       el('div', {class:'note', text:'강의·발표 PPT는 채점기에 들어 있어 자동으로 쓰여요. 교재(국소해부학 5판, 그란트, 골학 1·2, 길라잡이)는 이 기기에서 한 번만 골라 두면 기억해요. 교재 파일은 이 기기 안에서만 읽고 어디에도 올리지 않아요.'}),
       status),
     el('div', {style:'margin-top:10px'}, tableBox),
-    el('div', {class:'panel', style:'padding:6px 0;margin-top:10px'}, chk('문제·정답·해설 페이지 넣기', 'sheet'), chk('같은 쪽은 한 번만 넣기', 'dedupe')),
+    el('div', {class:'panel', style:'padding:6px 0;margin-top:10px'}, chk('문제·정답·해설 페이지 넣기', 'sheet'), chk('같은 쪽은 한 번만 넣기', 'dedupe'), chk('정답·해설 용어에 형광펜 칠하기', 'hl')),
     el('div', {class:'field', style:'margin-top:10px'}, el('label', {text:'화질'}), qual),
     sumBox,
     el('div', {class:'actions'}, goBtn, prog));
@@ -337,6 +394,7 @@ function openPdfMaker(list, title){
       try { await document.fonts.load(`700 24px "Noto Sans KR"`); await document.fonts.load(`400 24px "Noto Sans KR"`); } catch (er) {}
       const W = opts.width;
       // plan: for each question, sheet + pages
+      const PT = {};          // "key:page" -> highlight terms of every question citing that page
       const used = new Map();   // "key:page" -> output page number
       const plan = [];
       const tocN = tocSheets(list.map((q, i) => ({i: i + 1, q, page: 0, n: 0})), title).length;
@@ -349,6 +407,7 @@ function openPdfMaker(list, title){
         if (opts.sheet) pageNo++;
         for (const r of refs) {
           const pn = pdfPageOf(r), id = r.b + ':' + pn;
+          if (opts.hl) { const st = PT[id] = PT[id] || new Set(); hlTerms(q).forEach(t => st.add(t)); }
           if (!hasSrc(r.b)) { notes.set(r, '파일 미연결'); continue; }
           if (opts.dedupe && used.has(id)) { notes.set(r, `${used.get(id)}쪽에 이미 있음`); continue; }
           pageNo++; used.set(id, pageNo); notes.set(r, `${pageNo}쪽`);
@@ -374,7 +433,7 @@ function openPdfMaker(list, title){
         if (opts.sheet) { add(await questionSheet(p.q, i + 1, plan.length, p.refs, p.notes), 0.88); done++; }
         for (const it of p.items) {
           prog.textContent = `${done + 1} / ${total}쪽 만드는 중… (${BOOKS[it.r.b].name} ${it.pn}쪽)`;
-          try { add(await renderPage(it.r.b, it.pn, W)); }
+          try { add(await renderPage(it.r.b, it.pn, W, opts.hl && PT[it.r.b + ':' + it.pn] ? [...PT[it.r.b + ':' + it.pn]].sort((a, b) => b.length - a.length) : null)); }
           catch (er) { failed.push(`${refLabel(it.r)}: ${er.message || er}`); const [c, x] = newSheet(); drawBlock(x, 200, '이 쪽을 불러오지 못했어요', `${refLabel(it.r)} (PDF ${it.pn}쪽)\n${er.message || er}`); add(c); }
           done++;
           await new Promise(r => setTimeout(r, 0));
