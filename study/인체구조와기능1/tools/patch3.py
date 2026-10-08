@@ -37,6 +37,38 @@ rep("    ul.append(el('li', {onclick: () => startSession(list, '추가 공부', 
     "      el('span', {class:'chk' + (STUDYSEL.has(q.id) ? ' on' : ''), role:'checkbox', 'aria-checked': String(STUDYSEL.has(q.id)), title:'PDF에 넣기', style:'cursor:pointer;flex:none', onclick: ev => { ev.stopPropagation(); STUDYSEL.has(q.id) ? STUDYSEL.delete(q.id) : STUDYSEL.add(q.id); renderStudy(); }}),\n"
     "      el('span', {class:'chip', text:q.c}),")
 
+# ---- 5) 주제별 폴더 (복습 노트·추가 공부) ----
+rep("[['added', '최근 추가순'], ['wrong', '많이 틀린 순'], ['range', '단원순']]",
+    "[['folder', '📁 주제별 폴더'], ['added', '최근 추가순'], ['wrong', '많이 틀린 순'], ['range', '단원순']]")
+rep("let studyOrder = 'added';", "let studyOrder = 'folder';")
+rep("  else if (studyOrder === 'wrong') list.sort((a, b) => wrongN(b.id) - wrongN(a.id));",
+    "  else if (studyOrder === 'wrong') list.sort((a, b) => wrongN(b.id) - wrongN(a.id));\n"
+    "  else if (studyOrder === 'folder') list = sortByFolder(list, (a, b) => ST[b.id].t - ST[a.id].t);")
+rep("      countChips(q.id),\n      el('button', {class:'btn sm ghost', title:'추가 공부에서 빼기', onclick: ev => { ev.stopPropagation(); setStudy(q.id, false); renderStudy(); renderStats(); }}, '✓ 공부 끝')));\n  });\n  box.append(ul);",
+    "      countChips(q.id),\n      el('button', {class:'btn sm ghost', title:'추가 공부에서 빼기', onclick: ev => { ev.stopPropagation(); setStudy(q.id, false); renderStudy(); renderStats(); }}, '✓ 공부 끝')));\n  });\n"
+    "  box.append(studyOrder === 'folder' ? foldUp(list, [...ul.children], '추가 공부', {pick: true, redraw: renderStudy}) : ul);")
+# review (latest results view)
+rep("  if (!list.length) { box.append(el('div', {class:'panel empty', text:'해당하는 문제가 없어요.'})); return; }\n  box.append(qList(list, '복습 노트'));",
+    "  if (!list.length) { box.append(el('div', {class:'panel empty', text:'해당하는 문제가 없어요.'})); return; }\n"
+    "  box.append(el('div', {class:'seg', style:'margin:0 0 8px'}, [['fold', '📁 주제별 폴더'], ['flat', '목록']].map(([k, lab]) =>\n"
+    "    el('button', {class: (prefs.rfold === false ? 'flat' : 'fold') === k ? 'on' : '', onclick: () => { prefs.rfold = k === 'fold'; lsSet(LS_KEY, snapshot()); renderReview(); }}, lab))));\n"
+    "  if (prefs.rfold === false) box.append(qList(list, '복습 노트'));\n"
+    "  else { const fl = sortByFolder(list, (a, b) => P[b.id].t - P[a.id].t); box.append(foldUp(fl, [...qList(fl, '복습 노트').children], '복습 노트')); }")
+rep("    box.append(qList(list, `틀린 횟수 ${prefs.wmin}회 이상`));\n    return;",
+    "    if (prefs.rfold === false) box.append(qList(list, `틀린 횟수 ${prefs.wmin}회 이상`));\n"
+    "    else { const fl = sortByFolder(list, (a, b) => wrongN(b.id) - wrongN(a.id)); box.append(foldUp(fl, [...qList(fl, `틀린 횟수 ${prefs.wmin}회 이상`).children], `틀린 횟수 ${prefs.wmin}회 이상`)); }\n    return;")
+css2 = """
+.fold{margin-bottom:8px;padding:0;overflow:hidden}
+.fold>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:11px 12px;flex-wrap:wrap}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary .fn{flex:1;min-width:0;font-weight:600;font-size:14.5px}
+.fold>summary .fn small{display:block;font-weight:400;color:var(--ink3);font-size:12px}
+.fold>summary .ar{transition:transform .15s;color:var(--ink3)}
+.fold[open]>summary .ar{transform:rotate(90deg)}
+.fold>ul{margin:0;border:0;border-top:1px solid var(--line);border-radius:0;box-shadow:none}
+"""
+rep('</style>', css2 + '</style>')
+
 # ---- 3) plan panel + shuffle toggle ----
 rep('    <div id="pickView">\n      <div id="regions"></div>',
     '    <div id="pickView">\n      <div id="planBox"></div>\n      <div id="regions"></div>')
@@ -63,6 +95,42 @@ rep('</style>', css + '</style>')
 
 js = r"""
 const STUDYSEL = new Set();   // 추가 공부 items picked for the PDF
+
+/* ---- 주제별 폴더: group a question list by topic (소단원 이름) ---- */
+const OPENF = new Set();
+function folderOf(q){ return (SUBS[q.c] || q.c || '기타').trim(); }
+function sortByFolder(list, within){
+  const order = new Map();
+  [...new Set(list.map(folderOf))].sort((a, b) => a.localeCompare(b, 'ko')).forEach((k, i) => order.set(k, i));
+  return list.slice().sort((a, b) => order.get(folderOf(a)) - order.get(folderOf(b)) || within(a, b));
+}
+function foldUp(list, items, title, opt){
+  opt = opt || {};
+  const wrap = el('div');
+  const groups = new Map();
+  list.forEach((q, i) => { const k = folderOf(q); if (!groups.has(k)) groups.set(k, []); groups.get(k).push([q, items[i]]); });
+  if (groups.size <= 2) groups.forEach((_, k) => OPENF.add(title + '|' + k));
+  for (const [k, rows] of groups) {
+    const qs = rows.map(r => r[0]), key = title + '|' + k;
+    const wrong = qs.reduce((s, q) => s + wrongN(q.id), 0);
+    const nP = qs.filter(q => q.set === 'p').length;
+    const picked = opt.pick ? qs.filter(q => STUDYSEL.has(q.id)).length : 0;
+    const stop = fn => ev => { ev.preventDefault(); ev.stopPropagation(); fn(); };
+    const d = el('details', {class:'panel fold'});
+    if (OPENF.has(key)) d.open = true;
+    d.addEventListener('toggle', () => { d.open ? OPENF.add(key) : OPENF.delete(key); });
+    d.append(el('summary', null,
+      opt.pick ? el('span', {class:'chk' + (picked === qs.length ? ' on' : ''), title:'이 폴더 전부 PDF에 넣기/빼기', style:'cursor:pointer',
+        onclick: stop(() => { picked === qs.length ? qs.forEach(q => STUDYSEL.delete(q.id)) : qs.forEach(q => STUDYSEL.add(q.id)); opt.redraw(); })}) : null,
+      el('span', {class:'ar', text:'▶'}),
+      el('div', {class:'fn'}, '📁 ' + k, el('small', null, `${qs.length}문제` + (wrong ? ` · 틀린 횟수 합 ${wrong}` : '') + (nP && nP < qs.length ? ` · 예상문제 ${nP} / 족보 ${qs.length - nP}` : nP ? ' · 예상문제' : ' · 족보') + (opt.pick && picked ? ` · PDF 선택 ${picked}` : ''))),
+      el('button', {class:'btn sm', onclick: stop(() => openPdfMaker(qs, `${title} · ${k}`))}, '📄 PDF'),
+      el('button', {class:'btn sm primary', onclick: stop(() => startSession(qs, `${title} · ${k}`))}, '풀기')),
+      el('ul', {class:'panel wl'}, rows.map(r => r[1])));
+    wrap.append(d);
+  }
+  return wrap;
+}
 /* ---- study plan, spaced review, shuffled options ---- */
 const EXAM = {date: '2026-10-28', label: '10/28(수) 중간고사'};
 const ALLP = ['K1','K2','K3','K4','K5','K6','K7','J1','J2','J3','J4','Y1','Y2','Y3','Y4','Y5'];
