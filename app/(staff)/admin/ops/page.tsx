@@ -135,48 +135,51 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
   const stats: any[] = statsRes?.data ?? [];
   const tutors = profiles.filter((p) => p.role === "tutor");
 
+  // 2026-10-08 최적화: 아래 조회 묶음(신뢰도·정답률·랭킹·남은 검토·운영 점검)은 서로 기다릴 필요가 없어
+  // 예전처럼 차례로(6단계) 기다리지 않고 한꺼번에 보낸다.
   // 신뢰도 단계 — DB 함수(0025)가 기준. 0025 전이면 모두 "정상"
-  const trustEntries = await Promise.all(
+  const trustP = Promise.all(
     tutors.map(async (t) => {
       const { data, error } = await admin.rpc("tutor_trust_level", { p_tutor: t.id });
       return [t.id, error ? "ok" : (data as string) || "ok"] as const;
     })
   );
-  const trustOf = new Map<string, string>(trustEntries);
   // 0037: 정답률(최근 50건 판정)
-  const accEntries = await Promise.all(
+  const accP = Promise.all(
     tutors.map(async (t) => {
       const { data, error } = await admin.rpc("tutor_accuracy", { p_tutor: t.id });
       return [t.id, error || !data ? null : { judged: Number(data.judged ?? 0), correct: Number(data.correct ?? 0) }] as const;
     })
   );
-  const accOf = new Map<string, { judged: number; correct: number } | null>(accEntries);
   // 0038 포인트 랭킹(문제로 얻은 포인트만, 관리자는 이름 그대로)
-  const [rankAll, rankMonth] = await Promise.all(
+  const rankP = Promise.all(
     ["all", "month"].map(async (p) => {
       const { data, error } = await admin.rpc("tutor_point_ranking", { p_period: p, p_limit: 10 });
       return error ? null : (data as any);
     })
   );
   // 0041 기수별(전체 기간)
-  const rankCohort = await (async () => {
+  const cohortP = (async () => {
     const { data, error } = await admin.rpc("tutor_cohort_ranking", { p_period: "all" });
     return error ? null : (data as any);
   })();
 
   // 남은 검토 문항(지금)
   const pendingIds: string[] = ((pendingExams as any[]) ?? []).map((e) => e.id);
-  let queueLeft = 0;
   // 시험 id를 한 번에 수백 개 넣으면 요청 주소가 너무 길어질 수 있어 150개씩 나눠 세고 더한다(2026-09-29)
-  for (let i = 0; i < pendingIds.length; i += 150) {
-    const { count } = await admin
-      .from("item_explanations")
-      .select("id", { count: "exact", head: true })
-      .in("exam_id", pendingIds.slice(i, i + 150))
-      .eq("tutor_reviewed", false)
-      .eq("review_confirmed", false);
-    queueLeft += count ?? 0;
-  }
+  const queueChunks: string[][] = [];
+  for (let i = 0; i < pendingIds.length; i += 150) queueChunks.push(pendingIds.slice(i, i + 150));
+  const queueP = Promise.all(
+    queueChunks.map(async (chunk) => {
+      const { count } = await admin
+        .from("item_explanations")
+        .select("id", { count: "exact", head: true })
+        .in("exam_id", chunk)
+        .eq("tutor_reviewed", false)
+        .eq("review_confirmed", false);
+      return count ?? 0;
+    })
+  ).then((counts) => counts.reduce((a, b) => a + b, 0));
 
   // 운영 점검(2026-09-30): 지금 손봐야 할 것 — 표가 없는 예전 DB면 0으로 둔다
   const since30 = new Date(Date.now() - 30 * 86400_000).toISOString();
@@ -184,7 +187,7 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
     const { count, error } = await q;
     return error ? 0 : count ?? 0;
   };
-  const [adminStage, secondItems, pendingEdits, openBugs, pdfMeta, itemExamRows, flowReviews, flowLedger] = await Promise.all([
+  const healthP = Promise.all([
     headCount(admin.from("item_explanations").select("id", { count: "exact", head: true }).eq("review_stage", "admin").eq("review_confirmed", false)),
     fetchAll((a, b) => admin.from("item_explanations").select("id").eq("review_stage", "second").eq("review_confirmed", false).order("id").range(a, b)),
     headCount(admin.from("tutor_edit_requests").select("id", { count: "exact", head: true }).eq("status", "pending")),
@@ -194,16 +197,28 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
     fetchAll((a, b) => admin.from("tutor_item_reviews").select("kind, created_at").gte("created_at", since30).order("created_at").range(a, b)),
     fetchAll((a, b) => admin.from("tutor_points_ledger").select("delta, created_at").gte("created_at", since30).order("created_at").range(a, b)),
   ]);
+  const [
+    trustEntries,
+    accEntries,
+    [rankAll, rankMonth],
+    rankCohort,
+    queueLeft,
+    [adminStage, secondItems, pendingEdits, openBugs, pdfMeta, itemExamRows, flowReviews, flowLedger],
+  ] = await Promise.all([trustP, accP, rankP, cohortP, queueP, healthP]);
+  const trustOf = new Map<string, string>(trustEntries);
+  const accOf = new Map<string, { judged: number; correct: number } | null>(accEntries);
   let staleSecond = 0;
   {
     const ids = secondItems.map((r: any) => r.id);
     const latest = new Map<string, string>();
-    for (let i = 0; i < ids.length; i += 150) {
-      const { data } = await admin
-        .from("tutor_item_reviews")
-        .select("item_explanation_id, created_at")
-        .in("item_explanation_id", ids.slice(i, i + 150))
-        .eq("kind", "primary");
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += 150) chunks.push(ids.slice(i, i + 150));
+    const pages = await Promise.all(
+      chunks.map((chunk) =>
+        admin.from("tutor_item_reviews").select("item_explanation_id, created_at").in("item_explanation_id", chunk).eq("kind", "primary")
+      )
+    );
+    for (const { data } of pages as { data: any[] | null }[]) {
       for (const r of (data as any[]) ?? []) {
         const cur = latest.get(r.item_explanation_id);
         if (!cur || r.created_at > cur) latest.set(r.item_explanation_id, r.created_at);

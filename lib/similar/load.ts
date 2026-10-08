@@ -363,3 +363,39 @@ export function shortExamName(name: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+// 2026-10-08 최적화: 학생 화면(/r)은 문제 그림마다(원래 문항 + 고른 유사문제 수만큼) 그림 API를 동시에 부르고, 그때마다
+// 위의 loadCore(같은 유형 후보 수백~수천 줄 + 그 시험들의 정답표)를 처음부터 다시 했다. 그림·답 확인 API에서는 같은
+// 제출의 계산 결과를 잠깐(60초) 서버에 두고 같이 쓴다. 열쇠에 similar_picked_at을 넣어, 선생님이 고른 문제를 바꾸면
+// 바로 새로 계산한다. 화면(page) 자체와 고르기 저장은 지금처럼 매번 새로 계산한다.
+const MEMO_MS = 60_000;
+const MEMO_MAX = 300;
+const memo = new Map<string, { at: number; value: Promise<unknown> }>();
+
+async function memoized<T>(admin: Client, kind: string, submissionId: string, load: () => Promise<T>): Promise<T> {
+  if (!UUID_RE.test(submissionId)) return load();
+  const { data } = await admin.from("submissions").select("similar_picked_at").eq("id", submissionId).maybeSingle();
+  if (!data) return load();
+  const key = `${kind}|${submissionId}|${data.similar_picked_at ?? ""}`;
+  const now = Date.now();
+  const hit = memo.get(key);
+  if (hit && now - hit.at < MEMO_MS) return hit.value as Promise<T>;
+  if (memo.size >= MEMO_MAX) {
+    for (const [k, v] of Array.from(memo)) if (now - v.at >= MEMO_MS) memo.delete(k);
+    if (memo.size >= MEMO_MAX) memo.clear();
+  }
+  const value = load();
+  memo.set(key, { at: now, value });
+  value.catch(() => memo.delete(key)); // 실패한 계산은 두지 않는다
+  return value;
+}
+
+/** 그림·답 확인 API용 — loadSimilarPage와 같은 결과를 60초 동안 같이 쓴다. */
+export function loadSimilarPageShared(admin: Client, submissionId: string): Promise<SimilarPage | null> {
+  return memoized(admin, "r", submissionId, () => loadSimilarPage(admin, submissionId));
+}
+
+/** 고르는 화면의 그림 API용 — loadPickPage와 같은 결과를 60초 동안 같이 쓴다. */
+export function loadPickPageShared(admin: Client, submissionId: string): Promise<PickPage | null> {
+  return memoized(admin, "pick", submissionId, () => loadPickPage(admin, submissionId));
+}

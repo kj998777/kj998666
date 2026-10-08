@@ -71,10 +71,16 @@ export async function regradePlan(admin: Client, examId: string): Promise<Regrad
 
 /** 계획대로 채점 결과를 고친다. 실제로 고친 건수. */
 export async function applyRegradePlan(admin: Client, plan: RegradePlan): Promise<number> {
+  // 2026-10-08 최적화: 하나씩 차례로 고치면 제출 200건 = 200번 왕복을 기다렸다. 8건씩 동시에 고친다(고치는 내용은 같음).
   let changed = 0;
-  for (const c of plan.changes) {
-    const { error } = await admin.from("grading_results").update({ per_item: c.perItem, total_score: c.to }).eq("id", c.id);
-    if (!error) changed++;
+  const BATCH = 8;
+  for (let i = 0; i < plan.changes.length; i += BATCH) {
+    const results = await Promise.all(
+      plan.changes
+        .slice(i, i + BATCH)
+        .map((c) => admin.from("grading_results").update({ per_item: c.perItem, total_score: c.to }).eq("id", c.id))
+    );
+    for (const { error } of results as { error: unknown }[]) if (!error) changed++;
   }
   return changed;
 }

@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { allowedPickItem, loadPickPage } from "@/lib/similar/load";
+import { allowedPickItem, loadPickPageShared } from "@/lib/similar/load";
 import { canPickFor } from "@/lib/similar/pickAuth";
 import { serveItemPage } from "@/lib/similar/servePage";
 
@@ -11,7 +11,7 @@ export async function GET(request: Request, { params }: { params: { sid: string;
   const admin = createAdminClient();
   const auth = await canPickFor(admin, params.sid);
   if (!auth.ok) return Response.json({ ok: false, msg: auth.msg }, { status: auth.status });
-  const page = await loadPickPage(admin, params.sid);
+  const page = await loadPickPageShared(admin, params.sid);
   if (!page || !allowedPickItem(page, params.itemId)) {
     return Response.json({ ok: false, msg: "볼 수 없는 문항입니다." }, { status: 404 });
   }
