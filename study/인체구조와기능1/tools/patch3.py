@@ -96,6 +96,38 @@ rep('</style>', css + '</style>')
 js = r"""
 const STUDYSEL = new Set();   // 추가 공부 items picked for the PDF
 
+/* ---- 2026 교수님 범위로 옛 족보(JB) 모으기 ---- */
+const PROF = [
+  {n:'김진우p', w:'약 45~50%', what:'등, 어깨·위팔, 겨드랑, 아래팔, 손, 팔의 관절, 골반벽, 생식기관', jb:['B1','B2','C1','C2','C3','C4','C5','C6','C7','G1','G2','G3'], maybe:['B3','G4'], p:['J1','J2','J3','J4']},
+  {n:'김정태p', w:'약 30%', what:'넙다리·볼기, 다리·발, 다리의 관절, 가슴우리·세로칸, 심장·허파', jb:['D1','D2','D3','D4','D5','D6','E1','E2','E3','E4'], maybe:[], p:['K1','K2','K3','K4','K5','K6','K7']},
+  {n:'윤상필p', w:'약 20%', what:'총론, 배벽, 창자, 소화기 부속샘', jb:['A1','A2','A3','F1','F2','F3','F4','F6'], maybe:['F5'], p:['Y1','Y2','Y3','Y4','Y5']},
+];
+const MAYBE_NOTE = {B3:'척수 겉모양·척수신경 — 척수는 기말(윤상필) 범위, 등 강의에서 척수신경만 다룰 수 있음', G4:'방광·곧창자·회음 — 계획서 중간 범위에 따로 없음(골반벽 강의에 일부 포함 가능)', F5:'콩팥·부신·뒤배벽 — 계획서에 콩팥 강의 없음(뒤배벽만 배벽 강의에 포함 가능)'};
+function profSubs(pf){ return pf.jb.concat(prefs.pmaybe ? pf.maybe : []); }
+function renderProfBox(box){
+  const cards = PROF.map(pf => {
+    const subs = profSubs(pf), jq = JBQ.filter(q => subs.includes(q.c)), pq = PQ.filter(q => pf.p.includes(q.c));
+    const solved = jq.filter(q => P[q.id]).length, bad = jq.filter(q => P[q.id] && P[q.id].r !== 1).length;
+    return el('div', {class:'task', style:'flex-direction:column;align-items:stretch'},
+      el('div', {class:'tt', style:'flex:none;width:100%'}, el('b', null, `${pf.n} `), el('span', {style:'color:var(--ink3);font-size:12px'}, `중간 ${pf.w}`),
+        el('small', null, pf.what),
+        el('small', null, `족보 단원: ${subs.map(s => SUBS[s]).join(' · ')}`),
+        el('small', null, `족보 ${jq.length}문항 · 푼 ${solved} · 틀림·모름 ${bad}  |  예상문제 ${pq.length}문항`)),
+      el('div', {style:'display:flex;gap:6px;flex-wrap:wrap'},
+        el('button', {class:'btn sm', onclick: () => { sel.clear(); subs.forEach(s => sel.add(s)); saveSel(); renderHome(); $('#regions').scrollIntoView({behavior:'smooth'}); }}, '범위만 고르기'),
+        el('button', {class:'btn sm', onclick: () => startSession(jq, `${pf.n} 범위 족보`)}, `족보 ${jq.length} 풀기`),
+        el('button', {class:'btn sm primary', onclick: () => startSession(sortByFolder(jq.concat(pq), () => 0), `${pf.n} 족보+예상문제`)}, `족보+예상 ${jq.length + pq.length}`)));
+  });
+  const mb = el('button', {class:'btn sm' + (prefs.pmaybe ? ' on' : ''), onclick: () => { prefs.pmaybe = !prefs.pmaybe; lsSet(LS_KEY, snapshot()); renderPlan(); }},
+    prefs.pmaybe ? '애매한 단원 포함 중' : '애매한 단원 빼는 중');
+  box.replaceChildren(el('div', {class:'panel plan'},
+    el('div', {class:'dd'}, el('b', {style:'font-size:17px'}, '2026 교수님 범위로 족보 모으기'), el('span', {class:'note', style:'margin:0', text:'24~28기 족보를 올해 교수계획서 담당 범위로 다시 나눴어요'})),
+    el('div', {class:'today'}, cards),
+    el('div', {class:'opts'}, mb, el('span', {class:'note', style:'margin:0', text:'애매한 단원: ' + Object.keys(MAYBE_NOTE).map(k => SUBS[k]).join(', ')})),
+    el('details', null, el('summary', null, '애매한 단원을 나눈 이유'),
+      el('div', {class:'note', style:'white-space:pre-line', text: Object.entries(MAYBE_NOTE).map(([k, v]) => `• ${k} ${v}`).join('\n')}))));
+}
+
 /* ---- 주제별 폴더: group a question list by topic (소단원 이름) ---- */
 const OPENF = new Set();
 function folderOf(q){ return (SUBS[q.c] || q.c || '기타').trim(); }
@@ -182,6 +214,7 @@ function runPlanTask(subs, mode, wmin){
 }
 function renderPlan(){
   const box = $('#planBox'); if (!box) return;
+  if (currentTab() === 'pick') { renderProfBox(box); return; }
   if (currentTab() !== 'pred') { box.replaceChildren(); return; }
   const today = ymd(new Date()), dd = dayDiff(today, EXAM.date);
   const row = PLAN.find(r => r[0] === today);
