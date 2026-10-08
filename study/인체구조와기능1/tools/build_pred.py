@@ -209,7 +209,7 @@ OVR = {
     93083: ['deep fascia', '깊은근막', '심부근막'],
 }
 for q in Q:
-    o = OVR.get(q['id'])
+    o = OVR.get(q['id']) if q['t'] == 'short' else None
     if o == 'essay':
         q['a'] = [[q['d']]]
         q['is'] = '서술형 — 정답과 비교해 직접 판정'
