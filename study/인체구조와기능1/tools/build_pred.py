@@ -187,18 +187,26 @@ OVR = {
     91420: ['axillary process', 'axillary tail', '겨드랑돌기', '겨드랑꼬리', 'axillary tail of Spence'],
     91419: 'essay',
     93001: ['continuous capillary', '연속모세혈관'],
-    93004: ['thoracic duct', '가슴관', '흉관'],
     93007: ['transversalis fascia', '가로근막', '배가로근막'],
     93008: ['inferior epigastric a.', 'inferior epigastric artery', '아래배벽동맥'],
     93011: ['internal oblique m.', 'internal abdominal oblique', '배속빗근'],
     93012: ['direct inguinal hernia', '직접샅굴탈장', '직접고샅탈장'],
     93014: ['indirect inguinal hernia', '간접샅굴탈장', '간접고샅탈장'],
-    93021: ['inferior vena cava', 'IVC', '아래대정맥'],
+    93021: ['hepatorenal recess', "Morison's pouch", 'Morison pouch', '간콩팥오목', '간신오목'],
     93028: ['T11', '열한째등뼈', '11번 등뼈'],
     93032: ['cecopexy', '막창자고정술', '맹장고정술'],
     93034: ['taeniae coli', 'taenia coli', 'teniae coli', '잘록창자띠'],
     93039: ['falciform ligament', 'falciform lig.', '낫인대'],
-    93045: ['hepatopancreatic ampulla', 'ampulla of Vater', '쓸개이자관팽대'],
+    93054: ['rectouterine pouch', 'Douglas pouch', 'pouch of Douglas', '곧창자자궁오목', '직장자궁오목', '직장자궁와'],
+    93056: ['rebound tenderness', '반발통', '반동압통'],
+    93062: ["Barrett's esophagus", 'Barrett esophagus', '바렛식도', 'Barrett 식도'],
+    93063: ["crow's foot", 'crows foot', '까마귀발', 'nerve of Latarjet'],
+    93070: ['bicarbonate', 'HCO3-', 'HCO3', 'HCO3⁻', '중탄산이온', '중탄산염', '탄산수소이온'],
+    93071: ['annular pancreas', '고리이자', '윤상췌장'],
+    93072: ['sphincter of Oddi', 'Oddi sphincter', 'Oddi 조임근', '온쓸개이자관팽대조임근'],
+    93076: ['iliohypogastric n.', 'iliohypogastric nerve', '엉덩아랫배신경'],
+    93079: ['submucosa', '점막밑조직', '점막밑층', '점막하층'],
+    93083: ['deep fascia', '깊은근막', '심부근막'],
 }
 for q in Q:
     o = OVR.get(q['id'])
@@ -215,7 +223,7 @@ subs = {'K1': '골학(다리뼈·가슴우리뼈)', 'K2': '넙다리·볼기', '
         'J1': '학생발표 문제 원문', 'J2': '학생발표 문제 변형', 'J3': '상지 조합형', 'J4': '총론·등'}
 if any(q['c'][0] == 'Y' for q in Q):
     regions['Y'] = '윤상필p (배·총론 · 길라잡이)'
-    subs.update({'Y1': '총론', 'Y2': '배벽·샅굴', 'Y3': '복막·창자', 'Y4': '소화기 부속샘', 'Y5': '길라잡이 기타'})
+    subs.update({'Y1': '총론', 'Y2': '배벽·샅굴', 'Y3': '복막·창자', 'Y4': '소화기 부속샘', 'Y5': '혈관·신경·임상 연계 (2026 원문)'})
 
 ids = [q['id'] for q in Q]
 assert len(ids) == len(set(ids)), 'duplicate ids'
