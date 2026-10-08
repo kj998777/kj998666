@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isCorrect } from "@/lib/grading";
 import { reconcileKeyDisplay } from "@/lib/review/answerMatch";
-import { allowedItem, loadSimilarPage } from "@/lib/similar/load";
+import { allowedItem, loadSimilarPageShared } from "@/lib/similar/load";
 
 // 오답 유사문제 답 확인 — 학생이 적은 답을 채점하고(제출 채점과 같은 lib/grading.ts), 그 문항의 정답·풀이를 돌려준다.
 // answer가 비어 있으면("해설 보기") 채점 없이 정답·풀이만. 그 제출 화면에 나온 유사문제만 받는다.
@@ -19,7 +19,7 @@ export async function POST(request: Request, { params }: { params: { sid: string
   const answer = String(body.answer ?? "").slice(0, 200);
 
   const admin = createAdminClient();
-  const page = await loadSimilarPage(admin, params.sid);
+  const page = await loadSimilarPageShared(admin, params.sid);
   const allowed = page ? allowedItem(page, itemId) : null;
   if (!allowed || allowed.kind !== "similar") {
     return NextResponse.json({ ok: false, msg: "볼 수 없는 문항입니다." }, { status: 404 });
