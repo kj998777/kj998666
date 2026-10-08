@@ -104,24 +104,52 @@ const PROF = [
 ];
 const MAYBE_NOTE = {B3:'척수 겉모양·척수신경 — 척수는 기말(윤상필) 범위, 등 강의에서 척수신경만 다룰 수 있음', G4:'방광·곧창자·회음 — 계획서 중간 범위에 따로 없음(골반벽 강의에 일부 포함 가능)', F5:'콩팥·부신·뒤배벽 — 계획서에 콩팥 강의 없음(뒤배벽만 배벽 강의에 포함 가능)'};
 function profSubs(pf){ return pf.jb.concat(prefs.pmaybe ? pf.maybe : []); }
+function profOff(pf){ prefs.poff = prefs.poff || {}; return new Set(prefs.poff[pf.n] || []); }
+function setProfOff(pf, off){ prefs.poff = prefs.poff || {}; prefs.poff[pf.n] = [...off]; lsSet(LS_KEY, snapshot()); renderPlan(); }
+const PMODES = [['all', '전체'], ['unsolved', '안 푼 것'], ['review', '틀림·모름'], ['due', '오늘 복습'], ['random', '무작위']];
+function profPool(list){
+  const m = prefs.pmode || 'all';
+  if (m === 'unsolved') return list.filter(q => !P[q.id] && eff(q).t !== 'none');
+  if (m === 'review') return list.filter(q => P[q.id] && P[q.id].r !== 1);
+  if (m === 'due') return list.filter(isDue);
+  if (m === 'random') return shuffle(list.slice());
+  return list;
+}
 function renderProfBox(box){
   const cards = PROF.map(pf => {
-    const subs = profSubs(pf), jq = JBQ.filter(q => subs.includes(q.c)), pq = PQ.filter(q => pf.p.includes(q.c));
-    const solved = jq.filter(q => P[q.id]).length, bad = jq.filter(q => P[q.id] && P[q.id].r !== 1).length;
+    const off = profOff(pf);
+    const jsubs = profSubs(pf), psubs = pf.p;
+    const onJ = jsubs.filter(s => !off.has(s)), onP = psubs.filter(s => !off.has(s));
+    const jq = profPool(JBQ.filter(q => onJ.includes(q.c))), pq = profPool(PQ.filter(q => onP.includes(q.c)));
+    const chip = (sub, qs) => {
+      const n = qs.filter(q => q.c === sub).length, bad = qs.filter(q => q.c === sub && P[q.id] && P[q.id].r !== 1).length;
+      return el('button', {class: off.has(sub) ? '' : 'on', title: off.has(sub) ? '눌러서 넣기' : '눌러서 빼기',
+        onclick: () => { off.has(sub) ? off.delete(sub) : off.add(sub); setProfOff(pf, off); }},
+        `${SUBS[sub] || sub} ${n}` + (bad ? ` · ✕${bad}` : ''));
+    };
+    const allOn = !jsubs.concat(psubs).some(s => off.has(s));
+    const row = (label, subs, qs) => el('div', {style:'margin-top:8px'},
+      el('div', {style:'font-size:12px;color:var(--ink3);margin-bottom:4px'}, label),
+      el('div', {class:'seg'}, subs.map(sb => chip(sb, qs))));
     return el('div', {class:'task', style:'flex-direction:column;align-items:stretch'},
       el('div', {class:'tt', style:'flex:none;width:100%'}, el('b', null, `${pf.n} `), el('span', {style:'color:var(--ink3);font-size:12px'}, `중간 ${pf.w}`),
-        el('small', null, pf.what),
-        el('small', null, `족보 단원: ${subs.map(s => SUBS[s]).join(' · ')}`),
-        el('small', null, `족보 ${jq.length}문항 · 푼 ${solved} · 틀림·모름 ${bad}  |  예상문제 ${pq.length}문항`)),
-      el('div', {style:'display:flex;gap:6px;flex-wrap:wrap'},
-        el('button', {class:'btn sm', onclick: () => { sel.clear(); subs.forEach(s => sel.add(s)); saveSel(); renderHome(); $('#regions').scrollIntoView({behavior:'smooth'}); }}, '범위만 고르기'),
-        el('button', {class:'btn sm', onclick: () => startSession(jq, `${pf.n} 범위 족보`)}, `족보 ${jq.length} 풀기`),
-        el('button', {class:'btn sm primary', onclick: () => startSession(sortByFolder(jq.concat(pq), () => 0), `${pf.n} 족보+예상문제`)}, `족보+예상 ${jq.length + pq.length}`)));
+        el('small', null, pf.what)),
+      row('족보 단원 (눌러서 넣기·빼기)', jsubs, JBQ), row('예상문제 단원', psubs, PQ),
+      el('div', {style:'display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center'},
+        el('button', {class:'btn sm ghost', disabled: allOn, onclick: () => setProfOff(pf, new Set())}, '모두 넣기'),
+        el('button', {class:'btn sm ghost', disabled: !onJ.length && !onP.length, onclick: () => setProfOff(pf, new Set(jsubs.concat(psubs)))}, '모두 빼기'),
+        el('button', {class:'btn sm', disabled: !onJ.length, onclick: () => { sel.clear(); onJ.forEach(x => sel.add(x)); saveSel(); renderHome(); $('#regions').scrollIntoView({behavior:'smooth'}); }}, '아래 목록에 적용'),
+        el('button', {class:'btn sm', disabled: !jq.length, onclick: () => startSession(jq, `${pf.n} 족보`)}, `족보 ${jq.length}`),
+        el('button', {class:'btn sm', disabled: !pq.length, onclick: () => startSession(pq, `${pf.n} 예상문제`)}, `예상 ${pq.length}`),
+        el('button', {class:'btn sm primary', disabled: !(jq.length + pq.length), onclick: () => startSession((prefs.pmode === 'random' ? shuffle : (l => sortByFolder(l, () => 0)))(jq.concat(pq)), `${pf.n} 족보+예상문제`)}, `족보+예상 ${jq.length + pq.length}`)));
   });
+  const modeSeg = el('div', {class:'seg'}, PMODES.map(([k, lab]) =>
+    el('button', {class: (prefs.pmode || 'all') === k ? 'on' : '', onclick: () => { prefs.pmode = k; lsSet(LS_KEY, snapshot()); renderPlan(); }}, lab)));
   const mb = el('button', {class:'btn sm' + (prefs.pmaybe ? ' on' : ''), onclick: () => { prefs.pmaybe = !prefs.pmaybe; lsSet(LS_KEY, snapshot()); renderPlan(); }},
     prefs.pmaybe ? '애매한 단원 포함 중' : '애매한 단원 빼는 중');
   box.replaceChildren(el('div', {class:'panel plan'},
     el('div', {class:'dd'}, el('b', {style:'font-size:17px'}, '2026 교수님 범위로 족보 모으기'), el('span', {class:'note', style:'margin:0', text:'24~28기 족보를 올해 교수계획서 담당 범위로 다시 나눴어요'})),
+    el('div', {style:'margin-top:8px;font-size:13px;color:var(--ink2)'}, '풀 문제: ', modeSeg),
     el('div', {class:'today'}, cards),
     el('div', {class:'opts'}, mb, el('span', {class:'note', style:'margin:0', text:'애매한 단원: ' + Object.keys(MAYBE_NOTE).map(k => SUBS[k]).join(', ')})),
     el('details', null, el('summary', null, '애매한 단원을 나눈 이유'),
