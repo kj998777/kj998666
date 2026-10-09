@@ -577,3 +577,162 @@ async function openGlSync(){
   }
 }
 { const b = document.getElementById('glSyncBtn'); if (b) b.addEventListener('click', openGlSync); }
+
+/* ---- 그란트 쪽 뽑기: find the pages that carry given figure numbers and save those whole pages as one PDF ---- */
+
+/* distinctive label words of Grant 13e figures (captions and page numbers are images in the PDF, labels are text) */
+const FIGKEYS = {
+  '2.31': ['nasopharynx', 'laryngopharynx', 'oral cavity', 'cervical part', 'abdominal part', 'xiphoid process', 'transpyloric plane', 'interspinous plane', 'outline of pancreas', 'outline of duodenum', 'thoracic cage protecting'],
+  '2.35': ['gastric area', 'renal area', 'colic area', 'hilum', 'splenorenal ligament', 'gastrosplenic', 'short gastric vessels', 'posterior end', 'anterior border', 'inferior border', 'superior border'],
+  '2.37': ['uncinate process', 'suspensory muscle', 'minor duodenal papilla', 'major duodenal papilla', 'accessory pancreatic duct', 'main pancreatic duct', 'vertebral levels', 'left suprarenal gland', 'gastroduodenal artery', 'psoas'],
+  '2.41': ['mesentery of small intestine', 'duodenojejunal junction', 'sigmoid mesocolon', 'semilunar fold', 'gastrocolic part'],
+  '2.43': ['superior ileocecal recess', 'inferior ileocecal recess', 'vascular fold of cecum', 'inferior ileocecal fold', 'mesoappendix', 'appendicular artery', 'ileocecal orifice', 'orifice of appendix', 'ileal diverticulum', 'haustrum'],
+  '2.46': ['marginal artery', 'site of anastomosis', 'middle colic artery', 'left colic artery', 'sigmoid arteries', 'superior rectal artery', 'critical point', 'common iliac artery'],
+  '2.50': ['left triangular ligament', 'right triangular ligament', 'falciform ligament', 'ligamentum teres', 'ligament of inferior vena cava', 'openings of right and', 'bare area', 'coronary ligament', 'caudate lobe'],
+  '2.51': ['esophageal area', 'pyloric area', 'quadrate lobe', 'suprarenal area', 'duodenal area', 'caudate process', 'porta hepatis', 'hepatorenal', 'subphrenic recess', 'ligamentum venosum', 'line separating'],
+  '2.57': ['superficial branch', 'deep branch', 'cystic duct', 'common hepatic duct', 'right hepatic branch', 'left hepatic duct', 'cystic veins', 'fossa for gallbladder', 'cystohepatic triangle', 'hepatoduodenal ligament', 'anterior cystic vein'],
+  '2.58': ['fossa for gallbladder', 'quadrate lobe of liver', 'right branch of hepatic portal vein', 'middle and left', 'deep branch of cystic artery', 'accessory or replaced', 'gastroduodenal artery', 'right gastric artery and vein', 'left gastric vein'],
+  '2.65': ['cystic vein', 'right gastric vein', 'short gastric vein', 'pancreatic vein', 'gastro-omental veins', 'pancreaticoduodenal veins', 'middle colic vein', 'right colic veins', 'ileocolic vein', 'appendicular vein', 'left colic veins', 'sigmoid veins', 'jejunal and'],
+  '2.66': ['azygos vein', 'esophageal vein', 'para-umbilical vein', 'umbilicus', 'epigastric veins', 'retroperitoneal veins', 'middle rectal veins', 'inferior rectal vein', 'caput medusae', 'esophageal varices', 'esophagoscope', 'distended']
+};
+const GRP_DEFAULT = {title: '10월 2주차 땡시 시험범위 · Grant 영어원서', figs: '2.31, 2.35, 2.37, 2.41, 2.43, 2.46, 2.50, 2.51, 2.57, 2.58, 2.65, 2.66'};
+function figRx(f){ const e = f.replace('.', '\\.'); return new RegExp('(?:^|[\\s(])(?:Figure|FIGURE|그림)?\\s*' + e + '(?![0-9])\\s*(?:\\(CONTINUED\\)|\\(계속\\))?\\s+[A-Z가-힣]'); }
+async function openGrantPages(){
+  S = null;
+  $('#home').classList.add('hidden');
+  $('#quiz').classList.remove('hidden');
+  window.scrollTo(0, 0);
+  const box = $('#quiz');
+  const saved = lsGet('jbmid.grp') || {};
+  const fileIn = el('input', {type:'file', accept:'application/pdf,.pdf', class:'hidden'});
+  const status = el('div', {class:'msg'});
+  const titleIn = el('input', {type:'text', value: saved.title || GRP_DEFAULT.title});
+  const figIn = el('textarea', {rows:'3'}); figIn.value = saved.figs || GRP_DEFAULT.figs;
+  const pageIn = el('input', {type:'text', placeholder:'예) 131, 133-135  (그림 번호 대신 PDF 쪽을 직접 넣을 때)'});
+  pageIn.value = saved.pages || '';
+  const qual = el('select', null, el('option', {value:'1600', text:'보통 화질'}), el('option', {value:'2200', text:'선명하게 (파일 큼)'}));
+  const prog = el('div', {class:'note', id:'grpProg'});
+  const result = el('div');
+  const findBtn = el('button', {class:'btn', id:'grpFind', onclick: find}, '① 쪽 찾기');
+  const goBtn = el('button', {class:'btn primary', id:'grpGo', onclick: build, disabled: true}, '② PDF 만들기');
+  let found = null, busy = false, stop = false;
+  const showFile = () => {
+    const f = LINK.GR;
+    status.className = 'msg' + (f ? '' : ' err');
+    status.textContent = f ? `연결된 그란트: ${f.name} (${(f.size / 1048576).toFixed(0)}MB)` : '그란트 아틀라스 PDF가 아직 연결되지 않았어요. 📎 버튼으로 한 번만 골라 주세요.';
+  };
+  fileIn.addEventListener('change', async () => {
+    const f = fileIn.files[0]; fileIn.value = ''; if (!f) return;
+    LINK.GR = f; delete DOCS.GR; showFile(); await remember('GR', f);
+  });
+  const remember_ = () => { try { lsSet('jbmid.grp', {title: titleIn.value, figs: figIn.value, pages: pageIn.value}); } catch (e) {} };
+  box.replaceChildren(
+    el('div', {class:'qtop'}, el('button', {class:'btn sm', onclick: () => { stop = true; exitQuiz(); }}, '← 목록'), el('div', {class:'pos', text:'그란트 쪽 뽑기'})),
+    el('div', {class:'panel', style:'padding:14px'},
+      el('h3', {style:'margin:0 0 6px;font-size:17px', text:'📚 그란트 그림이 있는 쪽 통째로 PDF 만들기'}),
+      el('div', {class:'note', style:'margin:0 0 10px', text:'그림 번호(예: 2.37)를 적으면 그란트 PDF 안에서 그 그림이 있는 쪽을 찾아 그 쪽 전체를 한 파일로 묶어요. 그란트 PDF는 그림 제목이 이미지라서, 그림 속 이름표 글자로 쪽을 찾아요(지금은 2장 배 단원 그림 12개를 알고 있어요). 모르는 그림은 아래에 PDF 쪽 번호를 직접 넣어 주세요. 땡시·형성평가 범위 공지용이에요. 파일은 이 기기 안에서만 읽어요.'}),
+      el('div', {class:'actions', style:'margin:0'}, el('button', {class:'btn', onclick: () => fileIn.click()}, '📎 그란트 PDF 고르기'), fileIn),
+      status),
+    el('div', {class:'panel', style:'padding:14px;margin-top:10px'},
+      el('div', {class:'field'}, el('label', {text:'파일 제목 (표지에 들어가요)'}), titleIn),
+      el('div', {class:'field'}, el('label', {text:'그림 번호 (쉼표로 구분)'}), figIn),
+      el('div', {class:'field'}, el('label', {text:'쪽 직접 지정 (선택)'}), pageIn),
+      el('div', {class:'field'}, el('label', {text:'화질'}), qual)),
+    el('div', {class:'actions'}, findBtn, goBtn, prog), result);
+  await restoreLinks(); showFile();
+
+  function parsePages(s){
+    const out = [];
+    for (const part of s.split(/[,\s]+/).filter(Boolean)) {
+      const m = part.match(/^(\d+)(?:-(\d+))?$/); if (!m) continue;
+      const a = +m[1], b = +(m[2] || m[1]); for (let p = a; p <= b && p - a < 200; p++) out.push(p);
+    }
+    return out;
+  }
+  async function find(){
+    if (busy) return; if (!LINK.GR) { showFile(); return; }
+    busy = true; stop = false; findBtn.disabled = true; goBtn.disabled = true; remember_();
+    try {
+      prog.textContent = '라이브러리 불러오는 중…'; await libs();
+      const doc = await openDoc('GR'), N = doc.numPages;
+      const figs = figIn.value.split(/[,\s]+/).map(s => s.trim()).filter(s => /^\d+\.\d+$/.test(s));
+      const hits = new Map(figs.map(f => [f, []]));
+      const rx = figs.map(f => [f, figRx(f)]);
+      const pageLabel = {}, score = {};
+      // figures of chapter c usually sit in one stretch; scan everything but cheaply (text only)
+      for (let p = 1; p <= N && figs.length && !stop; p++) {
+        if (p % 10 === 1) prog.textContent = `쪽 찾는 중… ${p} / ${N}`;
+        const page = await doc.getPage(p);
+        const tc = await page.getTextContent(); page.cleanup();
+        const txt = ' ' + tc.items.map(it => it.str).join(' ').replace(/\s+/g, ' ') + ' ';
+        const low = txt.toLowerCase();
+        for (const [f, r] of rx) {
+          if (r.test(txt)) { hits.get(f).push(p); continue; }
+          const ks = FIGKEYS[f]; if (!ks) continue;
+          const sc = ks.filter(k => low.includes(k)).length;
+          if (sc >= Math.max(3, Math.ceil(ks.length * 0.5))) (score[f] = score[f] || []).push([p, sc]);
+        }
+        const lab = txt.match(/^\s*(\d{1,3})\s/) || txt.match(/\s(\d{1,3})\s*$/);
+        if (lab) pageLabel[p] = lab[1];
+      }
+      for (const f of figs) {
+        if (hits.get(f).length || !score[f]) continue;
+        const top = Math.max(...score[f].map(x => x[1]));
+        hits.get(f).push(...score[f].filter(x => x[1] >= top * 0.8).map(x => x[0]));
+      }
+      const manual = parsePages(pageIn.value).filter(p => p >= 1 && p <= N);
+      const pages = [...new Set([...[...hits.values()].flat(), ...manual])].sort((a, b) => a - b);
+      found = {pages, hits, pageLabel, N};
+      const miss = figs.filter(f => !hits.get(f).length);
+      result.replaceChildren(el('div', {class:'panel', style:'padding:12px 14px;margin-top:10px'},
+        el('div', {style:'font-weight:600;margin-bottom:6px', text:`찾은 쪽 ${pages.length}개`}),
+        el('div', {class:'note', style:'white-space:pre-line;margin:0', text:
+          figs.map(f => `Figure ${f} → ${hits.get(f).length ? hits.get(f).map(p => `PDF ${p}쪽` + (pageLabel[p] ? ` (책 ${pageLabel[p]}쪽)` : '')).join(', ') : '못 찾음'}`).join('\n')
+          + (manual.length ? `\n직접 지정 → ${manual.join(', ')}` : '')
+          + (miss.length ? `\n\n못 찾은 그림은 "쪽 직접 지정"에 PDF 쪽 번호를 넣어 주세요.` : '')})));
+      goBtn.disabled = !pages.length;
+      prog.textContent = stop ? '멈췄어요.' : '다 찾았어요. ② PDF 만들기를 누르세요.';
+    } catch (er) { prog.textContent = '찾지 못했어요: ' + (er.message || er); }
+    finally { busy = false; findBtn.disabled = false; }
+  }
+  async function build(){
+    if (busy || !found) return; busy = true; goBtn.disabled = true; remember_();
+    try {
+      await libs();
+      try { await document.fonts.load(`700 24px "Noto Sans KR"`); } catch (er) {}
+      const {jsPDF} = window.jspdf; let pdf = null;
+      const add = (c, q) => {
+        const k = 595 / c.width, w = c.width * k, h = c.height * k;
+        if (!pdf) pdf = new jsPDF({unit:'pt', format:[w, h], orientation: w > h ? 'l' : 'p', compress: true}); else pdf.addPage([w, h], w > h ? 'l' : 'p');
+        pdf.addImage(c.toDataURL('image/jpeg', q || 0.85), 'JPEG', 0, 0, w, h, undefined, 'FAST');
+      };
+      // cover
+      const [c, x] = newSheet();
+      x.fillStyle = '#1d608c'; x.fillRect(0, 0, PW, 14);
+      x.font = `700 46px ${FONT}`; x.fillStyle = '#1d1d1b';
+      let y = 160; for (const line of wrap(x, titleIn.value, PW - 2 * M)) { x.fillText(line, M, y); y += 60; }
+      x.font = `400 26px ${FONT}`; x.fillStyle = '#5c5b56'; y += 20;
+      const figs = [...found.hits.keys()];
+      for (const f of figs) { const ps = found.hits.get(f); x.fillText(`Figure ${f}` + (ps.length ? `  —  ${ps.map(p => found.pageLabel[p] ? `p.${found.pageLabel[p]}` : `PDF ${p}`).join(', ')}` : '  —  (못 찾음)'), M, y); y += 40; }
+      add(c, 0.9);
+      const W = +qual.value;
+      for (let i = 0; i < found.pages.length; i++) {
+        prog.textContent = `${i + 1} / ${found.pages.length}쪽 넣는 중…`;
+        add(await renderPage('GR', found.pages[i], W));
+        await new Promise(r => setTimeout(r, 0));
+      }
+      const blob = pdf.output('blob');
+      const fname = `${titleIn.value.replace(/[\\/:*?"<>|]/g, ' ').trim() || '그란트 범위'}.pdf`;
+      const dl = window.claude && window.claude.use ? await window.claude.use('downloads').catch(() => null) : null;
+      if (dl) {
+        try { await dl.save({filename: fname, data: blob}); prog.textContent = `저장했어요 · ${found.pages.length + 1}쪽 · ${(blob.size / 1048576).toFixed(1)}MB`; }
+        catch (er) { prog.textContent = er && er.code === 'declined' ? '저장을 취소했어요.' : '저장하지 못했어요: ' + (er && (er.message || er.code) || er); }
+      } else {
+        window.__lastPdf = blob;
+        prog.replaceChildren(`다 만들었어요 · ${found.pages.length + 1}쪽 `, el('a', {href: URL.createObjectURL(blob), download: fname, class:'btn sm primary', id:'grpLink'}, 'PDF 받기'));
+      }
+    } catch (er) { prog.textContent = '만들지 못했어요: ' + (er.message || er); }
+    finally { busy = false; goBtn.disabled = false; }
+  }
+}
+{ const b = document.getElementById('grpBtn'); if (b) b.addEventListener('click', openGrantPages); }
