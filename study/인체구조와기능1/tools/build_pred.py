@@ -155,7 +155,7 @@ if ys.exists():
     for k, v in leads.items():
         qs[k] = v + '\n\n' + qs[k]
     sections = [(m.start(), m.group(1), m.group(2)) for m in re.finditer(r'^## ([A-Z])\. (.*)$', qpart, flags=re.M)]
-    ycode = {'A': 'Y1', 'B': 'Y2', 'C': 'Y3', 'D': 'Y4', 'E': 'Y5'}
+    ycode = {'A': 'Y1', 'B': 'Y2', 'C': 'Y3', 'D': 'Y4', 'E': 'Y5', 'F': 'Y6'}
     for num in sorted(qs):
         pos = qpart.index(f'**{num}.**')
         sec = [s for s in sections if s[0] < pos][-1]
@@ -223,7 +223,7 @@ subs = {'K1': '골학(다리뼈·가슴우리뼈)', 'K2': '넙다리·볼기', '
         'J1': '학생발표 문제 원문', 'J2': '학생발표 문제 변형', 'J3': '상지 조합형', 'J4': '총론·등'}
 if any(q['c'][0] == 'Y' for q in Q):
     regions['Y'] = '윤상필p (배·총론 · 길라잡이)'
-    subs.update({'Y1': '총론', 'Y2': '배벽·샅굴', 'Y3': '복막·창자', 'Y4': '소화기 부속샘', 'Y5': '혈관·신경·임상 연계 (2026 원문)'})
+    subs.update({'Y1': '총론', 'Y2': '배벽·샅굴', 'Y3': '복막·창자', 'Y4': '소화기 부속샘', 'Y5': '혈관·신경·임상 연계 (2026 원문)', 'Y6': '실습 녹음 기반'})
 
 ids = [q['id'] for q in Q]
 assert len(ids) == len(set(ids)), 'duplicate ids'
