@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { applyRegradePlan, regradePlan } from "@/lib/review/regrade";
+import { isCorrect } from "@/lib/grading";
 
 /** 제출을 지워서 그 학생이 다시 낼 수 있게 한다 — 관리자 전용(재제출 허용 목적). */
 export async function deleteSubmission(code: string, submissionId: string) {
@@ -46,4 +47,43 @@ export async function regradeThisExam(code: string, apply: boolean) {
       ? `제출 ${applied}건을 지금 정답표로 다시 채점했습니다.`
       : `제출 ${plan.checked}건 중 ${plan.changes.length}건의 점수·정오가 지금 정답표와 다릅니다.`;
   return { ok: true as const, msg, checked: plan.checked, changes };
+}
+
+/**
+ * 2026-10-10 원장님 "제출한 시험에서 내가 맞음 처리": 학생 답 한 문항을 선생님이 맞음으로 처리(manual)하거나, 되돌려
+ * 자동 채점으로 돌린다(관리자). 점수·총점을 함께 고치고, 나중에 정답표를 고쳐 다시 채점해도 맞음 처리는 남는다.
+ */
+export async function setItemManualCorrect(code: string, submissionId: string, label: string, manual: boolean) {
+  await requireRole("admin");
+  const admin = createAdminClient();
+  const { data: exam } = (await admin.from("exams").select("id").eq("code", code).maybeSingle()) as any;
+  if (!exam) return { ok: false as const, msg: "시험을 찾을 수 없습니다." };
+  const { data: gr } = (await admin
+    .from("grading_results")
+    .select("id, exam_id, per_item")
+    .eq("submission_id", submissionId)
+    .maybeSingle()) as any;
+  if (!gr || gr.exam_id !== exam.id) return { ok: false as const, msg: "이 시험의 제출을 찾을 수 없습니다." };
+  const { data: key } = (await admin
+    .from("answer_key")
+    .select("correct_answers, points, type")
+    .eq("exam_id", exam.id)
+    .eq("item_label", label)
+    .maybeSingle()) as any;
+  if (!key) return { ok: false as const, msg: `${label}번 정답이 정답표에 없습니다.` };
+
+  const perItem: any[] = Array.isArray(gr.per_item) ? gr.per_item : [];
+  const i = perItem.findIndex((p) => p?.item_label === label);
+  if (i < 0) return { ok: false as const, msg: `${label}번 문항이 이 제출에 없습니다.` };
+  const pts = Number(key.points) || 0;
+  const { manual: _old, ...rest } = perItem[i];
+  const correct = manual || isCorrect(rest.given ?? "", key.correct_answers, key.type);
+  perItem[i] = { ...rest, correct, points: correct ? pts : 0, ...(manual ? { manual: true } : {}) };
+  const total = Math.round(perItem.reduce((s, p) => s + (Number(p?.points) || 0), 0) * 100) / 100;
+
+  const { error } = await (admin.from("grading_results") as any).update({ per_item: perItem, total_score: total }).eq("id", gr.id);
+  if (error) return { ok: false as const, msg: "저장하지 못했습니다: " + error.message };
+  revalidatePath(`/exams/${code}/results`);
+  revalidatePath("/students");
+  return { ok: true as const, total };
 }

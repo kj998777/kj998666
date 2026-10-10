@@ -143,6 +143,8 @@ export type PerItemResult = {
   points: number;
   /** 2026-10-01: 학생이 "찍음"으로 표시한 문항(점수에는 그대로 들어가고, 실질 점수에서만 뺀다) */
   guessed?: boolean;
+  /** 2026-10-10: 선생님이 직접 "맞음"으로 처리한 문항(자동 채점은 오답). 다시 채점해도 맞음으로 남는다(lib/review/regrade.ts). */
+  manual?: boolean;
 };
 
 export type GradingOutcome = {

@@ -10,7 +10,7 @@ import { personLabel } from "@/lib/profile/label";
 import { guessSummary } from "@/lib/grading";
 import GuessStatsCard from "@/app/_components/GuessStatsCard";
 
-type PerItem = { item_label: string; given: string; correct: boolean; points: number; guessed?: boolean }[];
+type PerItem = { item_label: string; given: string; correct: boolean; points: number; guessed?: boolean; manual?: boolean }[];
 
 export default async function ResultsPage({ params }: { params: { code: string } }) {
   const session = await requireRole("viewer");
@@ -103,7 +103,7 @@ export default async function ResultsPage({ params }: { params: { code: string }
             </thead>
             <tbody>
               {submissions.map((s) => (
-                <ResultRow key={s.id} code={code} row={s} canDelete={session.role === "admin"} pickHref={session.role === "admin" || session.role === "editor" ? "/students/similar/" : undefined} />
+                <ResultRow key={s.id} code={code} row={s} canDelete={session.role === "admin"} canGrade={session.role === "admin"} pickHref={session.role === "admin" || session.role === "editor" ? "/students/similar/" : undefined} />
               ))}
             </tbody>
           </table>
