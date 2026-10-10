@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { schoolOf } from "@/lib/exams/schoolOf";
+import { setExamsStatus } from "./actions";
 
 export type ExamRow = {
   id: string;
@@ -40,16 +42,104 @@ function StatusCounts({ exams }: { exams: ExamRow[] }) {
   );
 }
 
+// 2026-10-10 원장님 "선택한 시험지 모두 열기": 관리자에게만 고르기 칸을 보여 주고, 고른 시험을 한꺼번에 열거나 닫는다.
+// 검수 대기 시험은 검수 확정으로만 열리므로 고를 수 없다(한 개씩 여는 버튼과 같은 규칙).
+type Selection = { selected: Set<string>; set: (codes: string[], on: boolean) => void };
+const SelectionCtx = createContext<Selection | null>(null);
+const selectable = (e: ExamRow) => e.status !== "검수대기";
+
+function FolderCheck({ exams }: { exams: ExamRow[] }) {
+  const sel = useContext(SelectionCtx);
+  if (!sel) return null;
+  const codes = exams.filter(selectable).map((e) => e.code);
+  if (!codes.length) return <span className="w-[13px] shrink-0" />;
+  const n = codes.filter((c) => sel.selected.has(c)).length;
+  return (
+    <input
+      type="checkbox"
+      className="shrink-0"
+      aria-label="이 폴더 시험 모두 고르기"
+      title="이 폴더 시험 모두 고르기"
+      checked={n === codes.length}
+      ref={(el) => {
+        if (el) el.indeterminate = n > 0 && n < codes.length;
+      }}
+      onChange={(ev) => sel.set(codes, ev.target.checked)}
+    />
+  );
+}
+
+function SelectionBar({ exams }: { exams: ExamRow[] }) {
+  const sel = useContext(SelectionCtx);
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState("");
+  if (!sel) return null;
+  const codes = exams.filter((e) => sel.selected.has(e.code)).map((e) => e.code);
+  const run = (open: boolean) =>
+    start(async () => {
+      setMsg("");
+      const r = await setExamsStatus(codes, open);
+      if (!r.ok) {
+        setMsg(r.msg);
+        return;
+      }
+      const parts = [`${r.changed}개를 ${open ? "열었" : "닫았"}습니다.`];
+      if (r.already) parts.push(`이미 ${open ? "열림" : "닫힘"} ${r.already}개`);
+      if (r.skippedNoKey) parts.push(`정답이 없어 못 연 시험 ${r.skippedNoKey}개`);
+      if (r.skippedReview) parts.push(`검수 대기라 건너뜀 ${r.skippedReview}개`);
+      if (r.missing) parts.push(`찾지 못함 ${r.missing}개`);
+      setMsg(parts.join(" · "));
+      sel.set(codes, false);
+      router.refresh();
+    });
+  return (
+    <div className="sticky top-0 z-10 mb-3 flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-white/95 px-3 py-2 text-sm">
+      <span className="text-slate-600">
+        {codes.length ? `${codes.length}개 고름` : "시험 왼쪽 칸을 눌러 고르세요 (폴더 칸은 그 폴더 전체)"}
+      </span>
+      {codes.length > 0 && (
+        <>
+          <button type="button" className="btn-primary" disabled={pending} onClick={() => run(true)}>
+            {pending ? "처리 중…" : "선택한 시험 제출 열기"}
+          </button>
+          <button type="button" className="btn-secondary" disabled={pending} onClick={() => run(false)}>
+            선택한 시험 제출 닫기
+          </button>
+          <button type="button" className="text-slate-500 underline" disabled={pending} onClick={() => sel.set(codes, false)}>
+            선택 해제
+          </button>
+        </>
+      )}
+      {msg && <span className="w-full text-xs text-slate-700">{msg}</span>}
+    </div>
+  );
+}
+
 function ExamLeafRow({ x, showTermKind }: { x: ExamRow; showTermKind?: boolean }) {
+  const sel = useContext(SelectionCtx);
   const termKind =
     x.folder_term || x.folder_kind
       ? `${x.folder_term ? `${x.folder_term}학기` : ""} ${x.folder_kind ?? ""}`.trim()
       : null;
   return (
     <li className="py-2 flex flex-wrap items-center justify-between gap-2 pl-2">
-      <Link href={`/exams/${encodeURIComponent(x.code)}`} className="hover:underline min-w-0">
-        <span className="font-medium">{x.name}</span> <span className="text-slate-400 text-sm">({x.code})</span>
-      </Link>
+      <span className="flex items-center gap-2 min-w-0">
+        {sel && (
+          <input
+            type="checkbox"
+            className="shrink-0"
+            aria-label={`${x.name} 고르기`}
+            disabled={!selectable(x)}
+            title={selectable(x) ? undefined : "검수 대기 시험은 검수 확정으로 열립니다."}
+            checked={sel.selected.has(x.code)}
+            onChange={(ev) => sel.set([x.code], ev.target.checked)}
+          />
+        )}
+        <Link href={`/exams/${encodeURIComponent(x.code)}`} className="hover:underline min-w-0">
+          <span className="font-medium">{x.name}</span> <span className="text-slate-400 text-sm">({x.code})</span>
+        </Link>
+      </span>
       <div className="flex items-center gap-2 shrink-0">
         {showTermKind && termKind && <span className="badge bg-slate-100 text-slate-500">{termKind}</span>}
         {x.school_level && <span className="badge bg-sky-100 text-sky-700">{LEVEL_LABEL[x.school_level] ?? x.school_level}</span>}
@@ -75,25 +165,47 @@ function Folder({
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="border-b border-slate-100 last:border-0">
-      <button
-        type="button"
-        className="w-full flex flex-wrap items-center justify-between gap-2 py-2 text-left hover:bg-slate-50 rounded px-1"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className="flex items-center gap-2">
-          <span className="text-slate-400 text-xs w-3 inline-block">{open ? "▾" : "▸"}</span>
-          <span className="font-medium text-sm">{label}</span>
-          <span className="text-xs text-slate-400">({exams.length})</span>
-        </span>
-        <StatusCounts exams={exams} />
-      </button>
+      <div className="flex items-center gap-1">
+        <FolderCheck exams={exams} />
+        <button
+          type="button"
+          className="w-full flex flex-wrap items-center justify-between gap-2 py-2 text-left hover:bg-slate-50 rounded px-1"
+          onClick={() => setOpen((v) => !v)}
+        >
+          <span className="flex items-center gap-2">
+            <span className="text-slate-400 text-xs w-3 inline-block">{open ? "▾" : "▸"}</span>
+            <span className="font-medium text-sm">{label}</span>
+            <span className="text-xs text-slate-400">({exams.length})</span>
+          </span>
+          <StatusCounts exams={exams} />
+        </button>
+      </div>
       {open && <div className="pl-4">{children}</div>}
     </div>
   );
 }
 
-export default function ExamFolderTree({ exams }: { exams: ExamRow[] }) {
+export default function ExamFolderTree({ exams, canSelect = false }: { exams: ExamRow[]; canSelect?: boolean }) {
   const [tab, setTab] = useState<"folder" | "school">("folder");
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const selection = useMemo<Selection | null>(
+    () =>
+      canSelect
+        ? {
+            selected,
+            set: (codes, on) =>
+              setSelected((prev) => {
+                const next = new Set(prev);
+                for (const c of codes) {
+                  if (on) next.add(c);
+                  else next.delete(c);
+                }
+                return next;
+              }),
+          }
+        : null,
+    [canSelect, selected]
+  );
 
   // 0051(2026-10-05): 분류(collection)가 있는 시험도 연도 폴더 안에 둔다 —
   // 연도 → 학교급 → 학년 → 📚 분류(예: 부교재 변형문제) → 학교 → 시험 (2026-10-05 요청).
@@ -140,67 +252,70 @@ export default function ExamFolderTree({ exams }: { exams: ExamRow[] }) {
   }, [exams]);
 
   return (
-    <div>
-      <div className="flex gap-1 text-sm mb-3">
-        <button
-          type="button"
-          onClick={() => setTab("folder")}
-          className={"badge " + (tab === "folder" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600")}
-        >
-          연도·학교급·학년별
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("school")}
-          className={"badge " + (tab === "school" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600")}
-        >
-          학교별 기출
-        </button>
+    <SelectionCtx.Provider value={selection}>
+      <div>
+        <SelectionBar exams={exams} />
+        <div className="flex gap-1 text-sm mb-3">
+          <button
+            type="button"
+            onClick={() => setTab("folder")}
+            className={"badge " + (tab === "folder" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600")}
+          >
+            연도·학교급·학년별
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("school")}
+            className={"badge " + (tab === "school" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600")}
+          >
+            학교별 기출
+          </button>
+        </div>
+
+        {tab === "folder" && (
+          <div>
+            {years.length === 0 && unclassified.length === 0 && collections.length === 0 && (
+              <p className="text-sm text-slate-500">해당하는 시험이 없습니다.</p>
+            )}
+            {collections.map(([name, list]) => (
+              <Folder key={"c:" + name} id={"c:" + name} label={`📚 ${name}`} exams={list} defaultOpen={false}>
+                <NestedGroups exams={list} levels={COLLECTION_LEVELS} />
+              </Folder>
+            ))}
+            {years.map((y, idx) => (
+              <Folder key={y.year} id={y.year} label={`${y.year}년`} exams={y.exams} defaultOpen={idx === 0}>
+                <NestedGroups exams={y.exams} levels={FOLDER_LEVELS} />
+              </Folder>
+            ))}
+            {unclassified.length > 0 && (
+              <div className="pt-2">
+                <p className="text-xs text-slate-400 mb-1 px-1">폴더 미분류</p>
+                <ul className="divide-y divide-slate-100">
+                  {unclassified.map((x) => (
+                    <ExamLeafRow key={x.id} x={x} />
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "school" && (
+          <div>
+            {bySchool.length === 0 && <p className="text-sm text-slate-500">해당하는 시험이 없습니다.</p>}
+            {bySchool.map(([school, list]) => (
+              <Folder key={school} id={school} label={school} exams={list} defaultOpen={false}>
+                <ul className="divide-y divide-slate-100">
+                  {list.map((x) => (
+                    <ExamLeafRow key={x.id} x={x} showTermKind />
+                  ))}
+                </ul>
+              </Folder>
+            ))}
+          </div>
+        )}
       </div>
-
-      {tab === "folder" && (
-        <div>
-          {years.length === 0 && unclassified.length === 0 && collections.length === 0 && (
-            <p className="text-sm text-slate-500">해당하는 시험이 없습니다.</p>
-          )}
-          {collections.map(([name, list]) => (
-            <Folder key={"c:" + name} id={"c:" + name} label={`📚 ${name}`} exams={list} defaultOpen={false}>
-              <NestedGroups exams={list} levels={COLLECTION_LEVELS} />
-            </Folder>
-          ))}
-          {years.map((y, idx) => (
-            <Folder key={y.year} id={y.year} label={`${y.year}년`} exams={y.exams} defaultOpen={idx === 0}>
-              <NestedGroups exams={y.exams} levels={FOLDER_LEVELS} />
-            </Folder>
-          ))}
-          {unclassified.length > 0 && (
-            <div className="pt-2">
-              <p className="text-xs text-slate-400 mb-1 px-1">폴더 미분류</p>
-              <ul className="divide-y divide-slate-100">
-                {unclassified.map((x) => (
-                  <ExamLeafRow key={x.id} x={x} />
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-
-      {tab === "school" && (
-        <div>
-          {bySchool.length === 0 && <p className="text-sm text-slate-500">해당하는 시험이 없습니다.</p>}
-          {bySchool.map(([school, list]) => (
-            <Folder key={school} id={school} label={school} exams={list} defaultOpen={false}>
-              <ul className="divide-y divide-slate-100">
-                {list.map((x) => (
-                  <ExamLeafRow key={x.id} x={x} showTermKind />
-                ))}
-              </ul>
-            </Folder>
-          ))}
-        </div>
-      )}
-    </div>
+    </SelectionCtx.Provider>
   );
 }
 
