@@ -277,6 +277,15 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
   for (const r of reviews) periodReviews.set(r.tutor_id, (periodReviews.get(r.tutor_id) ?? 0) + 1);
   const periodPoints = new Map<string, number>();
   for (const l of ledger) if (l.delta > 0) periodPoints.set(l.tutor_id, (periodPoints.get(l.tutor_id) ?? 0) + l.delta);
+  // 2026-10-10 원장님 "과외선생님별 사용한 포인트": 기출 구매·맞춤 시험지·입학테스트에 쓴 포인트(관리자 차감 조정은 뺌)
+  const SPEND_REASONS = ["download_purchase", "worksheet_purchase", "placement_purchase"];
+  const periodSpent = new Map<string, Record<string, number>>();
+  for (const l of ledger) {
+    if (l.delta >= 0 || !SPEND_REASONS.includes(l.reason)) continue;
+    const m = periodSpent.get(l.tutor_id) ?? {};
+    m[l.reason] = (m[l.reason] ?? 0) - l.delta;
+    periodSpent.set(l.tutor_id, m);
+  }
   const statOf = new Map(stats.map((s) => [s.tutor_id, s]));
   const tutorRows = tutors
     .map((t) => {
@@ -287,6 +296,7 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
         t,
         periodReviews: periodReviews.get(t.id) ?? 0,
         periodPoints: periodPoints.get(t.id) ?? 0,
+        periodSpent: periodSpent.get(t.id) ?? {},
         total: Number(s.reviews_submitted ?? 0),
         balance: Number(s.points_balance ?? 0),
         flagged,
@@ -463,6 +473,7 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
                   <th className="py-1.5 pr-2">과외선생님</th>
                   <th className="py-1.5 pr-2 text-right">검토({period.label})</th>
                   <th className="py-1.5 pr-2 text-right">받은 P</th>
+                  <th className="py-1.5 pr-2 text-right" title="기출 구매·맞춤 시험지·입학테스트에 쓴 포인트">쓴 P</th>
                   <th className="py-1.5 pr-2 text-right">전체 검토</th>
                   <th className="py-1.5 pr-2 text-right">보유 P</th>
                   <th className="py-1.5 pr-2 text-right">정답률</th>
@@ -481,6 +492,21 @@ export default async function OpsPage({ searchParams }: { searchParams?: { p?: s
                     </td>
                     <td className="py-1.5 pr-2 text-right tabular-nums">{r.periodReviews}</td>
                     <td className="py-1.5 pr-2 text-right tabular-nums">{r.periodPoints}</td>
+                    <td className="py-1.5 pr-2 text-right tabular-nums">
+                      {(() => {
+                        const parts = SPEND_REASONS.filter((k) => r.periodSpent[k]);
+                        const sum = parts.reduce((a, k) => a + r.periodSpent[k], 0);
+                        if (!sum) return <span className="text-slate-400">0</span>;
+                        return (
+                          <>
+                            {sum}
+                            <div className="text-xs text-slate-400 whitespace-nowrap">
+                              {parts.map((k) => `${REASON_LABEL[k] ?? k} ${r.periodSpent[k]}`).join(" · ")}
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </td>
                     <td className="py-1.5 pr-2 text-right tabular-nums">{r.total}</td>
                     <td className="py-1.5 pr-2 text-right tabular-nums">{r.balance}</td>
                     <td className="py-1.5 pr-2 text-right tabular-nums">

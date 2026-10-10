@@ -244,3 +244,53 @@ export async function autoClassifyExams(): Promise<
   remaining.sort((a, b) => a.name.localeCompare(b.name, "ko"));
   return { ok: true, changed, remaining };
 }
+
+export type BulkStatusResult =
+  | { ok: false; msg: string }
+  | { ok: true; changed: number; already: number; skippedReview: number; skippedNoKey: number; missing: number };
+
+/**
+ * 2026-10-10 원장님 "선택한 시험지 모두 열기": 시험 목록에서 고른 시험들을 한꺼번에 열거나 닫는다(관리자 전용).
+ * 한 개씩 여닫는 버튼(toggleExamStatus)과 같은 규칙 — 검수 대기 시험은 건드리지 않고(검수 확정으로만 열림),
+ * 정답이 없는 시험은 열지 않는다. 건너뛴 이유별 개수를 돌려준다.
+ */
+export async function setExamsStatus(codes: string[], open: boolean): Promise<BulkStatusResult> {
+  await requireRole("admin");
+  const list = Array.from(new Set((Array.isArray(codes) ? codes : []).map((c) => String(c)).filter(Boolean))).slice(0, 500);
+  if (!list.length) return { ok: false, msg: "고른 시험이 없습니다." };
+  const supabase = await createClient();
+  const target = open ? "열림" : "닫힘";
+
+  const exams: { id: string; code: string; status: string }[] = [];
+  for (let i = 0; i < list.length; i += 150) {
+    const { data, error } = await supabase.from("exams").select("id, code, status").in("code", list.slice(i, i + 150));
+    if (error) return { ok: false, msg: "시험을 불러오지 못했습니다: " + error.message };
+    exams.push(...((data as any[]) ?? []));
+  }
+  const missing = list.length - exams.length;
+  const skippedReview = exams.filter((e) => e.status === "검수대기").length;
+  const already = exams.filter((e) => e.status === target).length;
+  let ids = exams.filter((e) => e.status !== "검수대기" && e.status !== target).map((e) => e.id);
+
+  let skippedNoKey = 0;
+  if (open && ids.length) {
+    const withKey = new Set<string>();
+    for (let i = 0; i < ids.length; i += 150) {
+      const { data, error } = await supabase.from("answer_key").select("exam_id").in("exam_id", ids.slice(i, i + 150));
+      if (error) return { ok: false, msg: "정답표를 확인하지 못했습니다: " + error.message };
+      for (const k of (data as any[]) ?? []) withKey.add(k.exam_id);
+    }
+    skippedNoKey = ids.filter((id) => !withKey.has(id)).length;
+    ids = ids.filter((id) => withKey.has(id));
+  }
+
+  let changed = 0;
+  for (let i = 0; i < ids.length; i += 150) {
+    const chunk = ids.slice(i, i + 150);
+    const { error } = await (supabase.from("exams") as any).update({ status: target }).in("id", chunk).neq("status", "검수대기");
+    if (error) return { ok: false, msg: `${changed}개까지 바꾸고 멈췄습니다: ` + error.message };
+    changed += chunk.length;
+  }
+  revalidatePath("/exams");
+  return { ok: true, changed, already, skippedReview, skippedNoKey, missing };
+}

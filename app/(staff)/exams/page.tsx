@@ -92,7 +92,7 @@ export default async function ExamsPage({ searchParams }: { searchParams?: { lev
           </div>
         </div>
         {error && <p className="text-sm text-red-600">목록을 불러오지 못했습니다: {error.message}</p>}
-        <ExamFolderTree exams={(exams ?? []) as any} />
+        <ExamFolderTree exams={(exams ?? []) as any} canSelect={isAdmin} />
       </div>
     </div>
   );
