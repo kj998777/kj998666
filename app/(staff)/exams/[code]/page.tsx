@@ -25,6 +25,8 @@ import TutorDownloadCostInput from "./TutorDownloadCostInput";
 import { pageRangeLabel, trailingAnswerPages } from "@/lib/ai/answerPages";
 import { getQrBoxes } from "@/lib/ai/qrMask";
 import QrScanButton from "./QrScanButton";
+import MockCsatPanel from "./MockCsatPanel";
+import { answersFromKeys, examMaxPoints } from "@/lib/exams/mockCsat";
 
 const ACTIVE_STAGES = new Set(["upload", "extract_submit", "extract_wait", "solve_submit", "solve_wait"]);
 
@@ -68,7 +70,9 @@ export default async function ExamDetailPage({
       : Promise.resolve({ data: null }),
   ]);
 
-  const totalPoints = (keys ?? []).reduce((s: number, k: any) => s + Number(k.points), 0);
+  // 2026-10-11: 고3 사설 모의고사는 선택과목 중 하나만 풀므로 만점 = 공통 + 한 과목(lib/exams/mockCsat.ts)
+  const totalPoints = examMaxPoints(((keys as any[]) ?? []).map((k) => ({ item_label: String(k.item_label), points: k.points })));
+  const isMock = !!exam.mock_csat;
   // 2026-10-03: 문항 해설 줄에서 정답 표시가 정답표와 다른지 보여 주기 위해 번호별 정답표 칸을 넘긴다.
   const keyByLabel: Record<string, { type: string; correct_answers: string }> = {};
   for (const k of (keys as any[]) ?? []) keyByLabel[k.item_label] = { type: k.type, correct_answers: String(k.correct_answers ?? "") };
@@ -195,6 +199,18 @@ export default async function ExamDetailPage({
 
       {isAdmin && jobPoll && jobPoll.stage !== "done" && <AiJobPanel code={exam.code} initial={jobPoll} />}
 
+      {/* 2026-10-11 고3 사설 모의고사: 문제지·해설지를 그대로 쓰고 정답은 해설지에서 AI가 읽기(0053) */}
+      {canEdit && isMock && (
+        <MockCsatPanel
+          code={exam.code}
+          examId={exam.id}
+          hasSolution={!!exam.solution_pdf_path}
+          initial={answersFromKeys(((keys as any[]) ?? []).map((k) => ({ item_label: String(k.item_label), correct_answers: String(k.correct_answers ?? "") })))}
+          hasKey={(keys ?? []).length > 0}
+          isAdmin={isAdmin}
+        />
+      )}
+
       {isAdmin && exam.status === "검수대기" && (
         <div className="card border-amber-300 bg-amber-50 space-y-3">
           <h2 className="font-medium text-amber-900">AI 검수 대기</h2>
@@ -238,17 +254,21 @@ export default async function ExamDetailPage({
 
       {canEdit && !pdfMeta && (
         <div className="card border-sky-200 space-y-2">
-          <h2 className="font-medium">원본 PDF 첨부 (AI 처리 없이 저장만)</h2>
+          <h2 className="font-medium">{isMock ? "문제지 PDF 올리기" : "원본 PDF 첨부 (AI 처리 없이 저장만)"}</h2>
+          {isMock ? (
+            <p className="text-sm text-slate-500">학생·과외선생님에게 나눠 줄 문제지 PDF입니다. AI가 처리하지 않고 그대로 저장만 합니다.</p>
+          ) : (
           <p className="text-sm text-slate-500">
             이 시험은 아직 원본 시험지 PDF가 저장돼 있지 않아 QR·정오표 PDF를 다운로드할 수 없습니다
             (예: 예전 시스템에서 옮겨온 시험). 이미 정답·해설이 있는 시험이면 이 폼으로 원본 PDF 파일만
             연결하세요 — AI가 다시 처리하지 않고 그대로 저장만 합니다.
           </p>
+          )}
           <AttachPdfForm code={exam.code} examId={exam.id} />
         </div>
       )}
 
-      {isAdmin && (!jobPoll || !ACTIVE_STAGES.has(jobPoll.stage)) && exam.status !== "검수대기" && (
+      {isAdmin && !isMock && (!jobPoll || !ACTIVE_STAGES.has(jobPoll.stage)) && exam.status !== "검수대기" && (
         <div className="card">
           <h2 className="font-medium mb-2">AI 자동 처리</h2>
           <p className="text-sm text-slate-500 mb-2">
@@ -321,7 +341,7 @@ export default async function ExamDetailPage({
         </form>
       )}
 
-      {isAdmin && pdfMeta && (
+      {isAdmin && pdfMeta && !isMock && (
         <DigitizeControl
           code={exam.code}
           examId={exam.id}
