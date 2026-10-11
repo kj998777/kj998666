@@ -5,7 +5,7 @@ import { guessSummary } from "@/lib/grading";
 import { guessStatsByItem, guessTotals, manyGuessed, pctOf } from "@/lib/report/guessStats";
 import { CONTENT_KIND_LABEL, MEDIC_PDF_CREDIT } from "@/lib/content/kinds";
 import { PROMO, promoReportHtml } from "@/lib/content/promo";
-import { CHOICES, choiceFromLabels, choiceOfLabel, displayNo, examMaxPoints, pagesForLabels } from "@/lib/exams/mockCsat";
+import { CHOICES, choiceFromLabels, choiceOfLabel, displayNo, examMaxPoints, expectedGrade, gradeCutsText, hasGradeCuts, pagesForLabels } from "@/lib/exams/mockCsat";
 import QRCode from "qrcode";
 // 브라우저에서 "성적 보고서"(종합/개별) PDF를 만든다.
 //
@@ -54,7 +54,7 @@ export type ReportStudent = {
 
 export type ReportData = {
   /** mock: 고3 사설 모의고사(2026-10-11, 0053) — AI 해설 없음, 난이도는 배점 기준, 풀이는 해설지 PDF. solutionUrl: 그 해설지 받기 주소 */
-  exam: { code: string; name: string; mock?: boolean; solutionUrl?: string | null; solutionPages?: Record<string, number[]> };
+  exam: { code: string; name: string; mock?: boolean; solutionUrl?: string | null; solutionPages?: Record<string, number[]>; gradeCuts?: Record<string, number[]> };
   items: ReportItem[];
   students: ReportStudent[];
   notes: string[];
@@ -393,7 +393,7 @@ function earnedOf(items: ReportItem[], idx: Map<string, ReportPerItem>): number 
   return items.reduce((s, it) => s + (statusOf(idx, it.label) === "ok" ? it.points : 0), 0);
 }
 
-function methodNote(items: ReportData["items"], mock = false): string {
+function methodNote(items: ReportData["items"], mock = false, cuts = false): string {
   const assigned = items.filter((i) => i.points_assigned).map((i) => i.label);
   return (
     '<div class="rpt-box"><b>읽는 방법</b><br>' +
@@ -403,8 +403,20 @@ function methodNote(items: ReportData["items"], mock = false): string {
     (assigned.length
       ? `· <b>배점</b>은 시험지 인쇄 값을 따랐고, 인쇄되지 않은 문항(${esc(assigned.join(", "))})은 전체 합이 100점이 되도록 임의로 배정했습니다(표에 *로 표시).<br>`
       : "") +
-    "· 등급 구분이나 예상 등급은 표시하지 않습니다.</div>"
+    (cuts
+      ? "· <b>예상 등급</b>은 해설지에 실린 전국 예상 등급컷(원점수, 선택과목별) 기준입니다. 실제 등급과 다를 수 있습니다.</div>"
+      : "· 등급 구분이나 예상 등급은 표시하지 않습니다.</div>")
   );
+}
+
+// 2026-10-11 예상 등급컷(0055): 학생 점수와 선택과목으로 예상 등급
+function gradeFor(data: ReportData, s: ReportStudent): { grade: number; label: string; cuts: number[] } | null {
+  const all = data.exam.gradeCuts;
+  if (!all || !hasGradeCuts(all as any)) return null;
+  const choice = choiceFromLabels(s.per_item.map((p) => String(p.item_label)));
+  const cuts = choice ? all[choice] : undefined;
+  const g = expectedGrade(Number(s.total_score), cuts);
+  return g && cuts ? { ...g, cuts } : null;
 }
 
 // ---------------------------------------------------------------------
@@ -428,6 +440,8 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
   const takersOf = (it: ReportItem) => students.filter((s) => takes(s, it));
   const totalPoints = hasChoice ? examMaxPoints(items.map((i) => ({ item_label: i.label, points: i.points }))) : totalOf(items);
   const domains = buildDomains(items);
+  const anyCuts = hasChoice && hasGradeCuts((data.exam.gradeCuts ?? {}) as any);
+  const gradeOf = new Map(students.map((s) => [s.id, gradeFor(data, s)]));
   const diffCells = new Map(DIFFS.map((d) => [d, items.filter((i) => i.difficulty === d)]));
 
   const b: string[] = [];
@@ -457,14 +471,34 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
       `<div><div class="n">${fmt(totalPoints)}점</div><div class="t">배점 합</div></div></div>`
   );
   if (hasChoice) {
-    b.push("<table><thead><tr><th>선택과목</th><th>인원</th><th>평균</th><th>최고</th><th>최저</th></tr></thead><tbody>");
+    b.push(
+      "<table><thead><tr><th>선택과목</th><th>인원</th><th>평균</th><th>최고</th><th>최저</th>" +
+        (anyCuts ? "<th>예상 등급컷(원점수)</th><th>예상 등급 분포</th>" : "") +
+        "</tr></thead><tbody>"
+    );
     for (const c of CHOICES) {
       const sc = students.filter((s) => choiceOf.get(s.id) === c.key).map((s) => Number(s.total_score));
       if (!sc.length) continue;
       b.push(
         `<tr><td class="c"><b>${esc(c.name)}</b></td><td class="c">${sc.length}명</td><td class="c">${fmt(
           Math.round((sc.reduce((a, x) => a + x, 0) / sc.length) * 100) / 100
-        )}점</td><td class="c">${fmt(Math.max(...sc))}점</td><td class="c">${fmt(Math.min(...sc))}점</td></tr>`
+        )}점</td><td class="c">${fmt(Math.max(...sc))}점</td><td class="c">${fmt(Math.min(...sc))}점</td>${
+          anyCuts
+            ? (() => {
+                const cuts = data.exam.gradeCuts?.[c.key];
+                if (!cuts?.length) return '<td class="c rpt-small">-</td><td class="c rpt-small">-</td>';
+                const dist = new Map<string, number>();
+                for (const s of students.filter((x) => choiceOf.get(x.id) === c.key)) {
+                  const g = gradeOf.get(s.id);
+                  if (g) dist.set(g.label, (dist.get(g.label) ?? 0) + 1);
+                }
+                const order = [...cuts.map((_, i) => `${i + 1}등급`), `${cuts.length + 1}등급 이하`];
+                return `<td class="c rpt-small">${esc(gradeCutsText(cuts))}</td><td class="c rpt-small">${esc(
+                  order.filter((l) => dist.get(l)).map((l) => `${l} ${dist.get(l)}명`).join(" · ") || "-"
+                )}</td>`;
+              })()
+            : ""
+        }</tr>`
       );
     }
     b.push("</tbody></table>");
@@ -495,6 +529,7 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
     "<table><thead><tr><th>반</th><th>이름</th>" +
       (hasChoice ? "<th>선택과목</th>" : "") +
       "<th>총점</th>" +
+      (anyCuts ? "<th>예상 등급</th>" : "") +
       (anyGuess ? "<th>실질 점수</th>" : "") +
       (hasChoice ? "<th>정답 수</th>" : "<th>정답 수 (/" + items.length + ")</th>") +
       "<th>오답 문항</th><th>무응답 문항</th></tr></thead><tbody>"
@@ -510,9 +545,9 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
     b.push(
       `<tr><td class="c">${esc(s.class_label)}</td><td class="c">${esc(s.student_name)}</td>${
         hasChoice ? `<td class="c rpt-small">${esc(cname)}</td>` : ""
-      }<td class="c"><b>${fmt(
-        s.total_score
-      )}</b></td>${
+      }<td class="c"><b>${fmt(s.total_score)}</b></td>${
+        anyCuts ? `<td class="c">${esc(gradeOf.get(s.id)?.label ?? "-")}</td>` : ""
+      }${
         anyGuess
           ? `<td class="c">${fmt(g.realScore)}${g.guessed ? `<div class="rpt-small">찍음 ${g.guessed}개 · 맞음 ${g.guessedCorrect}개</div>` : ""}</td>`
           : ""
@@ -701,7 +736,7 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
     b.push(`<tr><td class="c">${esc(s.student_name)}</td><td class="c">${fmt(s.total_score)}</td>${extra}</tr>`);
   }
   b.push("</tbody></table>");
-  b.push(methodNote(items, !!data.exam.mock));
+  b.push(methodNote(items, !!data.exam.mock, anyCuts));
 
   b.push(MEDIC_FOOT);
   return `<div class="rpt">${b.join("")}</div>`;
@@ -791,6 +826,8 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
   const rate = totalPoints > 0 ? student.total_score / totalPoints : 1;
   const g = guessSummary(student.per_item, Number(student.total_score));
   const guessedOk = items.filter((it) => idx.get(it.label)?.guessed && statusOf(idx, it.label) === "ok");
+  const eg = gradeFor(data, student); // 2026-10-11 예상 등급컷(0055)
+  const cname = CHOICES.find((c) => c.key === choiceFromLabels(student.per_item.map((p) => String(p.item_label))))?.name ?? "";
 
   const b: string[] = [];
   b.push(
@@ -804,6 +841,10 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
     )}</div></div><div><div class="n">${fmt(student.total_score)}점</div><div class="t">총점 (${fmt(
       totalPoints
     )}점 만점)</div></div>${
+      eg
+        ? `<div><div class="n">${esc(eg.label)}</div><div class="t">예상 등급 (${esc(cname)} · ${esc(gradeCutsText(eg.cuts))})</div></div>`
+        : ""
+    }${
       g.guessed > 0
         ? `<div><div class="n">${fmt(g.realScore)}점</div><div class="t">실질 점수 (찍어서 맞힌 ${g.guessedCorrect}문항 ${fmt(g.guessedPoints)}점 뺌)</div></div>`
         : ""
@@ -868,7 +909,9 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
   b.push("</tbody></table>");
   b.push(
     data.exam.mock
-      ? '<p class="rpt-small">난이도는 문항 배점 기준입니다(2점 하 · 3점 중 · 4점 상).</p>'
+      ? `<p class="rpt-small">난이도는 문항 배점 기준입니다(2점 하 · 3점 중 · 4점 상).${
+          eg ? " 예상 등급은 해설지에 실린 전국 예상 등급컷(원점수) 기준이며 실제 등급과 다를 수 있습니다." : ""
+        }</p>`
       : '<p class="rpt-small">* 시험지에 배점이 인쇄되지 않아 합이 100점이 되도록 임의로 배정한 문항입니다. 난이도는 AI가 문제를 풀어 본 뒤 판단한 값이며 실제 정답률이 아닙니다.</p>'
   );
 
