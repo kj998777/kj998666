@@ -25,7 +25,7 @@ import { fitPdfForUpload } from "@/lib/pdf/shrinkPdf";
 import PdfDropInput from "../PdfDropInput";
 
 // 고3 사설 모의고사(0053) 시험 화면의 정답 입력 칸 — 2026-10-11 원장님: 문제지·해설지를 올리고, 정답은 해설지에서 AI가 읽기.
-// 해설지가 있고 정답표가 아직 없으면 화면을 열 때 AI가 한 번 읽어 표에 채운다(저장은 원장님이 확인 후 "정답표 저장").
+// 막 만든 시험(?new=1)이고 해설지가 있고 정답표가 아직 없으면 AI가 한 번 읽어 표에 채운다(저장은 원장님이 확인 후 "정답표 저장"). 그 밖에는 버튼으로만(2026-10-11).
 // 배점·객관식/단답형은 수능 형식으로 정해져 있다(lib/exams/mockCsat.ts csatSpec).
 
 type Part = "공통" | ChoiceKey;
@@ -39,6 +39,7 @@ export default function MockCsatPanel({
   isAdmin,
   pageMap,
   gradeCuts,
+  autoAi = false,
 }: {
   code: string;
   examId: string;
@@ -50,6 +51,9 @@ export default function MockCsatPanel({
   pageMap: PageMap;
   /** 0055 예상 등급컷(원점수, 선택과목별) — 보고서가 예상 등급을 낸다 */
   gradeCuts: GradeCuts;
+  /** 막 만든 시험(?new=1)일 때만 AI(정답 읽기·해설 위치 찾기)를 저절로 돌린다 — 2026-10-11 원장님 "API 쓰지 말고"
+   * 이후로는 화면을 열 때마다 돌지 않게, 그 밖에는 버튼으로만 */
+  autoAi?: boolean;
 }) {
   const router = useRouter();
   const [ans, setAns] = useState<CsatAnswers>(initial);
@@ -99,7 +103,7 @@ export default function MockCsatPanel({
   }
 
   useEffect(() => {
-    if (!auto.current && isAdmin && hasSolution && !hasKey) {
+    if (!auto.current && autoAi && isAdmin && hasSolution && !hasKey) {
       auto.current = true;
       void read();
     }
@@ -156,7 +160,7 @@ export default function MockCsatPanel({
       </p>
 
       <SolutionUpload code={code} examId={examId} hasSolution={hasSolution} />
-      {hasSolution && <SolutionPages code={code} isAdmin={isAdmin} initial={pageMap} />}
+      {hasSolution && <SolutionPages code={code} isAdmin={isAdmin} initial={pageMap} autoAi={autoAi} />}
 
       <div className="flex flex-wrap items-center gap-2">
         {isAdmin && (
@@ -358,7 +362,7 @@ function SolutionUpload({ code, examId, hasSolution }: { code: string; examId: s
 // 2026-10-11 원장님 "보고서 만들 때 올린 해설에서 틀린 문제 해설을 찾아서 첨부해 줘" — 해설지에서 문항별 풀이 쪽을 AI가 찾아
 // 저장해 두면(0054), 개별 보고서가 틀린·무응답 문항의 그 쪽들을 해설지에서 잘라 보고서 뒤에 붙인다. 해설지를 몇 쪽씩 나눠
 // 여러 번 부르고(solution-pages 라우트, 동시에 3개), 결과를 buildPageMap으로 모아 저장한다. 틀린 곳은 글로 고칠 수 있다.
-function SolutionPages({ code, isAdmin, initial }: { code: string; isAdmin: boolean; initial: PageMap }) {
+function SolutionPages({ code, isAdmin, initial, autoAi }: { code: string; isAdmin: boolean; initial: PageMap; autoAi: boolean }) {
   const router = useRouter();
   const [map, setMap] = useState<PageMap>(initial);
   const [busy, setBusy] = useState(false);
@@ -437,7 +441,7 @@ function SolutionPages({ code, isAdmin, initial }: { code: string; isAdmin: bool
   }
 
   useEffect(() => {
-    if (!auto.current && isAdmin && count === 0) {
+    if (!auto.current && autoAi && isAdmin && count === 0) {
       auto.current = true;
       void locate();
     }

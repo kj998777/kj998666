@@ -38,7 +38,7 @@ export default async function ExamDetailPage({
   searchParams,
 }: {
   params: { code: string };
-  searchParams?: { aiErr?: string };
+  searchParams?: { aiErr?: string; new?: string };
 }) {
   const session = await requireRole("viewer");
   const canEdit = session.role === "admin" || session.role === "editor";
@@ -213,6 +213,7 @@ export default async function ExamDetailPage({
           isAdmin={isAdmin}
           pageMap={cleanPageMap((exam as any).solution_page_map)}
           gradeCuts={cleanGradeCuts((exam as any).grade_cuts)}
+          autoAi={searchParams?.new === "1"}
         />
       )}
 
