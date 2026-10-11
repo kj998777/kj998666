@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ReportData, ReportStudent } from "./buildReportPdf";
 import { guessSummary } from "@/lib/grading";
+import { reportForStudent, reportGroups } from "@/lib/exams/mockCsat";
 
 // 채점 결과 화면 위쪽에 붙는 "성적 보고서 만들기" 패널.
 // 종합 보고서(반 전체)는 항상 한 개, 개별 보고서는 학생을 골라 한 명씩 PDF로 받거나
@@ -59,12 +60,16 @@ export default function ReportPanel({
       if (!d.students.length) throw new Error("아직 제출한 학생이 없어 종합 보고서를 만들 수 없습니다.");
       const { ensureReportTools, buildSummaryHtml, htmlToPdfBytes, downloadBytes } = await import("./buildReportPdf");
       const { katex } = await ensureReportTools((m) => setProgress(m));
-      setProgress("보고서를 그리는 중…");
-      const html = buildSummaryHtml(katex, d);
-      setProgress("PDF로 만드는 중… (학생 수가 많으면 시간이 걸릴 수 있습니다)");
-      const bytes = await htmlToPdfBytes(html);
-      downloadBytes(bytes, `${examName}_종합보고서.pdf`);
-      setProgress("완료되었습니다.");
+      // 2026-10-11 고3 사설 모의고사: 선택과목별로 따로(그 과목 학생 + 공통·그 과목 문항) — 선택과목이 없으면 하나
+      const groups = reportGroups(d);
+      for (const g of groups) {
+        setProgress(`보고서를 그리는 중…${g.name ? ` (${g.name})` : ""}`);
+        const html = buildSummaryHtml(katex, g.data);
+        setProgress("PDF로 만드는 중… (학생 수가 많으면 시간이 걸릴 수 있습니다)");
+        const bytes = await htmlToPdfBytes(html);
+        downloadBytes(bytes, `${examName}_종합보고서${g.name ? `(${g.name})` : ""}.pdf`);
+      }
+      setProgress(groups.length > 1 ? `선택과목별 종합 보고서 ${groups.length}개를 받았습니다.` : "완료되었습니다.");
     } catch (e: any) {
       setProgress("");
       setMsg("실패: " + (e && e.message ? e.message : String(e)));
@@ -111,7 +116,7 @@ export default function ReportPanel({
       if (students.length === 1) {
         const s = students[0];
         setProgress(`${s.student_name} 보고서를 그리는 중…`);
-        const html = buildIndividualHtml(katex, d, s, { promo: true });
+        const html = buildIndividualHtml(katex, reportForStudent(d, s.per_item.map((p) => p.item_label)), s, { promo: true });
         setProgress("PDF로 만드는 중…");
         const bytes = await htmlToPdfBytes(html);
         downloadBytes(bytes, `${examName}_${s.class_label}_${s.student_name}.pdf`);
@@ -120,7 +125,7 @@ export default function ReportPanel({
         for (let i = 0; i < students.length; i++) {
           const s = students[i];
           setProgress(`(${i + 1}/${students.length}) ${s.student_name} 보고서 만드는 중…`);
-          const html = buildIndividualHtml(katex, d, s, { promo: true });
+          const html = buildIndividualHtml(katex, reportForStudent(d, s.per_item.map((p) => p.item_label)), s, { promo: true });
           const bytes = await htmlToPdfBytes(html);
           files.push({ name: `${s.class_label}_${s.student_name}.pdf`, bytes });
         }
@@ -177,9 +182,20 @@ export default function ReportPanel({
                 종합 보고서 PDF 만들기
               </button>
             )}
-            <button className="btn-secondary text-sm px-2 py-1" disabled={busy} onClick={onSolutions}>
-              전체 문제 해설지 PDF 받기
-            </button>
+            {data.exam.mock ? (
+              // 고3 사설 모의고사: AI 해설 대신 원장님이 올린 해설지 PDF
+              data.exam.solutionUrl ? (
+                <a className="btn-secondary text-sm px-2 py-1" href={data.exam.solutionUrl}>
+                  해설지 PDF 받기
+                </a>
+              ) : (
+                <span className="text-sm text-slate-500">해설지 PDF가 아직 없습니다.</span>
+              )
+            ) : (
+              <button className="btn-secondary text-sm px-2 py-1" disabled={busy} onClick={onSolutions}>
+                전체 문제 해설지 PDF 받기
+              </button>
+            )}
           </div>
 
           {students.length > 0 && (
