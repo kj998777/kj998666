@@ -49,3 +49,12 @@ export async function uploadPdfDirect(examId: string, file: File | Blob): Promis
   if (error) throw new Error("PDF를 올리지 못했습니다: " + error.message);
   return path;
 }
+
+/** 2026-10-11 고3 사설 모의고사 해설지 PDF — 문제지와 섞이지 않게 _solutions/<시험 id>/ 아래에 올린다(서버가 finalizeSolutionPdf로 연결). */
+export async function uploadSolutionPdfDirect(examId: string, file: File | Blob): Promise<string> {
+  const supabase = createClient();
+  const path = `_solutions/${examId}/${Date.now()}.pdf`;
+  const { error } = await supabase.storage.from("exam-pdfs").upload(path, file, { contentType: "application/pdf", upsert: false });
+  if (error) throw new Error("해설지 PDF를 올리지 못했습니다: " + error.message);
+  return path;
+}

@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { LEVELS, type Level } from "@/lib/classLabel";
 import PromoBanner from "@/app/_components/PromoBanner";
+import { choiceOfLabel, displayNo } from "@/lib/exams/mockCsat";
 
 type ClassRow = { level: string; grade: number; name: string };
 type Item = { item_label: string; type: "객관식" | "주관식" };
@@ -18,6 +19,7 @@ export default function StudentSubmitForm({
   tutorToken = null,
   endpoint = null,
   promo = false,
+  choices = [],
 }: {
   code: string;
   examName: string;
@@ -29,9 +31,19 @@ export default function StudentSubmitForm({
   endpoint?: string | null;
   /** 2026-10-01: 제출 완료 화면에 메딕수학 홍보 배너(학원·과외선생님 학생 모두) */
   promo?: boolean;
+  /** 2026-10-11 고3 사설 모의고사: 선택과목(있으면 답 입력 전에 고름 — 공통 + 고른 과목 문항만 보임) */
+  choices?: { key: string; name: string }[];
 }) {
   const direct = !!tutorToken || !!endpoint;
-  const [step, setStep] = useState<"level" | "grade" | "class" | "form">(direct ? "form" : "level");
+  const hasChoice = choices.length > 0;
+  const firstAfterClass = hasChoice ? "choice" : "form";
+  const [step, setStep] = useState<"level" | "grade" | "class" | "choice" | "form">(direct ? firstAfterClass : "level");
+  const [choice, setChoice] = useState<string | null>(null);
+  // 선택과목이 있으면 공통 문항 + 고른 과목 문항만(번호 순서는 정답표 그대로)
+  const shown = items.map((it, i) => ({ it, i })).filter(({ it }) => {
+    const c = choiceOfLabel(it.item_label);
+    return c === null || c === choice;
+  });
   const [level, setLevel] = useState<Level | null>(null);
   const [grade, setGrade] = useState<number | null>(null);
   const [cls, setCls] = useState<string | null>(null);
@@ -72,7 +84,17 @@ export default function StudentSubmitForm({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
-          endpoint ? { name, answers, guessed } : tutorToken ? { t: tutorToken, name, answers, guessed } : { lv: level, grade, cls, name, answers, guessed }
+          (() => {
+            // 선택과목 시험이면 보이는 문항(공통 + 고른 과목)의 답만, 과목과 함께 보낸다
+            const a = hasChoice ? shown.map(({ i }) => answers[i] ?? "") : answers;
+            const g = hasChoice ? shown.map(({ i }) => guessed[i] ?? false) : guessed;
+            const extra = hasChoice ? { choice } : {};
+            return endpoint
+              ? { name, answers: a, guessed: g, ...extra }
+              : tutorToken
+                ? { t: tutorToken, name, answers: a, guessed: g, ...extra }
+                : { lv: level, grade, cls, name, answers: a, guessed: g, ...extra };
+          })()
         ),
       });
       const json = await res.json();
@@ -170,7 +192,7 @@ export default function StudentSubmitForm({
                 className="btn-secondary"
                 onClick={() => {
                   setCls(c);
-                  setStep("form");
+                  setStep(firstAfterClass);
                 }}
               >
                 {c}
@@ -180,9 +202,35 @@ export default function StudentSubmitForm({
         </div>
       )}
 
-      {step === "form" && (direct || (level && grade !== null && cls)) && (
-        <div className="space-y-4">
+      {step === "choice" && (
+        <div className="space-y-2">
           {!direct && <BackBar onBack={() => setStep("class")} title={`${level}${grade} ${cls}`} />}
+          <p className="text-sm text-slate-600">선택과목을 골라 주세요. 23~30번은 고른 과목 문항만 나옵니다.</p>
+          <div className="grid gap-2">
+            {choices.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                className="btn-secondary w-full"
+                onClick={() => {
+                  setChoice(c.key);
+                  setStep("form");
+                }}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {step === "form" && (direct || (level && grade !== null && cls)) && (!hasChoice || choice) && (
+        <div className="space-y-4">
+          {hasChoice ? (
+            <BackBar onBack={() => setStep("choice")} title={`${!direct ? `${level}${grade} ${cls} · ` : ""}선택과목 ${choices.find((c) => c.key === choice)?.name ?? ""}`} />
+          ) : (
+            !direct && <BackBar onBack={() => setStep("class")} title={`${level}${grade} ${cls}`} />
+          )}
 
           <div>
             <label className="label">이름</label>
@@ -201,15 +249,15 @@ export default function StudentSubmitForm({
             확실하지 않아 <b>찍은 문항</b>은 번호 아래 <b>찍음</b>을 눌러 표시해 주세요. 점수에는 영향이 없고, 실력을 정확히 보는 데만 씁니다.
           </p>
           <div className="space-y-2">
-            {items.map((it, i) => (
+            {shown.map(({ it, i }) => (
               <div key={it.item_label} className={"flex items-center gap-1.5 " + (guessed[i] ? "rounded-lg bg-amber-50 -mx-1 px-1" : "")}>
                 {/* 2026-10-01: 번호 아래 작은 "찍음" 버튼(줄 너비는 그대로 — 휴대폰에서 ①~⑤ 버튼이 좁아지지 않게) */}
                 <div className="w-9 shrink-0 flex flex-col items-end gap-1">
-                  <span className="text-sm text-slate-500">{it.item_label}번</span>
+                  <span className="text-sm text-slate-500">{displayNo(it.item_label)}번</span>
                   <button
                     type="button"
                     aria-pressed={guessed[i]}
-                    aria-label={`${it.item_label}번 찍음`}
+                    aria-label={`${displayNo(it.item_label)}번 찍음`}
                     className={
                       "rounded-full border px-1 py-1 text-[11px] leading-none font-medium " +
                       (guessed[i] ? "border-amber-500 bg-amber-400 text-white" : "border-slate-300 bg-white text-slate-500")

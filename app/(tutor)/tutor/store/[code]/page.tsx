@@ -44,6 +44,25 @@ export default async function TutorExamHubPage({ params }: { params: { code: str
         </a>
       </div>
 
+      {/* 2026-10-11 고3 사설 모의고사: 원장님이 올린 해설지 PDF를 그대로(메딕 해설 대신) */}
+      {exam.mock_csat && (
+        <div className="card space-y-2">
+          <h2 className="font-medium">해설지 PDF</h2>
+          <p className="text-sm text-slate-500">
+            고3 사설 모의고사는 따로 만든 메딕 해설 대신 <strong>원래 해설지</strong>를 드립니다. 학생은 제출할 때 선택과목(확률과 통계·미적분·기하)을
+            고르고, 보고서도 그 과목 기준으로 만들어집니다.
+          </p>
+          {exam.solution_pdf_path ? (
+            <a href={`${base}/solution`} className="btn-primary inline-block">
+              해설지 PDF 받기
+            </a>
+          ) : (
+            <p className="text-sm text-amber-700">해설지가 아직 올라오지 않았습니다.</p>
+          )}
+        </div>
+      )}
+
+      {!exam.mock_csat && (
       <div className="card space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <ContentKindBadge kind="medic" />
@@ -58,6 +77,7 @@ export default async function TutorExamHubPage({ params }: { params: { code: str
           해설지·보고서 받으러 가기 →
         </a>
       </div>
+      )}
 
       <div className="card space-y-2">
         <h2 className="font-medium">선생님 전용 제출 링크</h2>

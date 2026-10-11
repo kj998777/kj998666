@@ -52,7 +52,8 @@ export type ReportStudent = {
 };
 
 export type ReportData = {
-  exam: { code: string; name: string };
+  /** mock: 고3 사설 모의고사(2026-10-11, 0053) — AI 해설 없음, 난이도는 배점 기준, 풀이는 해설지 PDF. solutionUrl: 그 해설지 받기 주소 */
+  exam: { code: string; name: string; mock?: boolean; solutionUrl?: string | null };
   items: ReportItem[];
   students: ReportStudent[];
   notes: string[];
@@ -391,11 +392,13 @@ function earnedOf(items: ReportItem[], idx: Map<string, ReportPerItem>): number 
   return items.reduce((s, it) => s + (statusOf(idx, it.label) === "ok" ? it.points : 0), 0);
 }
 
-function methodNote(items: ReportData["items"]): string {
+function methodNote(items: ReportData["items"], mock = false): string {
   const assigned = items.filter((i) => i.points_assigned).map((i) => i.label);
   return (
     '<div class="rpt-box"><b>읽는 방법</b><br>' +
-    "· <b>난이도(하·중하·중·중상·상)</b>는 AI가 문제를 직접 풀어 본 뒤 판단한 값이며, 실제 정답률이 아닙니다.<br>" +
+    (mock
+      ? "· <b>난이도</b>는 문항 배점 기준입니다(2점 하 · 3점 중 · 4점 상). 문항별 풀이는 함께 받은 해설지를 보세요.<br>"
+      : "· <b>난이도(하·중하·중·중상·상)</b>는 AI가 문제를 직접 풀어 본 뒤 판단한 값이며, 실제 정답률이 아닙니다.<br>") +
     (assigned.length
       ? `· <b>배점</b>은 시험지 인쇄 값을 따랐고, 인쇄되지 않은 문항(${esc(assigned.join(", "))})은 전체 합이 100점이 되도록 임의로 배정했습니다(표에 *로 표시).<br>`
       : "") +
@@ -650,7 +653,7 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
     b.push(`<tr><td class="c">${esc(s.student_name)}</td><td class="c">${fmt(s.total_score)}</td>${extra}</tr>`);
   }
   b.push("</tbody></table>");
-  b.push(methodNote(items));
+  b.push(methodNote(items, !!data.exam.mock));
 
   b.push(MEDIC_FOOT);
   return `<div class="rpt">${b.join("")}</div>`;
@@ -815,7 +818,11 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
     );
   }
   b.push("</tbody></table>");
-  b.push('<p class="rpt-small">* 시험지에 배점이 인쇄되지 않아 합이 100점이 되도록 임의로 배정한 문항입니다. 난이도는 AI가 문제를 풀어 본 뒤 판단한 값이며 실제 정답률이 아닙니다.</p>');
+  b.push(
+    data.exam.mock
+      ? '<p class="rpt-small">난이도는 문항 배점 기준입니다(2점 하 · 3점 중 · 4점 상).</p>'
+      : '<p class="rpt-small">* 시험지에 배점이 인쇄되지 않아 합이 100점이 되도록 임의로 배정한 문항입니다. 난이도는 AI가 문제를 풀어 본 뒤 판단한 값이며 실제 정답률이 아닙니다.</p>'
+  );
 
   if (missed.length) {
     b.push('<h2 class="rpt-pagebreak">4. 틀린·무응답 문항 해설</h2>');
@@ -828,7 +835,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
           `<div class="row"><span class="rpt-pill mine${r === "blank" ? " blank" : ""}">내 답: <b>${esc(
             givenDisplay(it, idx)
           )}</b>${r === "blank" ? "" : " (오답)"}</span><span class="rpt-pill key">정답: <b>${keyDisplay(katex, it)}</b></span></div>` +
-          `<div class="rpt-sol"><b>풀이</b> — ${mathHtml(katex, it.solution)}</div></div>`
+          `${solBlock(katex, it)}</div>`
       );
     }
     const easyFirst = rate < 0.5;
@@ -863,7 +870,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
             it.points
           )}점</div><div class="st">${mathHtml(katex, it.problem_statement)}</div>` +
             `<div class="row"><span class="rpt-pill key">내 답: <b>${esc(givenDisplay(it, idx))}</b> (정답)</span><span class="rpt-pill key">정답: <b>${keyDisplay(katex, it)}</b></span></div>` +
-            `<div class="rpt-sol"><b>풀이</b> — ${mathHtml(katex, it.solution)}</div></div>`
+            `${solBlock(katex, it)}</div>`
         );
       }
     }
@@ -877,7 +884,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
           it.points
         )}점</div><div class="st">${mathHtml(katex, it.problem_statement)}</div>` +
           `<div class="row"><span class="rpt-pill key">내 답: <b>${esc(givenDisplay(it, idx))}</b> (정답 · 찍음)</span><span class="rpt-pill key">정답: <b>${keyDisplay(katex, it)}</b></span></div>` +
-          `<div class="rpt-sol"><b>풀이</b> — ${mathHtml(katex, it.solution)}</div></div>`
+          `${solBlock(katex, it)}</div>`
       );
     }
   }
@@ -893,6 +900,13 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
 // 학생 제출과 상관없이 시험의 모든 문항(문제·정답·풀이)을 모은 해설 PDF. 관리자·과외선생님 보고서
 // 패널에서 같은 데이터(report-data)를 그대로 쓴다.
 // ---------------------------------------------------------------------
+
+/** 풀이 칸 — 풀이 글이 없으면(고3 사설 모의고사 등) 해설지를 보라고만 적는다(2026-10-11) */
+function solBlock(katex: any, it: ReportItem): string {
+  return it.solution && it.solution.trim()
+    ? `<div class="rpt-sol"><b>풀이</b> — ${mathHtml(katex, it.solution)}</div>`
+    : `<div class="rpt-sol rpt-small">풀이는 함께 받은 해설지에서 ${esc(it.label)}번을 보세요.</div>`;
+}
 
 function keyDisplay(katex: any, it: ReportItem): string {
   // 2026-10-03: 정답 표시(answer_display)가 정답표(correct_answers)와 다르면 채점 기준인 정답표를 보여 준다

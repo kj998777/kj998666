@@ -4,6 +4,7 @@ import { gradeSubmission, type AnswerKeyItem } from "@/lib/grading";
 import { isLevel, validGrade, cleanClassName, classKey, classLabel } from "@/lib/classLabel";
 import { tutorClassLabel, tutorIdFromToken } from "@/lib/tutor/link";
 import { examCodeVariants, pickExamByCode } from "@/lib/exams/codeVariants";
+import { hasChoices, isChoiceKey, keysForChoice } from "@/lib/exams/mockCsat";
 
 // 학생 제출을 실제로 기록하는 유일한 경로. 서비스롤 키를 쓰므로 RLS를 우회하지만,
 // 그만큼 여기서 직접 모든 검증(반 존재, 시험 열림 여부, 문항 수, 채점)을 다시 한다.
@@ -12,7 +13,7 @@ import { examCodeVariants, pickExamByCode } from "@/lib/exams/codeVariants";
 export async function POST(request: Request, { params }: { params: { code: string } }) {
   const code = decodeURIComponent(params.code);
 
-  let body: { lv?: unknown; grade?: unknown; cls?: unknown; name?: unknown; answers?: unknown; t?: unknown; guessed?: unknown };
+  let body: { lv?: unknown; grade?: unknown; cls?: unknown; name?: unknown; answers?: unknown; t?: unknown; guessed?: unknown; choice?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -91,7 +92,16 @@ export async function POST(request: Request, { params }: { params: { code: strin
     .order("sort_order")
     .order("item_label");
 
-  const key = (keyRows ?? []) as AnswerKeyItem[];
+  const allKey = (keyRows ?? []) as AnswerKeyItem[];
+  // 2026-10-11 고3 사설 모의고사: 선택과목 문항("미적23" …)이 있으면 학생이 고른 과목 + 공통 문항만 채점한다(lib/exams/mockCsat.ts)
+  let key = allKey;
+  if (hasChoices(allKey.map((k) => k.item_label))) {
+    const choice = body.choice;
+    if (!isChoiceKey(choice) || !allKey.some((k) => k.item_label.startsWith(choice))) {
+      return NextResponse.json({ ok: false, msg: "선택과목을 골라 주세요. (화면이 예전 것이면 새로고침해 주세요.)" }, { status: 400 });
+    }
+    key = keysForChoice(allKey, choice);
+  }
   if (key.length === 0) {
     return NextResponse.json({ ok: false, msg: "시험 정답이 등록되지 않았습니다." }, { status: 409 });
   }

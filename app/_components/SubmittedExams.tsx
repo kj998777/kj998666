@@ -131,7 +131,9 @@ function ExamCard({
       const { ensureReportTools, buildIndividualHtml, htmlToPdfBytes, downloadBytes } = await import("@/app/(staff)/exams/[code]/results/buildReportPdf");
       const { katex: k } = await ensureReportTools((t) => setMsg(t));
       setMsg("보고서를 그리는 중…");
-      const bytes = await htmlToPdfBytes(buildIndividualHtml(k, d, st, { promo: true }));
+      // 2026-10-11 고3 사설 모의고사: 그 학생이 고른 선택과목 문항만(lib/exams/mockCsat.ts)
+      const { reportForStudent } = await import("@/lib/exams/mockCsat");
+      const bytes = await htmlToPdfBytes(buildIndividualHtml(k, reportForStudent(d, st.per_item.map((p) => p.item_label)), st, { promo: true }));
       downloadBytes(bytes, `${e.name}_${st.class_label}_${st.student_name}.pdf`);
       setMsg("");
     } catch (err: any) {

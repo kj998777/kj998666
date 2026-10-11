@@ -4,6 +4,8 @@ import "server-only";
 // #4 과외선생님용 라우트(app/(tutor)/tutor/store/[code]/report-data)가 함께 쓴다.
 // opts.tutorId가 있으면 그 과외선생님 전용 링크로 들어온 제출(submissions.tutor_id)만 담는다.
 
+import { hasChoices, mockItemMeta } from "@/lib/exams/mockCsat";
+
 type Client = any;
 
 function similarCount(v: unknown): number {
@@ -16,7 +18,7 @@ export async function buildReportData(
   exam: { id: string; code: string; name: string },
   opts: { tutorId?: string } = {}
 ) {
-  const [{ data: keys }, { data: explanations }, { data: subs }, { data: notes }, { data: corrections }] = await Promise.all([
+  const [{ data: keys }, { data: explanations }, { data: subs }, { data: notes }, { data: corrections }, { data: examRow }] = await Promise.all([
     supabase.from("answer_key").select("item_label, sort_order, correct_answers, points, type").eq("exam_id", exam.id).order("sort_order").order("item_label"),
     supabase.from("item_explanations").select("*").eq("exam_id", exam.id),
     supabase
@@ -28,21 +30,26 @@ export async function buildReportData(
       .match(opts.tutorId ? { tutor_id: opts.tutorId } : {}),
     supabase.from("exam_notes").select("note").eq("exam_id", exam.id).order("sort_order"),
     supabase.from("exam_corrections").select("item_label, issue, fix, teacher_note").eq("exam_id", exam.id).order("item_label"),
+    // 2026-10-11 고3 사설 모의고사(0053) — 해설지 PDF가 있으면 보고서 패널에 받기 버튼(0053 전이면 오류 → 없음으로)
+    supabase.from("exams").select("mock_csat, solution_pdf_path").eq("id", exam.id).maybeSingle(),
   ]);
+  const mock = !!examRow?.mock_csat || hasChoices(((keys as any[]) ?? []).map((k) => String(k.item_label)));
 
   const explByLabel = new Map<string, any>();
   for (const e of (explanations as any[]) ?? []) explByLabel.set(e.item_label, e);
 
   const items = ((keys as any[]) ?? []).map((k) => {
     const e = explByLabel.get(k.item_label) ?? {};
+    // 고3 사설 모의고사는 AI 해설이 없으므로 영역 = 공통/선택과목, 난이도 = 배점 기준(lib/exams/mockCsat.ts)
+    const mm = mock && !e.area ? mockItemMeta(String(k.item_label), Number(k.points)) : null;
     return {
       label: k.item_label as string,
       points: Number(k.points),
       type: k.type as "객관식" | "주관식",
       correct_answers: k.correct_answers as string,
-      area: (e.area as string) || "",
+      area: (e.area as string) || mm?.area || "",
       unit: (e.unit as string) || "",
-      difficulty: (e.difficulty as string) || "중",
+      difficulty: (e.difficulty as string) || mm?.difficulty || "중",
       difficulty_reason: (e.difficulty_reason as string) || "",
       problem_statement: (e.problem_statement as string) || "",
       answer_display: (e.answer_display as string) || "",
@@ -67,7 +74,16 @@ export async function buildReportData(
   });
 
   const body = {
-    exam: { code: exam.code, name: exam.name },
+    exam: {
+      code: exam.code,
+      name: exam.name,
+      mock,
+      solutionUrl: examRow?.solution_pdf_path
+        ? opts.tutorId
+          ? `/tutor/store/${encodeURIComponent(exam.code)}/solution`
+          : `/exams/${encodeURIComponent(exam.code)}/solution-pdf`
+        : null,
+    },
     items,
     students,
     notes: ((notes as any[]) ?? []).map((n) => n.note as string),

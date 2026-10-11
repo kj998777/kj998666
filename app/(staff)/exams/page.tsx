@@ -5,6 +5,7 @@ import { fetchAllPages } from "@/lib/supabase/fetchAll";
 import CreateExamForm from "./CreateExamForm";
 import CreateAiExamForm from "./CreateAiExamForm";
 import CreateAiExamBatchForm from "./CreateAiExamBatchForm";
+import CreateMockExamForm from "./CreateMockExamForm";
 import ExamFolderTree from "./ExamFolderTree";
 import JejuRetagPanel from "./JejuRetagPanel";
 import AutoClassifyPanel from "./AutoClassifyPanel";
@@ -52,6 +53,15 @@ export default async function ExamsPage({ searchParams }: { searchParams?: { lev
             </div>
           )}
         </div>
+      )}
+
+      {canEdit && (
+        <details className="card border-indigo-200">
+          <summary className="cursor-pointer font-medium">고3 사설 모의고사 올리기 (문제지·해설지 그대로, 선택과목 있음)</summary>
+          <div className="mt-3">
+            <CreateMockExamForm />
+          </div>
+        </details>
       )}
 
       {isAdmin && (

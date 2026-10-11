@@ -1,4 +1,5 @@
 import "server-only";
+import { examTotalsByExam } from "@/lib/exams/mockCsat";
 import { fetchAllIn, fetchAllPages } from "@/lib/supabase/fetchAll";
 import { personLabel } from "@/lib/profile/label";
 import {
@@ -32,7 +33,7 @@ export type StudentIndex = {
 export async function loadStudentIndex(supabase: Client): Promise<StudentIndex> {
   const [examsRes, keysRes, subsRes, skRes] = await Promise.all([
     fetchAllPages((a, b) => supabase.from("exams").select("id, code, name").order("id").range(a, b)),
-    fetchAllPages((a, b) => supabase.from("answer_key").select("id, exam_id, points").order("id").range(a, b)),
+    fetchAllPages((a, b) => supabase.from("answer_key").select("id, exam_id, item_label, points").order("id").range(a, b)),
     fetchAllPages((a, b) =>
       supabase
         .from("submissions")
@@ -43,13 +44,9 @@ export async function loadStudentIndex(supabase: Client): Promise<StudentIndex> 
     fetchAllPages((a, b) => (supabase.from("student_keys") as any).select("key, merged_into, hidden, memo").order("key").range(a, b)),
   ]);
 
-  const maxBy = new Map<string, { max: number; n: number }>();
-  for (const k of (keysRes.data as any[]) ?? []) {
-    const m = maxBy.get(k.exam_id) ?? { max: 0, n: 0 };
-    m.max += Number(k.points) || 0;
-    m.n += 1;
-    maxBy.set(k.exam_id, m);
-  }
+  // 2026-10-11: 고3 사설 모의고사는 선택과목 하나만 풀므로 만점 = 공통 + 한 과목(lib/exams/mockCsat.ts)
+
+  const maxBy = examTotalsByExam((((keysRes.data as any[]) ?? []) as any[]).map((k) => ({ exam_id: k.exam_id, item_label: String(k.item_label), points: k.points })));
   const exams = new Map<string, ExamMeta>();
   for (const e of (examsRes.data as any[]) ?? []) {
     const m = maxBy.get(e.id) ?? { max: 0, n: 0 };
