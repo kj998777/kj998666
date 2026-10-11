@@ -1,4 +1,5 @@
 import "server-only";
+import { examTotalsByExam } from "@/lib/exams/mockCsat";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchAllIn, fetchAllPages } from "@/lib/supabase/fetchAll";
@@ -54,15 +55,10 @@ async function loadBase(tutorId: string, withPerItem: boolean): Promise<Loaded> 
     const admin = createAdminClient();
     const [exRes, akRes] = await Promise.all([
       fetchAllIn(examIds, (ids, a, b) => admin.from("exams").select("id, code, name").in("id", ids).order("id").range(a, b)),
-      fetchAllIn(examIds, (ids, a, b) => admin.from("answer_key").select("id, exam_id, points").in("exam_id", ids).order("id").range(a, b)),
+      fetchAllIn(examIds, (ids, a, b) => admin.from("answer_key").select("id, exam_id, item_label, points").in("exam_id", ids).order("id").range(a, b)),
     ]);
-    const maxBy = new Map<string, { max: number; n: number }>();
-    for (const k of (akRes.data as any[]) ?? []) {
-      const m = maxBy.get(k.exam_id) ?? { max: 0, n: 0 };
-      m.max += Number(k.points) || 0;
-      m.n += 1;
-      maxBy.set(k.exam_id, m);
-    }
+    // 2026-10-11: 고3 사설 모의고사는 선택과목 하나만 풀므로 만점 = 공통 + 한 과목(lib/exams/mockCsat.ts)
+    const maxBy = examTotalsByExam((((akRes.data as any[]) ?? []) as any[]).map((k) => ({ exam_id: k.exam_id, item_label: String(k.item_label), points: k.points })));
     for (const e of (exRes.data as any[]) ?? []) {
       const m = maxBy.get(e.id) ?? { max: 0, n: 0 };
       exams.set(e.id, { id: e.id, code: e.code, name: e.name, max: m.max, n: m.n });
