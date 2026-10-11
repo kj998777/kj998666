@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import StudentSubmitForm from "./StudentSubmitForm";
 import { tutorIdFromToken } from "@/lib/tutor/link";
 import { examCodeVariants, pickExamByCode } from "@/lib/exams/codeVariants";
+import { CHOICES, choiceOfLabel } from "@/lib/exams/mockCsat";
 
 // 학생이 QR/링크로 접속할 때마다 시험 상태(존재/열림·닫힘)를 항상 최신으로 봐야 하므로
 // 이 페이지는 절대 캐시하지 않는다 — createAdminClient()는 cookies()를 쓰지 않으므로
@@ -82,8 +83,13 @@ export default async function StudentSubmitPage({
     return <Wrap>이 시험은 아직 정답이 등록되지 않아 제출할 수 없습니다. 선생님께 문의해 주세요.</Wrap>;
   }
 
+  // 2026-10-11 고3 사설 모의고사: 정답표에 선택과목 문항("미적23" …)이 있으면 학생이 과목을 먼저 고른다(lib/exams/mockCsat.ts)
+  const present = new Set(items.map((it) => choiceOfLabel(it.item_label)).filter(Boolean));
+  const choices = CHOICES.filter((c) => present.has(c.key)).map((c) => ({ key: c.key, name: c.name }));
+
   return (
     <StudentSubmitForm
+      choices={choices}
       code={exam.code}
       examName={exam.name}
       classes={classes ?? []}
