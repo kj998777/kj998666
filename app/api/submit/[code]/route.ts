@@ -4,7 +4,8 @@ import { gradeSubmission, type AnswerKeyItem } from "@/lib/grading";
 import { isLevel, validGrade, cleanClassName, classKey, classLabel } from "@/lib/classLabel";
 import { tutorClassLabel, tutorIdFromToken } from "@/lib/tutor/link";
 import { examCodeVariants, pickExamByCode } from "@/lib/exams/codeVariants";
-import { hasChoices, isChoiceKey, keysForChoice } from "@/lib/exams/mockCsat";
+import { cleanGradeCuts, hasChoices, isChoiceKey, keysForChoice, type ChoiceKey } from "@/lib/exams/mockCsat";
+import { buildStudentResult, type StudentResult } from "@/lib/report/studentResult";
 
 // 학생 제출을 실제로 기록하는 유일한 경로. 서비스롤 키를 쓰므로 RLS를 우회하지만,
 // 그만큼 여기서 직접 모든 검증(반 존재, 시험 열림 여부, 문항 수, 채점)을 다시 한다.
@@ -73,11 +74,11 @@ export async function POST(request: Request, { params }: { params: { code: strin
   // 2) 시험 존재 + (열림 상태이거나 #109: 과외선생님 스토어에 판매 중) 확인
   //    실제 최종 검증은 submit_and_grade RPC가 잠금과 함께 다시 하므로, 여기서는 빠른 실패용.
   // 코드가 NFC/NFD 어느 쪽으로 와도 찾고, 아래 RPC에는 DB에 저장된 코드 그대로 넘긴다(lib/exams/codeVariants.ts)
-  const { data: examRows } = await admin
-    .from("exams")
-    .select("id, code, status, tutor_download_cost")
+  // grade_cuts(0055)는 생성된 타입에 없어 any로 읽는다
+  const { data: examRows } = (await (admin.from("exams") as any)
+    .select("id, code, status, tutor_download_cost, grade_cuts")
     .in("code", examCodeVariants(code))
-    .limit(5);
+    .limit(5)) as { data: { id: string; code: string; status: string; tutor_download_cost: number | null; grade_cuts: unknown }[] | null };
   const exam = pickExamByCode(examRows, code);
   if (!exam) return NextResponse.json({ ok: false, msg: "존재하지 않는 시험입니다." }, { status: 404 });
   if (!tutorId && exam.status !== "열림" && exam.tutor_download_cost === null) {
@@ -95,12 +96,14 @@ export async function POST(request: Request, { params }: { params: { code: strin
   const allKey = (keyRows ?? []) as AnswerKeyItem[];
   // 2026-10-11 고3 사설 모의고사: 선택과목 문항("미적23" …)이 있으면 학생이 고른 과목 + 공통 문항만 채점한다(lib/exams/mockCsat.ts)
   let key = allKey;
+  let chosen: ChoiceKey | null = null;
   if (hasChoices(allKey.map((k) => k.item_label))) {
     const choice = body.choice;
     if (!isChoiceKey(choice) || !allKey.some((k) => k.item_label.startsWith(choice))) {
       return NextResponse.json({ ok: false, msg: "선택과목을 골라 주세요. (화면이 예전 것이면 새로고침해 주세요.)" }, { status: 400 });
     }
     key = keysForChoice(allKey, choice);
+    chosen = choice;
   }
   if (key.length === 0) {
     return NextResponse.json({ ok: false, msg: "시험 정답이 등록되지 않았습니다." }, { status: 409 });
@@ -136,5 +139,22 @@ export async function POST(request: Request, { params }: { params: { code: strin
     return NextResponse.json({ ok: false, msg }, { status });
   }
 
-  return NextResponse.json({ ok: true, submissionId });
+  // 6) 학생 화면에 보일 내 결과(2026-10-11 원장님 "점수·틀린 문제·통계는 보이게, 해설은 못 보게") — 정답·풀이는 넣지 않는다.
+  //    영역은 문항 정리(item_explanations.area)에서. 실패해도 제출은 이미 끝났으므로 결과 없이 성공으로 돌려준다.
+  let result: StudentResult | null = null;
+  try {
+    const { data: ex } = (await (admin.from("item_explanations") as any).select("item_label, area").eq("exam_id", exam.id)) as any;
+    const areaOf: Record<string, string> = {};
+    for (const e of (ex as any[]) ?? []) if (e?.area) areaOf[String(e.item_label)] = String(e.area);
+    result = buildStudentResult(key, perItem, {
+      totalScore,
+      areaOf,
+      gradeCuts: cleanGradeCuts(exam.grade_cuts),
+      choice: chosen,
+    });
+  } catch {
+    result = null;
+  }
+
+  return NextResponse.json({ ok: true, submissionId, result });
 }
