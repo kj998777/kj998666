@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { guessFolder } from "@/lib/exams/guessFolder";
 import { readMockAnswersFromPdf } from "@/lib/ai/mockAnswers";
-import { buildKeyRows, cleanPageMap, type CsatAnswers, type PageMap } from "@/lib/exams/mockCsat";
+import { buildKeyRows, cleanGradeCuts, cleanPageMap, type CsatAnswers, type GradeCuts, type PageMap } from "@/lib/exams/mockCsat";
 import { regradeExam } from "@/lib/review/regrade";
 
 // 고3 사설 모의고사(0053 exams.mock_csat) — 2026-10-11 원장님 "디지털화·해설 작성 없이 문제지·해설지를 내가 둘 다 올리게".
@@ -83,7 +83,7 @@ export async function finalizeSolutionPdf(code: string, path: string): Promise<R
 }
 
 /** 해설지에서 AI가 정답만 읽어 돌려준다(저장하지 않음 — 화면에서 확인 후 saveMockKey). */
-export async function readMockAnswers(code: string): Promise<Res<{ answers: CsatAnswers; found: number }>> {
+export async function readMockAnswers(code: string): Promise<Res<{ answers: CsatAnswers; found: number; gradeCuts: GradeCuts }>> {
   await requireRole("admin");
   const exam = await examByCode(code);
   if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
@@ -131,4 +131,18 @@ export async function saveSolutionPageMap(code: string, map: PageMap): Promise<R
   if (error) return { ok: false, msg: "저장하지 못했습니다: " + error.message };
   revalidatePath(`/exams/${code}`);
   return { ok: true, count };
+}
+
+/** 예상 등급컷(0055) 저장 — 선택과목별 원점수 1컷부터. 모두 비우면 지운다. 보고서가 예상 등급을 낸다. */
+export async function saveGradeCuts(code: string, cuts: GradeCuts): Promise<Res<{ subjects: number }>> {
+  await requireRole("editor");
+  const exam = await examByCode(code);
+  if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
+  const clean = cleanGradeCuts(cuts);
+  const n = Object.keys(clean).length;
+  const admin = createAdminClient();
+  const { error } = await (admin.from("exams") as any).update({ grade_cuts: n ? clean : null }).eq("id", exam.id);
+  if (error) return { ok: false, msg: "저장하지 못했습니다: " + error.message };
+  revalidatePath(`/exams/${code}`);
+  return { ok: true, subjects: n };
 }
