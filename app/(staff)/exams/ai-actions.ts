@@ -43,7 +43,7 @@ function folderFields(formData: FormData) {
     folder_year: year || null,
     folder_grade: gradeRaw ? Number(gradeRaw) : null,
     folder_term: termRaw ? Number(termRaw) : null,
-    folder_kind: (kind || null) as "중간" | "기말" | "기타" | null,
+    folder_kind: (kind || null) as "중간" | "기말" | "기타" | "모의고사" | null,
   };
 }
 

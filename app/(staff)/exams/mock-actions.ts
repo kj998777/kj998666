@@ -47,8 +47,12 @@ export async function createMockExam(formData: FormData): Promise<Res<{ id: stri
       created_by: userId,
       mock_csat: true,
       ...g,
+      // 2026-10-11 원장님 "2027학년도라 2026 → 고3 → 모의고사"(0056): 연도는 이름의 "N학년도" − 1(guessFolder), 없으면 올해
       school_level: "고",
+      folder_year: g.folder_year ?? String(new Date(Date.now() + 9 * 3600 * 1000).getUTCFullYear()),
       folder_grade: g.folder_grade ?? 3,
+      folder_term: null,
+      folder_kind: "모의고사",
     })
     .select("id, code")
     .single()) as any;
