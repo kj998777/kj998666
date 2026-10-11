@@ -26,7 +26,10 @@ import { pageRangeLabel, trailingAnswerPages } from "@/lib/ai/answerPages";
 import { getQrBoxes } from "@/lib/ai/qrMask";
 import QrScanButton from "./QrScanButton";
 import MockCsatPanel from "./MockCsatPanel";
-import { answersFromKeys, examMaxPoints } from "@/lib/exams/mockCsat";
+import { answersFromKeys, cleanPageMap, examMaxPoints } from "@/lib/exams/mockCsat";
+
+// 고3 사설 모의고사 "해설지에서 AI로 정답 읽기"(서버 액션 readMockAnswers)가 이 화면에서 돈다 — 기본 실행 시간으로 끊기지 않게(2026-10-11)
+export const maxDuration = 60;
 
 const ACTIVE_STAGES = new Set(["upload", "extract_submit", "extract_wait", "solve_submit", "solve_wait"]);
 
@@ -208,6 +211,7 @@ export default async function ExamDetailPage({
           initial={answersFromKeys(((keys as any[]) ?? []).map((k) => ({ item_label: String(k.item_label), correct_answers: String(k.correct_answers ?? "") })))}
           hasKey={(keys ?? []).length > 0}
           isAdmin={isAdmin}
+          pageMap={cleanPageMap((exam as any).solution_page_map)}
         />
       )}
 
