@@ -2,7 +2,18 @@ import "server-only";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { adaptParamsForModel, aiCreditKind, aiErr, anthropicCall } from "./anthropic";
 import { getAiCreds, recordUsage } from "./settings";
-import { CHOICE_NOS, COMMON_NOS, cleanAnswer, csatSpec, emptyAnswers, isChoiceKey, type CsatAnswers, type PageEntry } from "@/lib/exams/mockCsat";
+import {
+  CHOICE_NOS,
+  COMMON_NOS,
+  cleanAnswer,
+  cleanGradeCuts,
+  csatSpec,
+  emptyAnswers,
+  isChoiceKey,
+  type CsatAnswers,
+  type GradeCuts,
+  type PageEntry,
+} from "@/lib/exams/mockCsat";
 
 // 고3 사설 모의고사 해설지 PDF에서 정답만 읽기(2026-10-11 원장님 선택: "해설지에서 AI가 정답만 읽기").
 // 빠른 정답표는 보통 해설지 맨 앞 1~2쪽에 있으므로 앞쪽 몇 쪽만 잘라 보낸다(빠르고 싸다). 읽은 값은 바로 저장하지 않고
@@ -30,6 +41,19 @@ export const MOCK_ANSWER_TOOL = {
       prob: { ...ITEMS, description: "선택과목 확률과 통계 23~30번(해설지에 없으면 빈 배열)" },
       calc: { ...ITEMS, description: "선택과목 미적분 23~30번(없으면 빈 배열)" },
       geom: { ...ITEMS, description: "선택과목 기하 23~30번(없으면 빈 배열)" },
+      // 0055: 해설지에 전국 예상 등급컷이 실려 있으면 함께
+      grade_cuts: {
+        type: "array",
+        description: "해설지에 '예상 등급컷'(원점수)이 실려 있으면 선택과목별로. 없으면 빈 배열",
+        items: {
+          type: "object",
+          properties: {
+            subject: { type: "string", enum: ["확통", "미적", "기하"] },
+            cuts: { type: "array", items: { type: "number" }, description: "1등급컷, 2등급컷, … 순서의 원점수" },
+          },
+          required: ["subject", "cuts"],
+        },
+      },
     },
     required: ["common", "prob", "calc", "geom"],
   },
@@ -43,6 +67,7 @@ const PROMPT = [
   "- 빠른 정답표가 있으면 그 값을 그대로 옮기세요. 없으면 해설 본문에 적힌 정답을 옮기세요. 직접 풀지 마세요.",
   "- 객관식(공통 1~15, 선택 23~28)은 1~5 숫자 하나(①이면 1). 단답형(공통 16~22, 선택 29~30)은 적힌 자연수 그대로.",
   "- 해설지에 없는 선택과목은 빈 배열로 두세요. 읽기 어렵거나 확실하지 않은 칸은 빼세요(추측하지 말 것).",
+  "- '예상 등급컷'(전국 1컷·2컷·3컷 원점수) 표가 있으면 grade_cuts에 선택과목별로 옮기세요. 없으면 빈 배열.",
 ].join("\n");
 
 async function firstPages(pdf: Buffer, n: number): Promise<Buffer> {
@@ -62,7 +87,7 @@ async function firstPages(pdf: Buffer, n: number): Promise<Buffer> {
 export async function readMockAnswersFromPdf(
   client: Client,
   pdf: Buffer
-): Promise<{ ok: true; answers: CsatAnswers; found: number } | { ok: false; msg: string }> {
+): Promise<{ ok: true; answers: CsatAnswers; found: number; gradeCuts: GradeCuts } | { ok: false; msg: string }> {
   const { apiKey, model } = await getAiCreds(client);
   if (!apiKey) return { ok: false, msg: "AI API 키가 없습니다. AI 설정에서 먼저 저장해 주세요." };
   const part = await firstPages(pdf, FIRST_PAGES);
@@ -113,7 +138,9 @@ export async function readMockAnswersFromPdf(
   put("미적", inp.calc, CHOICE_NOS);
   put("기하", inp.geom, CHOICE_NOS);
   if (!found) return { ok: false, msg: "해설지 앞쪽에서 정답을 찾지 못했습니다. 표에 직접 적어 주세요." };
-  return { ok: true, answers, found };
+  const raw: Record<string, unknown> = {};
+  for (const g of Array.isArray(inp.grade_cuts) ? inp.grade_cuts : []) if (isChoiceKey(g?.subject)) raw[g.subject] = g.cuts;
+  return { ok: true, answers, found, gradeCuts: cleanGradeCuts(raw) };
 }
 
 // ---------------------------------------------------------------------
