@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { guessFolder } from "@/lib/exams/guessFolder";
 import { readMockAnswersFromPdf } from "@/lib/ai/mockAnswers";
-import { buildKeyRows, type CsatAnswers } from "@/lib/exams/mockCsat";
+import { buildKeyRows, cleanPageMap, type CsatAnswers, type PageMap } from "@/lib/exams/mockCsat";
 import { regradeExam } from "@/lib/review/regrade";
 
 // 고3 사설 모의고사(0053 exams.mock_csat) — 2026-10-11 원장님 "디지털화·해설 작성 없이 문제지·해설지를 내가 둘 다 올리게".
@@ -68,7 +68,8 @@ export async function finalizeSolutionPdf(code: string, path: string): Promise<R
   const prefix = `_solutions/${exam.id}/`;
   if (!String(path).startsWith(prefix) || !/^\d+\.pdf$/.test(String(path).slice(prefix.length))) return { ok: false, msg: "해설지 경로가 올바르지 않습니다." };
   const admin = createAdminClient();
-  const { error } = await (admin.from("exams") as any).update({ solution_pdf_path: path }).eq("id", exam.id);
+  // 해설지가 바뀌면 예전 쪽 지도(0054)는 맞지 않으므로 지운다 — 시험 화면이 새로 찾는다
+  const { error } = await (admin.from("exams") as any).update({ solution_pdf_path: path, solution_page_map: null }).eq("id", exam.id);
   if (error) return { ok: false, msg: "해설지를 연결하지 못했습니다: " + error.message };
   try {
     const { data: files } = await admin.storage.from(BUCKET).list(`_solutions/${exam.id}`, { limit: 100 });
@@ -116,4 +117,18 @@ export async function saveMockKey(code: string, answers: CsatAnswers): Promise<R
   const regraded = await regradeExam(createAdminClient(), exam.id).catch(() => 0);
   revalidatePath(`/exams/${code}`);
   return { ok: true, count: rows.length, subjects, regraded, missing };
+}
+
+/** 해설지 문항별 풀이 쪽(0054) 저장 — AI가 찾은 것(화면이 묶음 결과를 모음)이나 원장님이 고친 것. 빈 지도면 지운다. */
+export async function saveSolutionPageMap(code: string, map: PageMap): Promise<Res<{ count: number }>> {
+  await requireRole("editor");
+  const exam = await examByCode(code);
+  if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
+  const clean = cleanPageMap(map);
+  const count = Object.keys(clean).length;
+  const admin = createAdminClient();
+  const { error } = await (admin.from("exams") as any).update({ solution_page_map: count ? clean : null }).eq("id", exam.id);
+  if (error) return { ok: false, msg: "저장하지 못했습니다: " + error.message };
+  revalidatePath(`/exams/${code}`);
+  return { ok: true, count };
 }
