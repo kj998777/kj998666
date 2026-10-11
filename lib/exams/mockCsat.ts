@@ -325,3 +325,46 @@ export function parsePageMapText(text: string): { map: PageMap; errors: string[]
   }
   return { map: cleanPageMap(raw), errors };
 }
+
+// ---------------------------------------------------------------------
+// 예상 등급컷(0055 exams.grade_cuts) — 2026-10-11 원장님 "예상 등급컷이 나와 있는 경우 해당 등급컷도 성적 산출에 반영".
+// 해설지에 실린 전국 예상 등급컷(원점수)을 선택과목별로 1컷부터 적어 두면, 보고서가 학생 점수로 예상 등급을 낸다.
+
+export type GradeCuts = Partial<Record<ChoiceKey, number[]>>;
+export const GRADE_CUT_SLOTS = 4; // 화면에서 적는 칸 수(1~4등급컷)
+
+/** DB·입력 값 다듬기: 과목별로 0~100 숫자만, 앞에서부터 빈칸 없이, 내려가는 순서가 아니면 거기서 자름 */
+export function cleanGradeCuts(v: unknown): GradeCuts {
+  const out: GradeCuts = {};
+  if (!v || typeof v !== "object" || Array.isArray(v)) return out;
+  for (const c of CHOICES) {
+    const arr = (v as Record<string, unknown>)[c.key];
+    if (!Array.isArray(arr)) continue;
+    const cuts: number[] = [];
+    for (const x of arr.slice(0, 8)) {
+      if (x === null || x === "" || x === undefined) break;
+      const n = Number(x);
+      if (!Number.isFinite(n) || n <= 0 || n > 100) break;
+      if (cuts.length && n >= cuts[cuts.length - 1]) break;
+      cuts.push(Math.round(n * 100) / 100);
+    }
+    if (cuts.length) out[c.key] = cuts;
+  }
+  return out;
+}
+
+export function hasGradeCuts(cuts: GradeCuts | null | undefined): boolean {
+  return !!cuts && Object.values(cuts).some((a) => Array.isArray(a) && a.length > 0);
+}
+
+/** 점수 → 예상 등급. 컷이 3개(1~3등급)면 3컷 아래는 "4등급 이하". 컷이 없으면 null. */
+export function expectedGrade(score: number, cuts: number[] | null | undefined): { grade: number; label: string } | null {
+  if (!cuts || !cuts.length || !Number.isFinite(Number(score))) return null;
+  for (let i = 0; i < cuts.length; i++) if (Number(score) >= cuts[i]) return { grade: i + 1, label: `${i + 1}등급` };
+  return { grade: cuts.length + 1, label: `${cuts.length + 1}등급 이하` };
+}
+
+/** "1컷 82 · 2컷 72 · 3컷 64" */
+export function gradeCutsText(cuts: number[] | null | undefined): string {
+  return (cuts ?? []).map((c, i) => `${i + 1}컷 ${c}`).join(" · ");
+}
