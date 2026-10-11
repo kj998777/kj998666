@@ -208,3 +208,120 @@ export function examTotalsByExam(keys: { exam_id: string; item_label: string; po
   });
   return out;
 }
+
+// ---------------------------------------------------------------------
+// 해설지 쪽 지도(0054 exams.solution_page_map) — 2026-10-11 원장님 "보고서 만들 때 올린 해설에서 틀린 문제 해설을 찾아서 첨부".
+// AI가 해설지를 몇 쪽씩 나눠 보고 "이 쪽에 풀이가 있는 문항"을 읽기 순서대로 알려 주면(app/(staff)/exams/[code]/solution-pages),
+// 여기서 문항 번호 → 쪽 목록으로 모은다. 선택과목 머리말(확률과 통계·미적분·기하)은 과목이 시작하는 쪽에만 있어서, AI가 과목을
+// 모르는 쪽은 순서로 메운다: 23~30번이 다시 작아지면(예: 30 → 23) 다음 과목, 과목 이름이 보이면 그 과목.
+
+export type PageMap = Record<string, number[]>;
+/** 해설지 쪽 찾기 한 번에 AI에게 보내는 쪽 수(60초 안에 끝나게) */
+export const SOLUTION_PAGE_BATCH = 6;
+export type PageEntry = { no: number; part: "공통" | ChoiceKey | null };
+
+const CHOICE_ORDER: ChoiceKey[] = ["확통", "미적", "기하"];
+
+/** 쪽별 문항 목록(쪽 순서 상관없음) → 문항별 쪽 목록 */
+export function buildPageMap(pages: { page: number; items: PageEntry[] }[]): PageMap {
+  const out: PageMap = {};
+  const add = (label: string, page: number) => {
+    const l = (out[label] ??= []);
+    if (!l.includes(page)) l.push(page);
+  };
+  const sorted = [...pages].filter((p) => Number.isInteger(p.page) && p.page > 0).sort((a, b) => a.page - b.page);
+  let cur: ChoiceKey | null = null;
+  let lastNo = 0;
+  const used = new Set<ChoiceKey>();
+  const nextUnused = (): ChoiceKey => CHOICE_ORDER.find((c) => !used.has(c)) ?? cur ?? "기하";
+  for (const p of sorted) {
+    for (const e of p.items ?? []) {
+      const no = Number(e?.no);
+      if (!Number.isInteger(no) || no < 1 || no > 30) continue;
+      if (no <= 22) {
+        add(String(no), p.page);
+        continue;
+      }
+      const given = isChoiceKey(e.part) ? e.part : null;
+      if (given) cur = given;
+      else if (!cur || no < lastNo) cur = nextUnused();
+      used.add(cur);
+      lastNo = no;
+      add(`${cur}${no}`, p.page);
+    }
+  }
+  for (const k of Object.keys(out)) out[k].sort((a, b) => a - b);
+  return out;
+}
+
+/** DB에서 읽은 값 다듬기(모양이 틀린 칸은 버림) */
+export function cleanPageMap(v: unknown): PageMap {
+  const out: PageMap = {};
+  if (!v || typeof v !== "object" || Array.isArray(v)) return out;
+  for (const [k, arr] of Object.entries(v as Record<string, unknown>)) {
+    const label = String(k).trim();
+    if (!/^(\d{1,2}|(확통|미적|기하)\d{2})$/.test(label) || !Array.isArray(arr)) continue;
+    const pages = Array.from(new Set(arr.map(Number).filter((n) => Number.isInteger(n) && n > 0 && n < 1000))).sort((a, b) => a - b);
+    if (pages.length) out[label] = pages.slice(0, 10);
+  }
+  return out;
+}
+
+/** 틀린 문항들의 해설 쪽(중복 없이 오름차순) */
+export function pagesForLabels(map: PageMap, labels: string[]): number[] {
+  const s = new Set<number>();
+  for (const l of labels) for (const p of map[l] ?? []) s.add(p);
+  return Array.from(s).sort((a, b) => a - b);
+}
+
+function labelOrder(label: string): number {
+  const c = choiceOfLabel(label);
+  const no = Number(displayNo(label)) || 0;
+  return c ? 100 * (CHOICE_ORDER.indexOf(c) + 1) + no : no;
+}
+
+function pagesText(pages: number[]): string {
+  const parts: string[] = [];
+  for (let i = 0; i < pages.length; i++) {
+    let j = i;
+    while (j + 1 < pages.length && pages[j + 1] === pages[j] + 1) j++;
+    parts.push(j > i ? `${pages[i]}-${pages[j]}` : String(pages[i]));
+    i = j;
+  }
+  return parts.join(",");
+}
+
+/** 화면에서 고칠 수 있게 글로: 한 줄에 "번호: 쪽" (예: "미적23: 25-26") */
+export function pageMapToText(map: PageMap): string {
+  return Object.keys(map)
+    .sort((a, b) => labelOrder(a) - labelOrder(b))
+    .map((l) => `${l}: ${pagesText(map[l])}`)
+    .join("\n");
+}
+
+/** pageMapToText의 반대. 틀린 줄은 errors로 알려 준다. */
+export function parsePageMapText(text: string): { map: PageMap; errors: string[] } {
+  const raw: Record<string, number[]> = {};
+  const errors: string[] = [];
+  for (const line0 of String(text ?? "").split(/\r?\n/)) {
+    const line = line0.trim();
+    if (!line) continue;
+    const m = /^((?:확통|미적|기하)?\s*\d{1,2})\s*[:：]\s*([\d,\s~-]+)$/.exec(line);
+    if (!m) {
+      errors.push(line);
+      continue;
+    }
+    const label = m[1].replace(/\s+/g, "");
+    const pages: number[] = [];
+    for (const part of m[2].split(",")) {
+      const r = /^\s*(\d+)\s*(?:[-~]\s*(\d+))?\s*$/.exec(part);
+      if (!r) continue;
+      const a = Number(r[1]);
+      const b = r[2] ? Number(r[2]) : a;
+      for (let p = Math.min(a, b); p <= Math.max(a, b) && p - Math.min(a, b) < 10; p++) pages.push(p);
+    }
+    if (!pages.length) errors.push(line);
+    else raw[label] = pages;
+  }
+  return { map: cleanPageMap(raw), errors };
+}
