@@ -28,7 +28,19 @@ export default function CreateMockExamForm() {
         if (!(sol instanceof File) || sol.size === 0) return setMsg("해설지 PDF를 골라 주세요.");
         start(async () => {
           setStep("시험 만드는 중…");
-          const c = await createMockExam(fd);
+          // 서버 액션에는 이름·코드만 보낸다 — PDF까지 실으면 Vercel 요청 한도(4.5MB)를 넘어 실패한다(2026-10-11 실제 오류).
+          // PDF는 아래에서 브라우저가 Storage에 직접 올린다.
+          const meta = new FormData();
+          meta.set("name", String(fd.get("name") ?? ""));
+          meta.set("code", String(fd.get("code") ?? ""));
+          let c: Awaited<ReturnType<typeof createMockExam>>;
+          try {
+            c = await createMockExam(meta);
+          } catch (e: any) {
+            setMsg("시험을 만들지 못했습니다: " + String(e?.message ?? e));
+            setStep("");
+            return;
+          }
           if (!c.ok) {
             setMsg(c.msg);
             setStep("");

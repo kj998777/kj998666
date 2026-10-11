@@ -46,6 +46,8 @@ export default function CreateAiExamForm() {
             }
           }
           setStep("시험 만드는 중…");
+          // 2026-10-11: 서버 액션에는 PDF를 빼고 보낸다 — 실으면 4.5MB 넘는 PDF에서 Vercel 요청 한도로 실패한다.
+          formData.delete("pdf");
           const created = await createExamRow(formData);
           if (!created.ok) {
             setMsg(created.msg);
