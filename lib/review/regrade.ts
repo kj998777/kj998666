@@ -1,6 +1,7 @@
 import "server-only";
 import { isCorrect } from "@/lib/grading";
 import { fetchAllPages } from "@/lib/supabase/fetchAll";
+import { keysForStudent } from "@/lib/exams/mockCsat";
 
 // 정답표(answer_key)가 바뀐 뒤 이미 들어온 제출을 새 정답으로 다시 채점한다.
 // 지금까지는 정답을 고쳐도 기존 채점 결과가 그대로 남았다(#3/#4에서 과외선생님 답 채택·수정 요청
@@ -51,7 +52,9 @@ export async function regradePlan(admin: Client, examId: string): Promise<Regrad
     const guessedBy = new Set(old.filter((p) => p.guessed).map((p) => p.item_label)); // 2026-10-01: 찍음 표시는 그대로 둔다
     const manualBy = new Set(old.filter((p) => p.manual).map((p) => p.item_label)); // 2026-10-10: 선생님 맞음 처리도 그대로 둔다
     let total = 0;
-    const perItem: PerItem[] = key.map((k) => {
+    // 2026-10-11 고3 사설 모의고사: 선택과목 문항("미적23" …)은 그 학생이 고른 과목만(per_item에 남은 번호로 앎)
+    const myKey = keysForStudent(key, old.map((p) => String(p.item_label)));
+    const perItem: PerItem[] = myKey.map((k) => {
       const given = String(givenBy.get(k.item_label) ?? "");
       const manual = manualBy.has(k.item_label);
       const correct = manual || isCorrect(given, k.correct_answers, k.type);
