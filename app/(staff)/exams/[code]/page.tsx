@@ -299,7 +299,8 @@ export default async function ExamDetailPage({
           </p>
           <div className="flex flex-wrap items-center gap-4 text-sm">
             <label className="flex items-center gap-1.5">
-              <input type="checkbox" name="cover" value="1" defaultChecked /> 표지 넣기 (표지 + 백지 1쪽)
+              {/* 2026-10-11 원장님 "앞표지는 붙이지 말고 맨 뒤 QR·로고만" — 기본은 끔 */}
+              <input type="checkbox" name="cover" value="1" /> 표지 넣기 (표지 + 백지 1쪽)
             </label>
             <label className="flex items-center gap-1.5">
               <input type="checkbox" name="addFix" value="1" defaultChecked /> 정정 사항을 정정 페이지로 추가
