@@ -14,7 +14,7 @@ export type GuessedFolder = {
   folder_year: string | null;
   folder_grade: number | null;
   folder_term: number | null;
-  folder_kind: "중간" | "기말" | "기타" | null;
+  folder_kind: "중간" | "기말" | "기타" | "모의고사" | null;
 };
 
 const EMPTY: GuessedFolder = { school_level: null, folder_year: null, folder_grade: null, folder_term: null, folder_kind: null };
@@ -68,10 +68,16 @@ function fromName(raw: string): Partial<GuessedFolder> {
   const t = s.match(/\(?\s*([12])\s*\)?\s*학기/);
   if (t) out.folder_term = Number(t[1]);
 
-  // 구분: 중간/기말(1차·2차 지필/고사도), 모의고사·학력평가는 기타
+  // 구분: 중간/기말(1차·2차 지필/고사도), 모의고사·학력평가는 모의고사(2026-10-11, 0056 — 전에는 기타)
   if (/중간|1\s*차\s*(?:지필|고사|평가)/.test(s)) out.folder_kind = "중간";
   else if (/기말|2\s*차\s*(?:지필|고사|평가)/.test(s)) out.folder_kind = "기말";
-  else if (/모의고사|학력평가|모평|수능/.test(s)) out.folder_kind = "기타";
+  else if (/모의고사|학력평가|모평|수능/.test(s)) {
+    out.folder_kind = "모의고사";
+    // 수능형 "2027학년도"(또는 "2027 ○○ 모의고사"처럼 '년' 없이 쓴 해)는 2026년에 치르는 시험
+    // (원장님 "2027학년도라 2026 폴더로"). "2026년 10월 학력평가"처럼 '년'을 붙인 해는 그대로.
+    const hy = s.match(/(20\d{2})\s*학년도/) ?? (/(20\d{2})\s*년/.test(s) ? null : s.match(/(?:^|[^0-9])(20[0-4]\d)(?![0-9])/));
+    if (hy) out.folder_year = String(Number(hy[1]) - 1);
+  }
 
   // 과목으로 학년 보충: 공통수학1·2는 고1 과목
   if (out.folder_grade == null && /공통수학/.test(s) && out.school_level !== "중") out.folder_grade = 1;

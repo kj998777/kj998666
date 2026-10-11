@@ -7,22 +7,25 @@ import {
   CHOICE_NOS,
   COMMON_NOS,
   SOLUTION_PAGE_BATCH,
+  GRADE_CUT_SLOTS,
   buildPageMap,
+  cleanGradeCuts,
   csatSpec,
   pageMapToText,
   parsePageMapText,
   type ChoiceKey,
   type CsatAnswers,
+  type GradeCuts,
   type PageEntry,
   type PageMap,
 } from "@/lib/exams/mockCsat";
-import { finalizeSolutionPdf, readMockAnswers, saveMockKey, saveSolutionPageMap } from "../mock-actions";
+import { finalizeSolutionPdf, readMockAnswers, saveGradeCuts, saveMockKey, saveSolutionPageMap } from "../mock-actions";
 import { pdfTooLarge, uploadSolutionPdfDirect } from "@/lib/supabase/uploadPdf";
 import { fitPdfForUpload } from "@/lib/pdf/shrinkPdf";
 import PdfDropInput from "../PdfDropInput";
 
 // 고3 사설 모의고사(0053) 시험 화면의 정답 입력 칸 — 2026-10-11 원장님: 문제지·해설지를 올리고, 정답은 해설지에서 AI가 읽기.
-// 해설지가 있고 정답표가 아직 없으면 화면을 열 때 AI가 한 번 읽어 표에 채운다(저장은 원장님이 확인 후 "정답표 저장").
+// 막 만든 시험(?new=1)이고 해설지가 있고 정답표가 아직 없으면 AI가 한 번 읽어 표에 채운다(저장은 원장님이 확인 후 "정답표 저장"). 그 밖에는 버튼으로만(2026-10-11).
 // 배점·객관식/단답형은 수능 형식으로 정해져 있다(lib/exams/mockCsat.ts csatSpec).
 
 type Part = "공통" | ChoiceKey;
@@ -35,6 +38,8 @@ export default function MockCsatPanel({
   hasKey,
   isAdmin,
   pageMap,
+  gradeCuts,
+  autoAi = false,
 }: {
   code: string;
   examId: string;
@@ -44,6 +49,11 @@ export default function MockCsatPanel({
   isAdmin: boolean;
   /** 0054 해설지 문항별 풀이 쪽 — 개별 보고서가 틀린 문항의 이 쪽들을 뒤에 붙인다 */
   pageMap: PageMap;
+  /** 0055 예상 등급컷(원점수, 선택과목별) — 보고서가 예상 등급을 낸다 */
+  gradeCuts: GradeCuts;
+  /** 막 만든 시험(?new=1)일 때만 AI(정답 읽기·해설 위치 찾기)를 저절로 돌린다 — 2026-10-11 원장님 "API 쓰지 말고"
+   * 이후로는 화면을 열 때마다 돌지 않게, 그 밖에는 버튼으로만 */
+  autoAi?: boolean;
 }) {
   const router = useRouter();
   const [ans, setAns] = useState<CsatAnswers>(initial);
@@ -52,6 +62,27 @@ export default function MockCsatPanel({
   const [saving, startSave] = useTransition();
   const [dirty, setDirty] = useState(false);
   const auto = useRef(false);
+  const toCells = (g: GradeCuts) =>
+    Object.fromEntries(CHOICES.map((c) => [c.key, Array.from({ length: GRADE_CUT_SLOTS }, (_, i) => (g[c.key]?.[i] != null ? String(g[c.key]![i]) : ""))])) as Record<
+      ChoiceKey,
+      string[]
+    >;
+  const [cuts, setCuts] = useState<Record<ChoiceKey, string[]>>(() => toCells(gradeCuts));
+  const [cutsDirty, setCutsDirty] = useState(false);
+  const [cutsMsg, setCutsMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [savingCuts, startCuts] = useTransition();
+
+  function saveCuts() {
+    const clean = cleanGradeCuts(Object.fromEntries(CHOICES.map((c) => [c.key, cuts[c.key]])));
+    startCuts(async () => {
+      const r = await saveGradeCuts(code, clean);
+      if (!r.ok) return setCutsMsg({ ok: false, text: r.msg });
+      setCuts(toCells(clean));
+      setCutsDirty(false);
+      setCutsMsg({ ok: true, text: r.subjects ? `${r.subjects}과목의 예상 등급컷을 저장했습니다. 보고서에 예상 등급이 나옵니다.` : "예상 등급컷을 지웠습니다." });
+      router.refresh();
+    });
+  }
 
   async function read() {
     setReading(true);
@@ -64,11 +95,15 @@ export default function MockCsatPanel({
     }
     setAns(r.answers);
     setDirty(true);
+    if (Object.keys(r.gradeCuts ?? {}).length) {
+      setCuts(toCells(r.gradeCuts));
+      setCutsDirty(true);
+    }
     setMsg({ ok: true, text: `${r.found}칸을 채웠습니다. 해설지와 한 번 대조한 뒤 "정답표 저장"을 눌러 주세요.` });
   }
 
   useEffect(() => {
-    if (!auto.current && isAdmin && hasSolution && !hasKey) {
+    if (!auto.current && autoAi && isAdmin && hasSolution && !hasKey) {
       auto.current = true;
       void read();
     }
@@ -125,7 +160,7 @@ export default function MockCsatPanel({
       </p>
 
       <SolutionUpload code={code} examId={examId} hasSolution={hasSolution} />
-      {hasSolution && <SolutionPages code={code} isAdmin={isAdmin} initial={pageMap} />}
+      {hasSolution && <SolutionPages code={code} isAdmin={isAdmin} initial={pageMap} autoAi={autoAi} />}
 
       <div className="flex flex-wrap items-center gap-2">
         {isAdmin && (
@@ -212,6 +247,57 @@ export default function MockCsatPanel({
           <p className="text-xs text-slate-500 mt-1">해설지에 없는 과목은 비워 두면 그 과목은 학생 화면에서 고를 수 없습니다.</p>
         </div>
       </div>
+
+      {/* 2026-10-11 원장님 "예상 등급컷이 나와 있으면 성적 산출에 반영"(0055) */}
+      <div className="rounded-md bg-slate-50 px-3 py-2 space-y-2">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="font-medium">예상 등급컷 (원점수)</span>
+          <span className="text-xs text-slate-500">해설지에 실려 있으면 적어 주세요 — 보고서에 학생별 예상 등급이 나옵니다. 없으면 비워 두세요.</span>
+        </div>
+        <div className="table-wrap">
+          <table className="text-sm">
+            <thead>
+              <tr className="text-left text-slate-500 border-b border-slate-200">
+                <th className="py-1 pr-3">선택과목</th>
+                {Array.from({ length: GRADE_CUT_SLOTS }, (_, i) => (
+                  <th key={i} className="py-1 pr-2">
+                    {i + 1}등급컷
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {CHOICES.map((c) => (
+                <tr key={c.key} className="border-b border-slate-100">
+                  <td className="py-1 pr-3">{c.name}</td>
+                  {cuts[c.key].map((v, i) => (
+                    <td key={i} className="py-1 pr-2">
+                      <input
+                        className="input py-0.5 px-1.5 w-16 text-sm text-center tabular-nums"
+                        inputMode="numeric"
+                        value={v}
+                        aria-label={`${c.name} ${i + 1}등급컷`}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9.]/g, "");
+                          setCuts((prev) => ({ ...prev, [c.key]: prev[c.key].map((x, j) => (j === i ? val : x)) }));
+                          setCutsDirty(true);
+                        }}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className="btn-secondary text-xs" disabled={savingCuts} onClick={saveCuts}>
+            {savingCuts ? "저장하는 중…" : "등급컷 저장"}
+          </button>
+          {cutsDirty && <span className="text-xs text-amber-700">저장하지 않은 변경이 있어요</span>}
+          {cutsMsg && <span className={"text-xs " + (cutsMsg.ok ? "text-emerald-700" : "text-red-600")}>{cutsMsg.text}</span>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -276,7 +362,7 @@ function SolutionUpload({ code, examId, hasSolution }: { code: string; examId: s
 // 2026-10-11 원장님 "보고서 만들 때 올린 해설에서 틀린 문제 해설을 찾아서 첨부해 줘" — 해설지에서 문항별 풀이 쪽을 AI가 찾아
 // 저장해 두면(0054), 개별 보고서가 틀린·무응답 문항의 그 쪽들을 해설지에서 잘라 보고서 뒤에 붙인다. 해설지를 몇 쪽씩 나눠
 // 여러 번 부르고(solution-pages 라우트, 동시에 3개), 결과를 buildPageMap으로 모아 저장한다. 틀린 곳은 글로 고칠 수 있다.
-function SolutionPages({ code, isAdmin, initial }: { code: string; isAdmin: boolean; initial: PageMap }) {
+function SolutionPages({ code, isAdmin, initial, autoAi }: { code: string; isAdmin: boolean; initial: PageMap; autoAi: boolean }) {
   const router = useRouter();
   const [map, setMap] = useState<PageMap>(initial);
   const [busy, setBusy] = useState(false);
@@ -355,7 +441,7 @@ function SolutionPages({ code, isAdmin, initial }: { code: string; isAdmin: bool
   }
 
   useEffect(() => {
-    if (!auto.current && isAdmin && count === 0) {
+    if (!auto.current && autoAi && isAdmin && count === 0) {
       auto.current = true;
       void locate();
     }

@@ -182,6 +182,7 @@ export default function CreateAiExamBatchForm() {
               <option value="">선택 안 함</option>
               <option value="중간">중간고사</option>
               <option value="기말">기말고사</option>
+              <option value="모의고사">모의고사</option>
               <option value="기타">기타</option>
             </select>
           </div>

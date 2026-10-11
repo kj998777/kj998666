@@ -46,7 +46,9 @@ export default function CreateMockExamForm() {
             setStep("");
             return;
           }
-          const go = (err?: string) => router.push(`/exams/${encodeURIComponent(c.code)}` + (err ? `?aiErr=${encodeURIComponent(err.slice(0, 200))}` : ""));
+          // 다 올렸으면 ?new=1 — 시험 화면이 그때만 AI(정답 읽기·해설 위치 찾기)를 저절로 돌린다(MockCsatPanel autoAi)
+          const go = (err?: string) =>
+            router.push(`/exams/${encodeURIComponent(c.code)}` + (err ? `?aiErr=${encodeURIComponent(err.slice(0, 200))}` : "?new=1"));
           try {
             setStep("문제지 올리는 중…");
             const p1 = pdfTooLarge(prob) ? (await fitPdfForUpload(prob, setStep)).file : prob;

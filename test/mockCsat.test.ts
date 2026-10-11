@@ -21,6 +21,10 @@ import {
   pagesForLabels,
   pageMapToText,
   parsePageMapText,
+  cleanGradeCuts,
+  expectedGrade,
+  gradeCutsText,
+  hasGradeCuts,
 } from "../lib/exams/mockCsat";
 
 let n = 0;
@@ -147,6 +151,18 @@ check("해설지 쪽 지도: 글로 고치기 / 다듬기", () => {
   assert.deepEqual(r.map, { "1": [3, 5, 6], "2": [3], "미적23": [25, 26], "기하30": [40, 41] });
   assert.deepEqual(r.errors, ["이상한 줄"]);
   assert.deepEqual(cleanPageMap({ "1": [2, "2", 0, -1], x: [1], "미적23": "5" }), { "1": [2] });
+});
+
+check("예상 등급컷", () => {
+  const cuts = cleanGradeCuts({ 확통: [82, 72, 64], 미적: ["84", 76, "", 60], 기하: [80, 85], x: [1] });
+  assert.deepEqual(cuts, { 확통: [82, 72, 64], 미적: [84, 76], 기하: [80] });
+  assert.equal(hasGradeCuts(cuts), true);
+  assert.equal(hasGradeCuts({}), false);
+  assert.deepEqual(expectedGrade(82, cuts.확통), { grade: 1, label: "1등급" });
+  assert.deepEqual(expectedGrade(81, cuts.확통), { grade: 2, label: "2등급" });
+  assert.deepEqual(expectedGrade(63, cuts.확통), { grade: 4, label: "4등급 이하" });
+  assert.equal(expectedGrade(90, undefined), null);
+  assert.equal(gradeCutsText([82, 72]), "1컷 82 · 2컷 72");
 });
 
 console.log(`mockCsat: ${n}개 통과`);

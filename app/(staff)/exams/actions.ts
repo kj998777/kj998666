@@ -13,7 +13,7 @@ function schoolLevelField(formData: FormData): SchoolLevel | null {
   return v === "중" || v === "고" ? v : null; // 2026-10-03: 초등학교는 뺌
 }
 
-export type FolderKind = "중간" | "기말" | "기타";
+export type FolderKind = "중간" | "기말" | "기타" | "모의고사";
 
 export type FolderValue = {
   year: string | null;
@@ -32,7 +32,7 @@ function cleanFolder(input: FolderValue): FolderValue {
     year: /^20\d{2}$/.test(year) ? year : null,
     grade: grade === 1 || grade === 2 || grade === 3 ? grade : null,
     term: term === 1 || term === 2 ? term : null,
-    kind: kind === "중간" || kind === "기말" || kind === "기타" ? kind : null,
+    kind: kind === "중간" || kind === "기말" || kind === "기타" || kind === "모의고사" ? kind : null,
   };
 }
 

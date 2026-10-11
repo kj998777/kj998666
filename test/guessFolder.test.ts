@@ -73,4 +73,13 @@ check("mergeFolder: 사람이 고른 값이 우선, 빈 칸만 채움", () => {
   assert.equal(m.folder_kind, "중간");
 });
 
+check("모의고사: 2027학년도 수능형은 2026 폴더, 구분은 모의고사(0056)", () => {
+  const g = guessFolder("2027학년도 이해원 모의고사 시즌3 1회 고3 수학");
+  assert.equal(g.folder_kind, "모의고사");
+  assert.equal(g.folder_year, "2026");
+  assert.equal(g.folder_grade, 3);
+  assert.equal(guessFolder("2026년 10월 학력평가 고2").folder_year, "2026");
+  assert.equal(guessFolder("2027 이해원 모의고사 시즌3 0회").folder_year, "2026");
+});
+
 console.log(`guessFolder 테스트 ${n}개 통과`);
