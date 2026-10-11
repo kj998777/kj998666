@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { updateFolder, type FolderKind, type FolderValue } from "../actions";
 
-const KIND_LABEL: Record<FolderKind, string> = { 중간: "중간고사", 기말: "기말고사", 기타: "기타" };
+const KIND_LABEL: Record<FolderKind, string> = { 중간: "중간고사", 기말: "기말고사", 기타: "기타", 모의고사: "모의고사" };
 
 export default function FolderSelect({
   code,

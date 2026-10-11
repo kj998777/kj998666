@@ -7,16 +7,19 @@ import {
   CHOICE_NOS,
   COMMON_NOS,
   SOLUTION_PAGE_BATCH,
+  GRADE_CUT_SLOTS,
   buildPageMap,
+  cleanGradeCuts,
   csatSpec,
   pageMapToText,
   parsePageMapText,
   type ChoiceKey,
   type CsatAnswers,
+  type GradeCuts,
   type PageEntry,
   type PageMap,
 } from "@/lib/exams/mockCsat";
-import { finalizeSolutionPdf, readMockAnswers, saveMockKey, saveSolutionPageMap } from "../mock-actions";
+import { finalizeSolutionPdf, readMockAnswers, saveGradeCuts, saveMockKey, saveSolutionPageMap } from "../mock-actions";
 import { pdfTooLarge, uploadSolutionPdfDirect } from "@/lib/supabase/uploadPdf";
 import { fitPdfForUpload } from "@/lib/pdf/shrinkPdf";
 import PdfDropInput from "../PdfDropInput";
@@ -35,6 +38,7 @@ export default function MockCsatPanel({
   hasKey,
   isAdmin,
   pageMap,
+  gradeCuts,
 }: {
   code: string;
   examId: string;
@@ -44,6 +48,8 @@ export default function MockCsatPanel({
   isAdmin: boolean;
   /** 0054 해설지 문항별 풀이 쪽 — 개별 보고서가 틀린 문항의 이 쪽들을 뒤에 붙인다 */
   pageMap: PageMap;
+  /** 0055 예상 등급컷(원점수, 선택과목별) — 보고서가 예상 등급을 낸다 */
+  gradeCuts: GradeCuts;
 }) {
   const router = useRouter();
   const [ans, setAns] = useState<CsatAnswers>(initial);
@@ -52,6 +58,27 @@ export default function MockCsatPanel({
   const [saving, startSave] = useTransition();
   const [dirty, setDirty] = useState(false);
   const auto = useRef(false);
+  const toCells = (g: GradeCuts) =>
+    Object.fromEntries(CHOICES.map((c) => [c.key, Array.from({ length: GRADE_CUT_SLOTS }, (_, i) => (g[c.key]?.[i] != null ? String(g[c.key]![i]) : ""))])) as Record<
+      ChoiceKey,
+      string[]
+    >;
+  const [cuts, setCuts] = useState<Record<ChoiceKey, string[]>>(() => toCells(gradeCuts));
+  const [cutsDirty, setCutsDirty] = useState(false);
+  const [cutsMsg, setCutsMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [savingCuts, startCuts] = useTransition();
+
+  function saveCuts() {
+    const clean = cleanGradeCuts(Object.fromEntries(CHOICES.map((c) => [c.key, cuts[c.key]])));
+    startCuts(async () => {
+      const r = await saveGradeCuts(code, clean);
+      if (!r.ok) return setCutsMsg({ ok: false, text: r.msg });
+      setCuts(toCells(clean));
+      setCutsDirty(false);
+      setCutsMsg({ ok: true, text: r.subjects ? `${r.subjects}과목의 예상 등급컷을 저장했습니다. 보고서에 예상 등급이 나옵니다.` : "예상 등급컷을 지웠습니다." });
+      router.refresh();
+    });
+  }
 
   async function read() {
     setReading(true);
@@ -64,6 +91,10 @@ export default function MockCsatPanel({
     }
     setAns(r.answers);
     setDirty(true);
+    if (Object.keys(r.gradeCuts ?? {}).length) {
+      setCuts(toCells(r.gradeCuts));
+      setCutsDirty(true);
+    }
     setMsg({ ok: true, text: `${r.found}칸을 채웠습니다. 해설지와 한 번 대조한 뒤 "정답표 저장"을 눌러 주세요.` });
   }
 
@@ -210,6 +241,57 @@ export default function MockCsatPanel({
             </table>
           </div>
           <p className="text-xs text-slate-500 mt-1">해설지에 없는 과목은 비워 두면 그 과목은 학생 화면에서 고를 수 없습니다.</p>
+        </div>
+      </div>
+
+      {/* 2026-10-11 원장님 "예상 등급컷이 나와 있으면 성적 산출에 반영"(0055) */}
+      <div className="rounded-md bg-slate-50 px-3 py-2 space-y-2">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="font-medium">예상 등급컷 (원점수)</span>
+          <span className="text-xs text-slate-500">해설지에 실려 있으면 적어 주세요 — 보고서에 학생별 예상 등급이 나옵니다. 없으면 비워 두세요.</span>
+        </div>
+        <div className="table-wrap">
+          <table className="text-sm">
+            <thead>
+              <tr className="text-left text-slate-500 border-b border-slate-200">
+                <th className="py-1 pr-3">선택과목</th>
+                {Array.from({ length: GRADE_CUT_SLOTS }, (_, i) => (
+                  <th key={i} className="py-1 pr-2">
+                    {i + 1}등급컷
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {CHOICES.map((c) => (
+                <tr key={c.key} className="border-b border-slate-100">
+                  <td className="py-1 pr-3">{c.name}</td>
+                  {cuts[c.key].map((v, i) => (
+                    <td key={i} className="py-1 pr-2">
+                      <input
+                        className="input py-0.5 px-1.5 w-16 text-sm text-center tabular-nums"
+                        inputMode="numeric"
+                        value={v}
+                        aria-label={`${c.name} ${i + 1}등급컷`}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9.]/g, "");
+                          setCuts((prev) => ({ ...prev, [c.key]: prev[c.key].map((x, j) => (j === i ? val : x)) }));
+                          setCutsDirty(true);
+                        }}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className="btn-secondary text-xs" disabled={savingCuts} onClick={saveCuts}>
+            {savingCuts ? "저장하는 중…" : "등급컷 저장"}
+          </button>
+          {cutsDirty && <span className="text-xs text-amber-700">저장하지 않은 변경이 있어요</span>}
+          {cutsMsg && <span className={"text-xs " + (cutsMsg.ok ? "text-emerald-700" : "text-red-600")}>{cutsMsg.text}</span>}
         </div>
       </div>
     </div>
