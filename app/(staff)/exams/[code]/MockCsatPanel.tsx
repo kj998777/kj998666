@@ -2,8 +2,21 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CHOICES, CHOICE_NOS, COMMON_NOS, csatSpec, type ChoiceKey, type CsatAnswers } from "@/lib/exams/mockCsat";
-import { finalizeSolutionPdf, readMockAnswers, saveMockKey } from "../mock-actions";
+import {
+  CHOICES,
+  CHOICE_NOS,
+  COMMON_NOS,
+  SOLUTION_PAGE_BATCH,
+  buildPageMap,
+  csatSpec,
+  pageMapToText,
+  parsePageMapText,
+  type ChoiceKey,
+  type CsatAnswers,
+  type PageEntry,
+  type PageMap,
+} from "@/lib/exams/mockCsat";
+import { finalizeSolutionPdf, readMockAnswers, saveMockKey, saveSolutionPageMap } from "../mock-actions";
 import { pdfTooLarge, uploadSolutionPdfDirect } from "@/lib/supabase/uploadPdf";
 import { fitPdfForUpload } from "@/lib/pdf/shrinkPdf";
 import PdfDropInput from "../PdfDropInput";
@@ -21,6 +34,7 @@ export default function MockCsatPanel({
   initial,
   hasKey,
   isAdmin,
+  pageMap,
 }: {
   code: string;
   examId: string;
@@ -28,6 +42,8 @@ export default function MockCsatPanel({
   initial: CsatAnswers;
   hasKey: boolean;
   isAdmin: boolean;
+  /** 0054 해설지 문항별 풀이 쪽 — 개별 보고서가 틀린 문항의 이 쪽들을 뒤에 붙인다 */
+  pageMap: PageMap;
 }) {
   const router = useRouter();
   const [ans, setAns] = useState<CsatAnswers>(initial);
@@ -109,6 +125,7 @@ export default function MockCsatPanel({
       </p>
 
       <SolutionUpload code={code} examId={examId} hasSolution={hasSolution} />
+      {hasSolution && <SolutionPages code={code} isAdmin={isAdmin} initial={pageMap} />}
 
       <div className="flex flex-wrap items-center gap-2">
         {isAdmin && (
@@ -252,6 +269,142 @@ function SolutionUpload({ code, examId, hasSolution }: { code: string; examId: s
         </form>
       )}
       {msg && <p className={"text-xs " + (msg.ok ? "text-emerald-700" : "text-red-600")}>{msg.text}</p>}
+    </div>
+  );
+}
+
+// 2026-10-11 원장님 "보고서 만들 때 올린 해설에서 틀린 문제 해설을 찾아서 첨부해 줘" — 해설지에서 문항별 풀이 쪽을 AI가 찾아
+// 저장해 두면(0054), 개별 보고서가 틀린·무응답 문항의 그 쪽들을 해설지에서 잘라 보고서 뒤에 붙인다. 해설지를 몇 쪽씩 나눠
+// 여러 번 부르고(solution-pages 라우트, 동시에 3개), 결과를 buildPageMap으로 모아 저장한다. 틀린 곳은 글로 고칠 수 있다.
+function SolutionPages({ code, isAdmin, initial }: { code: string; isAdmin: boolean; initial: PageMap }) {
+  const router = useRouter();
+  const [map, setMap] = useState<PageMap>(initial);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [text, setText] = useState(() => pageMapToText(initial));
+  const [saving, startSave] = useTransition();
+  const auto = useRef(false);
+  const count = Object.keys(map).length;
+
+  async function batch(from: number, to: number): Promise<{ ok: true; pageCount: number; pages: { page: number; items: PageEntry[] }[] } | { ok: false; msg: string }> {
+    try {
+      const res = await fetch(`/exams/${encodeURIComponent(code)}/solution-pages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from, to }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!j) return { ok: false, msg: `요청 실패(${res.status})` };
+      return j;
+    } catch (e: any) {
+      return { ok: false, msg: String(e?.message ?? e) };
+    }
+  }
+
+  async function locate() {
+    setBusy(true);
+    setMsg({ ok: true, text: "AI가 해설지에서 문항별 풀이 쪽을 찾는 중… (1묶음째)" });
+    const B = SOLUTION_PAGE_BATCH;
+    const first = await batch(1, B);
+    if (!first.ok) {
+      setBusy(false);
+      setMsg({ ok: false, text: "해설 위치를 찾지 못했습니다: " + first.msg });
+      return;
+    }
+    const total = first.pageCount;
+    const pages = [...first.pages];
+    const ranges: [number, number][] = [];
+    for (let f = B + 1; f <= total; f += B) ranges.push([f, Math.min(total, f + B - 1)]);
+    const all = ranges.length + 1;
+    let done = 1;
+    const failed: [number, number][] = [];
+    const run = async (list: [number, number][], into: [number, number][]) => {
+      let i = 0;
+      const worker = async () => {
+        while (i < list.length) {
+          const [a, b] = list[i++];
+          const r = await batch(a, b);
+          if (r.ok) {
+            pages.push(...r.pages);
+            done++;
+            setMsg({ ok: true, text: `AI가 해설지에서 문항별 풀이 쪽을 찾는 중… (${done}/${all}묶음)` });
+          } else into.push([a, b]);
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
+    };
+    await run(ranges, failed);
+    const still: [number, number][] = [];
+    if (failed.length) await run(failed, still); // 한 번 더
+    const next = buildPageMap(pages);
+    const r = await saveSolutionPageMap(code, next);
+    setBusy(false);
+    if (!r.ok) {
+      setMsg({ ok: false, text: r.msg });
+      return;
+    }
+    setMap(next);
+    setText(pageMapToText(next));
+    setMsg({
+      ok: !still.length,
+      text:
+        `${r.count}문항의 해설 위치를 찾아 저장했습니다(해설지 ${total}쪽).` +
+        (still.length ? ` ${still.map(([a, b]) => `${a}~${b}쪽`).join(", ")}은 읽지 못했어요 — 다시 찾기를 누르거나 아래에서 직접 적어 주세요.` : " 아래 목록에서 한 번 확인해 주세요."),
+    });
+    router.refresh();
+  }
+
+  useEffect(() => {
+    if (!auto.current && isAdmin && count === 0) {
+      auto.current = true;
+      void locate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function saveText() {
+    const { map: next, errors } = parsePageMapText(text);
+    if (errors.length) {
+      setMsg({ ok: false, text: "형식이 맞지 않는 줄이 있어요(예: \"3: 12\", \"미적23: 25-26\"): " + errors.slice(0, 3).join(" / ") });
+      return;
+    }
+    startSave(async () => {
+      const r = await saveSolutionPageMap(code, next);
+      if (!r.ok) return setMsg({ ok: false, text: r.msg });
+      setMap(next);
+      setMsg({ ok: true, text: `해설 위치 ${r.count}문항을 저장했습니다.` });
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="rounded-md bg-slate-50 px-3 py-2 space-y-2">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="font-medium">틀린 문제 해설 첨부</span>
+        {count ? <span className="text-emerald-700">{count}문항 위치 저장됨</span> : <span className="text-amber-700">아직 위치를 모름</span>}
+        {isAdmin && (
+          <button type="button" className="text-xs text-slate-500 underline underline-offset-2" disabled={busy} onClick={locate}>
+            {busy ? "찾는 중…" : count ? "AI로 다시 찾기" : "AI로 찾기"}
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-slate-500">
+        개별 보고서를 만들 때, 학생이 틀리거나 비운 문항의 풀이 쪽을 해설지에서 잘라 보고서 뒤에 붙입니다. 쪽 번호는 해설지 PDF의 쪽
+        순서(첫 쪽 = 1)입니다.
+      </p>
+      {msg && <p className={"text-xs " + (msg.ok ? "text-emerald-700" : "text-red-600")}>{msg.text}</p>}
+      <details>
+        <summary className="text-xs text-slate-600 cursor-pointer">문항별 쪽 보기·고치기</summary>
+        <textarea
+          className="input mt-1 font-mono text-xs h-48"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={"한 줄에 하나씩\n1: 2\n2: 2-3\n미적23: 25"}
+        />
+        <button type="button" className="btn-secondary text-xs mt-1" disabled={saving || busy} onClick={saveText}>
+          {saving ? "저장하는 중…" : "쪽 목록 저장"}
+        </button>
+      </details>
     </div>
   );
 }

@@ -16,6 +16,11 @@ import {
   reportGroups,
   COMMON_NOS,
   CHOICE_NOS,
+  buildPageMap,
+  cleanPageMap,
+  pagesForLabels,
+  pageMapToText,
+  parsePageMapText,
 } from "../lib/exams/mockCsat";
 
 let n = 0;
@@ -115,6 +120,33 @@ check("보고서: 학생 몫·과목별 묶음", () => {
   const plain = { items: [{ label: "1" }], students: [{ per_item: [{ item_label: "1" }] }] };
   assert.equal(reportGroups(plain).length, 1);
   assert.equal(reportForStudent(plain, ["1"]), plain);
+});
+
+check("해설지 쪽 지도: 과목 머리말이 없는 쪽은 순서로 메움", () => {
+  const map = buildPageMap([
+    { page: 3, items: [{ no: 22, part: null }, { no: 23, part: "미적" }, { no: 24, part: null }] },
+    { page: 1, items: [{ no: 1, part: null }, { no: 2, part: null }] },
+    { page: 2, items: [{ no: 2, part: null }, { no: 3, part: "공통" }] },
+    { page: 4, items: [{ no: 30, part: null }, { no: 23, part: null }] },
+    { page: 5, items: [{ no: 23, part: null }, { no: 24, part: null }] },
+  ]);
+  assert.deepEqual(map["2"], [1, 2]);
+  assert.deepEqual(map["22"], [3]);
+  assert.deepEqual(map["미적23"], [3]);
+  assert.deepEqual(map["미적30"], [4]);
+  // 미적 다음은 아직 안 쓴 첫 과목(확통)
+  assert.deepEqual(map["확통23"], [4, 5]);
+  assert.deepEqual(map["확통24"], [5]);
+  assert.deepEqual(pagesForLabels(map, ["2", "미적23", "22", "없음"]), [1, 2, 3]);
+});
+
+check("해설지 쪽 지도: 글로 고치기 / 다듬기", () => {
+  const t = pageMapToText({ "미적23": [25, 26], "2": [3], "1": [3, 5, 6] });
+  assert.equal(t, "1: 3,5-6\n2: 3\n미적23: 25-26");
+  const r = parsePageMapText(t + "\n이상한 줄\n기하 30: 40~41");
+  assert.deepEqual(r.map, { "1": [3, 5, 6], "2": [3], "미적23": [25, 26], "기하30": [40, 41] });
+  assert.deepEqual(r.errors, ["이상한 줄"]);
+  assert.deepEqual(cleanPageMap({ "1": [2, "2", 0, -1], x: [1], "미적23": "5" }), { "1": [2] });
 });
 
 console.log(`mockCsat: ${n}개 통과`);

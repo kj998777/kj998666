@@ -4,7 +4,7 @@ import "server-only";
 // #4 과외선생님용 라우트(app/(tutor)/tutor/store/[code]/report-data)가 함께 쓴다.
 // opts.tutorId가 있으면 그 과외선생님 전용 링크로 들어온 제출(submissions.tutor_id)만 담는다.
 
-import { hasChoices, mockItemMeta } from "@/lib/exams/mockCsat";
+import { cleanPageMap, hasChoices, mockItemMeta } from "@/lib/exams/mockCsat";
 
 type Client = any;
 
@@ -31,7 +31,8 @@ export async function buildReportData(
     supabase.from("exam_notes").select("note").eq("exam_id", exam.id).order("sort_order"),
     supabase.from("exam_corrections").select("item_label, issue, fix, teacher_note").eq("exam_id", exam.id).order("item_label"),
     // 2026-10-11 고3 사설 모의고사(0053) — 해설지 PDF가 있으면 보고서 패널에 받기 버튼(0053 전이면 오류 → 없음으로)
-    supabase.from("exams").select("mock_csat, solution_pdf_path").eq("id", exam.id).maybeSingle(),
+    // 0054 solution_page_map: 해설지 문항별 풀이 쪽 — 개별 보고서가 틀린 문항의 그 쪽을 붙인다
+    supabase.from("exams").select("mock_csat, solution_pdf_path, solution_page_map").eq("id", exam.id).maybeSingle(),
   ]);
   const mock = !!examRow?.mock_csat || hasChoices(((keys as any[]) ?? []).map((k) => String(k.item_label)));
 
@@ -83,6 +84,7 @@ export async function buildReportData(
           ? `/tutor/store/${encodeURIComponent(exam.code)}/solution`
           : `/exams/${encodeURIComponent(exam.code)}/solution-pdf`
         : null,
+      solutionPages: examRow?.solution_pdf_path ? cleanPageMap(examRow?.solution_page_map) : {},
     },
     items,
     students,

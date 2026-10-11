@@ -128,14 +128,18 @@ function ExamCard({
       const d = body as ReportData;
       const st = d.students.find((s) => s.id === e.submissionId);
       if (!st) throw new Error("이 제출을 보고서 자료에서 찾지 못했습니다.");
-      const { ensureReportTools, buildIndividualHtml, htmlToPdfBytes, downloadBytes } = await import("@/app/(staff)/exams/[code]/results/buildReportPdf");
+      const { ensureReportTools, buildIndividualHtml, htmlToPdfBytes, downloadBytes, attachSolutionPages } = await import(
+        "@/app/(staff)/exams/[code]/results/buildReportPdf"
+      );
       const { katex: k } = await ensureReportTools((t) => setMsg(t));
       setMsg("보고서를 그리는 중…");
       // 2026-10-11 고3 사설 모의고사: 그 학생이 고른 선택과목 문항만(lib/exams/mockCsat.ts)
       const { reportForStudent } = await import("@/lib/exams/mockCsat");
-      const bytes = await htmlToPdfBytes(buildIndividualHtml(k, reportForStudent(d, st.per_item.map((p) => p.item_label)), st, { promo: true }));
-      downloadBytes(bytes, `${e.name}_${st.class_label}_${st.student_name}.pdf`);
-      setMsg("");
+      const sd = reportForStudent(d, st.per_item.map((p) => p.item_label));
+      // 틀린·무응답 문항의 해설지 쪽을 뒤에 붙인다(해설지 쪽 지도가 있을 때, 2026-10-11)
+      const att = await attachSolutionPages(await htmlToPdfBytes(buildIndividualHtml(k, sd, st, { promo: true })), sd, st);
+      downloadBytes(att.bytes, `${e.name}_${st.class_label}_${st.student_name}.pdf`);
+      setMsg(att.error ? `보고서는 받았지만 해설지 쪽은 붙이지 못했습니다: ${att.error}` : "");
     } catch (err: any) {
       setMsg("실패: " + (err?.message || String(err)));
     } finally {

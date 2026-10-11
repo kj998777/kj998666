@@ -5,6 +5,7 @@ import { guessSummary } from "@/lib/grading";
 import { guessStatsByItem, guessTotals, manyGuessed, pctOf } from "@/lib/report/guessStats";
 import { CONTENT_KIND_LABEL, MEDIC_PDF_CREDIT } from "@/lib/content/kinds";
 import { PROMO, promoReportHtml } from "@/lib/content/promo";
+import { CHOICES, choiceFromLabels, choiceOfLabel, displayNo, examMaxPoints, pagesForLabels } from "@/lib/exams/mockCsat";
 import QRCode from "qrcode";
 // 브라우저에서 "성적 보고서"(종합/개별) PDF를 만든다.
 //
@@ -53,7 +54,7 @@ export type ReportStudent = {
 
 export type ReportData = {
   /** mock: 고3 사설 모의고사(2026-10-11, 0053) — AI 해설 없음, 난이도는 배점 기준, 풀이는 해설지 PDF. solutionUrl: 그 해설지 받기 주소 */
-  exam: { code: string; name: string; mock?: boolean; solutionUrl?: string | null };
+  exam: { code: string; name: string; mock?: boolean; solutionUrl?: string | null; solutionPages?: Record<string, number[]> };
   items: ReportItem[];
   students: ReportStudent[];
   notes: string[];
@@ -415,7 +416,17 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
   const students = data.students;
   const n = students.length;
   const idxOf = new Map(students.map((s) => [s.id, indexPerItem(s)]));
-  const totalPoints = totalOf(items);
+  // 2026-10-11 원장님 "종합 보고서는 과목 상관없이": 고3 사설 모의고사도 한 장으로. 공통 문항은 전원, 선택과목 문항은 그 과목을
+  // 고른 학생만 응시한 것으로 센다(선택과목이 없는 시험은 모두가 모든 문항을 응시 — 예전과 같음).
+  const hasChoice = items.some((it) => choiceOfLabel(it.label) !== null);
+  const choiceOf = new Map(students.map((s) => [s.id, choiceFromLabels(s.per_item.map((p) => String(p.item_label)))]));
+  const takes = (s: ReportStudent, it: ReportItem) => {
+    const c = choiceOfLabel(it.label);
+    return c === null || c === choiceOf.get(s.id);
+  };
+  const itemsOf = (s: ReportStudent) => items.filter((it) => takes(s, it));
+  const takersOf = (it: ReportItem) => students.filter((s) => takes(s, it));
+  const totalPoints = hasChoice ? examMaxPoints(items.map((i) => ({ item_label: i.label, points: i.points }))) : totalOf(items);
   const domains = buildDomains(items);
   const diffCells = new Map(DIFFS.map((d) => [d, items.filter((i) => i.difficulty === d)]));
 
@@ -445,6 +456,20 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
       `<div><div class="n">${fmt(Math.min(...totals))}점</div><div class="t">최저</div></div>` +
       `<div><div class="n">${fmt(totalPoints)}점</div><div class="t">배점 합</div></div></div>`
   );
+  if (hasChoice) {
+    b.push("<table><thead><tr><th>선택과목</th><th>인원</th><th>평균</th><th>최고</th><th>최저</th></tr></thead><tbody>");
+    for (const c of CHOICES) {
+      const sc = students.filter((s) => choiceOf.get(s.id) === c.key).map((s) => Number(s.total_score));
+      if (!sc.length) continue;
+      b.push(
+        `<tr><td class="c"><b>${esc(c.name)}</b></td><td class="c">${sc.length}명</td><td class="c">${fmt(
+          Math.round((sc.reduce((a, x) => a + x, 0) / sc.length) * 100) / 100
+        )}점</td><td class="c">${fmt(Math.max(...sc))}점</td><td class="c">${fmt(Math.min(...sc))}점</td></tr>`
+      );
+    }
+    b.push("</tbody></table>");
+    b.push('<p class="rpt-small">공통 문항(1~22번)은 전체 응시자, 선택과목 문항(23~30번)은 그 과목을 고른 학생끼리 집계했습니다.</p>');
+  }
   // 2026-10-01 찍음 통계: 반 전체에서 찍음으로 표시한 문항(학생이 확신하지 못한 문항)
   const gStats = guessStatsByItem(
     students.map((s) => s.per_item),
@@ -467,26 +492,31 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
   // 1. 응시자별 결과
   b.push("<h2>1. 응시자별 결과</h2>");
   b.push(
-    "<table><thead><tr><th>반</th><th>이름</th><th>총점</th>" +
+    "<table><thead><tr><th>반</th><th>이름</th>" +
+      (hasChoice ? "<th>선택과목</th>" : "") +
+      "<th>총점</th>" +
       (anyGuess ? "<th>실질 점수</th>" : "") +
-      "<th>정답 수 (/" +
-      items.length +
-      ")</th><th>오답 문항</th><th>무응답 문항</th></tr></thead><tbody>"
+      (hasChoice ? "<th>정답 수</th>" : "<th>정답 수 (/" + items.length + ")</th>") +
+      "<th>오답 문항</th><th>무응답 문항</th></tr></thead><tbody>"
   );
   for (const [si, s] of students.entries()) {
     const idx = idxOf.get(s.id)!;
     const g = gs[si];
-    const wrong = items.filter((it) => statusOf(idx, it.label) === "wrong").map((it) => it.label);
-    const blank = items.filter((it) => statusOf(idx, it.label) === "blank").map((it) => it.label);
-    const ok = items.filter((it) => statusOf(idx, it.label) === "ok").length;
+    const mine = itemsOf(s);
+    const wrong = mine.filter((it) => statusOf(idx, it.label) === "wrong").map((it) => it.label);
+    const blank = mine.filter((it) => statusOf(idx, it.label) === "blank").map((it) => it.label);
+    const ok = mine.filter((it) => statusOf(idx, it.label) === "ok").length;
+    const cname = CHOICES.find((c) => c.key === choiceOf.get(s.id))?.name ?? "-";
     b.push(
-      `<tr><td class="c">${esc(s.class_label)}</td><td class="c">${esc(s.student_name)}</td><td class="c"><b>${fmt(
+      `<tr><td class="c">${esc(s.class_label)}</td><td class="c">${esc(s.student_name)}</td>${
+        hasChoice ? `<td class="c rpt-small">${esc(cname)}</td>` : ""
+      }<td class="c"><b>${fmt(
         s.total_score
       )}</b></td>${
         anyGuess
           ? `<td class="c">${fmt(g.realScore)}${g.guessed ? `<div class="rpt-small">찍음 ${g.guessed}개 · 맞음 ${g.guessedCorrect}개</div>` : ""}</td>`
           : ""
-      }<td class="c">${ok}</td><td class="l rpt-small">${esc(wrong.join(", ") || "-")}</td><td class="l rpt-small">${esc(
+      }<td class="c">${hasChoice ? `${ok}/${mine.length}` : ok}</td><td class="l rpt-small">${esc(wrong.join(", ") || "-")}</td><td class="l rpt-small">${esc(
         blank.join(", ") || "-"
       )}</td></tr>`
     );
@@ -502,12 +532,20 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
     for (const [d, cells] of domains) {
       const tot = totalOf(cells);
       let gsum = 0;
-      for (const s of students) gsum += earnedOf(cells, idxOf.get(s.id)!);
-      const avgG = n ? Math.round((gsum / n) * 100) / 100 : 0;
+      let denom = 0;
+      let k = 0;
+      for (const s of students) {
+        const mine = cells.filter((c) => takes(s, c));
+        if (!mine.length) continue;
+        k++;
+        gsum += earnedOf(mine, idxOf.get(s.id)!);
+        denom += totalOf(mine);
+      }
+      const avgG = k ? Math.round((gsum / k) * 100) / 100 : 0;
       b.push(
-        `<tr><td class="c"><b>${esc(d)}</b></td><td class="l rpt-small">${esc(cells.map((c) => c.label).join(", "))}</td><td class="c">${fmt(
-          tot
-        )}</td><td class="c">${fmt(avgG)}</td><td class="c"><b>${pct(gsum, tot * n)}%</b></td></tr>`
+        `<tr><td class="c"><b>${esc(d)}</b>${hasChoice ? `<div class="rpt-small">${k}명</div>` : ""}</td><td class="l rpt-small">${esc(
+          cells.map((c) => c.label).join(", ")
+        )}</td><td class="c">${fmt(tot)}</td><td class="c">${fmt(avgG)}</td><td class="c"><b>${pct(gsum, denom)}%</b></td></tr>`
       );
     }
     b.push("</tbody></table>");
@@ -520,14 +558,17 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
     const cells = diffCells.get(d) || [];
     if (!cells.length) continue;
     let okall = 0;
+    let tries = 0;
     for (const s of students) {
       const idx = idxOf.get(s.id)!;
-      okall += cells.filter((c) => statusOf(idx, c.label) === "ok").length;
+      const mine = cells.filter((c) => takes(s, c));
+      tries += mine.length;
+      okall += mine.filter((c) => statusOf(idx, c.label) === "ok").length;
     }
     b.push(
       `<tr><td class="c">${badge(d)}</td><td class="c">${cells.length}</td><td class="l rpt-small">${esc(
         cells.map((c) => c.label).join(", ")
-      )}</td><td class="c"><b>${pct(okall, cells.length * n)}%</b></td></tr>`
+      )}</td><td class="c"><b>${pct(okall, tries)}%</b></td></tr>`
     );
   }
   b.push("</tbody></table>");
@@ -546,18 +587,21 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
   for (const it of items) {
     let nok = 0;
     const detail: string[] = [];
-    for (const s of students) {
+    const tk = takersOf(it);
+    const nTk = tk.length;
+    for (const s of tk) {
       const idx = idxOf.get(s.id)!;
       const r = statusOf(idx, it.label);
       if (r === "ok") nok++;
       else detail.push(`${s.student_name}: ${r === "blank" ? "무응답" : givenDisplay(it, idx)}`);
     }
-    const rc = n > 0 && nok / n <= 0.3 ? "rpt-rbad" : "";
+    if (hasChoice && !nTk) continue; // 아무도 고르지 않은 선택과목 문항
+    const rc = nTk > 0 && nok / nTk <= 0.3 ? "rpt-rbad" : "";
     const detailTxt = detail.length > 12 ? `오답·무응답 ${detail.length}명 (지면 관계상 생략)` : detail.join(" · ") || "-";
     b.push(
       `<tr class="${rc}"><td class="c"><b>${esc(it.label)}</b></td><td class="l rpt-small">${esc(it.unit)}</td><td class="c">${fmt(
         it.points
-      )}${it.points_assigned ? "*" : ""}</td><td class="c">${badge(it.difficulty)}</td><td class="c">${keyDisplay(katex, it)}</td><td class="c">${nok}/${n}</td>${
+      )}${it.points_assigned ? "*" : ""}</td><td class="c">${badge(it.difficulty)}</td><td class="c">${keyDisplay(katex, it)}</td><td class="c">${nok}/${nTk}</td>${
         anyGuess
           ? `<td class="c rpt-small">${(() => {
               const g = gByLabel.get(it.label);
@@ -574,35 +618,37 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
       "</p>"
   );
 
-  // 5. 난이도 판정 근거
-  b.push("<h2>5. 문항별 난이도 판정 근거</h2>");
-  b.push("<table><thead><tr><th>문항</th><th>단원</th><th>난이도</th><th>판정 근거</th></tr></thead><tbody>");
-  for (const it of items) {
+  // 5. 난이도 판정 근거 (고3 사설 모의고사처럼 근거가 하나도 없으면 뺀다)
+  const reasoned = items.filter((it) => (it.difficulty_reason || "").trim());
+  if (reasoned.length) b.push("<h2>5. 문항별 난이도 판정 근거</h2>");
+  if (reasoned.length) b.push("<table><thead><tr><th>문항</th><th>단원</th><th>난이도</th><th>판정 근거</th></tr></thead><tbody>");
+  for (const it of reasoned) {
     b.push(
       `<tr><td class="c"><b>${esc(it.label)}</b></td><td class="l rpt-small">${esc(it.unit)}</td><td class="c">${badge(
         it.difficulty
       )}</td><td class="l">${mathHtml(katex, it.difficulty_reason)}</td></tr>`
     );
   }
-  b.push("</tbody></table>");
+  if (reasoned.length) b.push("</tbody></table>");
 
   // 6. 수업에서 다시 다룰 만한 문항
   const hard = items
     .map((it) => {
       let ok = 0;
-      for (const s of students) if (statusOf(idxOf.get(s.id)!, it.label) === "ok") ok++;
-      return { it, ok };
+      const tk = takersOf(it);
+      for (const s of tk) if (statusOf(idxOf.get(s.id)!, it.label) === "ok") ok++;
+      return { it, ok, nTk: tk.length };
     })
-    .filter((x) => n > 0 && x.ok / n <= 0.3);
+    .filter((x) => x.nTk > 0 && x.ok / x.nTk <= 0.3);
   b.push("<h2>6. 수업에서 다시 다룰 만한 문항</h2>");
   if (hard.length) {
     b.push("<p>정답률이 30% 이하였던 문항입니다.</p><ul>");
-    for (const { it, ok } of hard) {
+    for (const { it, ok, nTk } of hard) {
+      const meta = [it.unit, it.difficulty].filter((x) => x && String(x).trim()).join(", ");
       b.push(
-        `<li><b>${esc(it.label)}번</b> (${esc(it.unit)}, ${esc(it.difficulty)}, 정답 ${ok}/${n}) — ${mathHtml(
-          katex,
-          it.difficulty_reason
-        )}</li>`
+        `<li><b>${esc(it.label)}번</b> (${meta ? esc(meta) + ", " : ""}정답 ${ok}/${nTk})${
+          (it.difficulty_reason || "").trim() ? ` — ${mathHtml(katex, it.difficulty_reason)}` : ""
+        }</li>`
       );
     }
     b.push("</ul>");
@@ -642,14 +688,16 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
   for (const [si, s] of students.entries()) {
     const idx = idxOf.get(s.id)!;
     let extra = anyGuess ? `<td class="c">${fmt(gs[si].realScore)}</td>` : "";
-    if (domains.length) {
-      const rates = domains.map(([d, cells]) => ({ d, rate: earnedOf(cells, idx) / (totalOf(cells) || 1) }));
+    // 고3 사설 모의고사: 그 학생이 응시한 영역만(공통 + 고른 과목)
+    const myDomains = domains.map(([d, cells]) => [d, cells.filter((c) => takes(s, c))] as [string, ReportItem[]]).filter(([, c]) => c.length);
+    if (domains.length && myDomains.length) {
+      const rates = myDomains.map(([d, cells]) => ({ d, rate: earnedOf(cells, idx) / (totalOf(cells) || 1) }));
       const best = rates.reduce((a, b2) => (b2.rate > a.rate ? b2 : a));
       const worst = rates.reduce((a, b2) => (b2.rate < a.rate ? b2 : a));
       extra += `<td class="c">${esc(best.d)} (${Math.round(best.rate * 100)}%)</td><td class="c">${esc(worst.d)} (${Math.round(
         worst.rate * 100
       )}%)</td>`;
-    }
+    } else if (domains.length) extra += '<td class="c">-</td><td class="c">-</td>';
     b.push(`<tr><td class="c">${esc(s.student_name)}</td><td class="c">${fmt(s.total_score)}</td>${extra}</tr>`);
   }
   b.push("</tbody></table>");
@@ -835,7 +883,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
           `<div class="row"><span class="rpt-pill mine${r === "blank" ? " blank" : ""}">내 답: <b>${esc(
             givenDisplay(it, idx)
           )}</b>${r === "blank" ? "" : " (오답)"}</span><span class="rpt-pill key">정답: <b>${keyDisplay(katex, it)}</b></span></div>` +
-          `${solBlock(katex, it)}</div>`
+          `${solBlock(katex, it, data)}</div>`
       );
     }
     const easyFirst = rate < 0.5;
@@ -870,7 +918,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
             it.points
           )}점</div><div class="st">${mathHtml(katex, it.problem_statement)}</div>` +
             `<div class="row"><span class="rpt-pill key">내 답: <b>${esc(givenDisplay(it, idx))}</b> (정답)</span><span class="rpt-pill key">정답: <b>${keyDisplay(katex, it)}</b></span></div>` +
-            `${solBlock(katex, it)}</div>`
+            `${solBlock(katex, it, data)}</div>`
         );
       }
     }
@@ -884,7 +932,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
           it.points
         )}점</div><div class="st">${mathHtml(katex, it.problem_statement)}</div>` +
           `<div class="row"><span class="rpt-pill key">내 답: <b>${esc(givenDisplay(it, idx))}</b> (정답 · 찍음)</span><span class="rpt-pill key">정답: <b>${keyDisplay(katex, it)}</b></span></div>` +
-          `${solBlock(katex, it)}</div>`
+          `${solBlock(katex, it, data)}</div>`
       );
     }
   }
@@ -902,10 +950,13 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
 // ---------------------------------------------------------------------
 
 /** 풀이 칸 — 풀이 글이 없으면(고3 사설 모의고사 등) 해설지를 보라고만 적는다(2026-10-11) */
-function solBlock(katex: any, it: ReportItem): string {
-  return it.solution && it.solution.trim()
-    ? `<div class="rpt-sol"><b>풀이</b> — ${mathHtml(katex, it.solution)}</div>`
-    : `<div class="rpt-sol rpt-small">풀이는 함께 받은 해설지에서 ${esc(it.label)}번을 보세요.</div>`;
+function solBlock(katex: any, it: ReportItem, data?: ReportData): string {
+  if (it.solution && it.solution.trim()) return `<div class="rpt-sol"><b>풀이</b> — ${mathHtml(katex, it.solution)}</div>`;
+  // 2026-10-11 고3 사설 모의고사: 해설지 쪽 지도(0054)가 있으면 그 쪽을 보고서 뒤에 붙인다(attachSolutionPages)
+  const pages = data?.exam.solutionUrl ? data.exam.solutionPages?.[it.label] : undefined;
+  if (pages?.length)
+    return `<div class="rpt-sol rpt-small"><b>풀이</b> — 이 보고서 맨 뒤에 붙인 해설지 발췌를 보세요(해설지 ${esc(pages.join(", "))}쪽).</div>`;
+  return `<div class="rpt-sol rpt-small">풀이는 함께 받은 해설지에서 ${esc(displayNo(it.label))}번을 보세요.</div>`;
 }
 
 function keyDisplay(katex: any, it: ReportItem): string {
@@ -1290,4 +1341,63 @@ export async function zipAndDownload(files: { name: string; bytes: Uint8Array }[
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// ---------------------------------------------------------------------
+// 2026-10-11 고3 사설 모의고사: 개별 보고서 뒤에 틀린·무응답 문항의 해설지 쪽 붙이기
+// 원장님 "보고서 만들 때 올린 해설에서 틀린 문제 해설을 찾아서 첨부해 줘". 해설지 쪽 지도(0054 solution_page_map)는 시험
+// 화면에서 AI가 찾아 둔다(MockCsatPanel). 해설지 PDF는 같은 출처의 받기 주소(직원/과외선생님)에서 한 번만 받아 재사용한다.
+// ---------------------------------------------------------------------
+
+const solutionPdfCache = new Map<string, Promise<ArrayBuffer>>();
+function fetchSolutionPdf(url: string): Promise<ArrayBuffer> {
+  let p = solutionPdfCache.get(url);
+  if (!p) {
+    p = fetch(url, { credentials: "same-origin" }).then((r) => {
+      if (!r.ok) throw new Error("해설지 PDF를 받지 못했습니다.");
+      return r.arrayBuffer();
+    });
+    p.catch(() => solutionPdfCache.delete(url));
+    solutionPdfCache.set(url, p);
+  }
+  return p;
+}
+
+/** 이 학생이 틀리거나 비운 문항의 해설지 쪽(해설지 쪽 지도가 없으면 빈 배열) */
+export function missedSolutionPages(data: ReportData, student: ReportStudent): number[] {
+  const map = data.exam.solutionPages;
+  if (!data.exam.mock || !data.exam.solutionUrl || !map || !Object.keys(map).length) return [];
+  const idx = indexPerItem(student);
+  const choice = choiceFromLabels(student.per_item.map((p) => String(p.item_label)));
+  const labels = data.items
+    .filter((it) => {
+      const c = choiceOfLabel(it.label);
+      return c === null || c === choice; // 그 학생이 고른 과목 문항만
+    })
+    .filter((it) => statusOf(idx, it.label) !== "ok")
+    .map((it) => it.label);
+  return pagesForLabels(map, labels);
+}
+
+/** 보고서 PDF 뒤에 해설지 쪽을 이어 붙인다. 붙일 쪽이 없거나 해설지를 못 받으면 보고서를 그대로 돌려준다. */
+export async function attachSolutionPages(
+  reportBytes: Uint8Array,
+  data: ReportData,
+  student: ReportStudent
+): Promise<{ bytes: Uint8Array; attached: number; error?: string }> {
+  const pages = missedSolutionPages(data, student);
+  if (!pages.length) return { bytes: reportBytes, attached: 0 };
+  try {
+    const { PDFDocument } = await import("pdf-lib");
+    const sol = await PDFDocument.load(await fetchSolutionPdf(data.exam.solutionUrl!), { ignoreEncryption: true });
+    const n = sol.getPageCount();
+    const idx = pages.filter((p) => p <= n).map((p) => p - 1);
+    if (!idx.length) return { bytes: reportBytes, attached: 0 };
+    const out = await PDFDocument.load(reportBytes);
+    const copied = await out.copyPages(sol, idx);
+    copied.forEach((pg) => out.addPage(pg));
+    return { bytes: await out.save(), attached: idx.length };
+  } catch (e: any) {
+    return { bytes: reportBytes, attached: 0, error: String(e?.message ?? e) };
+  }
 }
