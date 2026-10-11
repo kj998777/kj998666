@@ -14,7 +14,8 @@ export const dynamic = "force-dynamic";
 //
 // #4 (2026-09-28): 원본 PDF를 그대로 주던 것을, 뒤에 메딕수학 로고 + 이 과외선생님 전용 답안 제출 QR
 // (/s/코드?t=토큰)을 반드시 붙여서 준다(정오표가 있으면 QR 쪽 앞에 함께).
-// 2026-10-11 원장님 "PDF 다운할 때 앞표지는 붙이지 말고 제일 뒤에 QR하고 학원 로고만" — 앞 표지(+백지)는 뺌.
+// 앞에는 메딕수학 표지(+백지)도 붙인다. 단 고3 사설 모의고사(0053 mock_csat)는 2026-10-11 원장님 "모의고사들만 앞표지
+// 붙이지 말고 제일 뒤에 QR하고 학원 로고만" — 표지 없이.
 // 과외선생님은 exam-pdfs 버킷·정오표 테이블 RLS를 통과하지 못하므로, 구매 확인 뒤 서비스롤로 읽는다.
 export async function GET(request: Request, { params }: { params: { code: string } }) {
   const auth = await requireTutorApi();
@@ -24,7 +25,7 @@ export async function GET(request: Request, { params }: { params: { code: string
   const supabase = await createClient();
   const { data: examRows } = (await supabase
     .from("exams")
-    .select("id, code, name")
+    .select("id, code, name, mock_csat")
     .in("code", examCodeVariants(code))
     .limit(5)) as any;
   const exam = pickExamByCode<any>(examRows, code);
@@ -79,7 +80,7 @@ export async function GET(request: Request, { params }: { params: { code: string
   let bytes: Uint8Array;
   try {
     bytes = await buildStampedExamPdf(admin, exam.id, {
-      cover: false, // 2026-10-11: 앞 표지 없이(맨 뒤 로고·QR 쪽만)
+      cover: !exam.mock_csat, // 모의고사만 앞 표지 없이(맨 뒤 로고·QR 쪽만)
       addFixPage: true,
       excludePages: [],
       // #7: 뒤에 붙은 정답·해설·OMR 쪽은 빼고 문제만(과외선생님 배포용이라 항상)
