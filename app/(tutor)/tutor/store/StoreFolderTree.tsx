@@ -54,11 +54,13 @@ const LEVELS: Level[] = [
     order: ["1학년", "2학년", "3학년", "학년 미지정"],
   },
   {
-    key: (e) => (e.collection ? COLLECTION_PREFIX + e.collection : e.folder_term ? `${e.folder_term}학기` : "학기 미지정"),
-    order: ["1학기", "2학기", "학기 미지정"],
-    branch: (label) => (label.startsWith(COLLECTION_PREFIX) ? [SCHOOL_LEVEL] : undefined),
+    // 2026-10-11 원장님 "2026 → 고3 → 모의고사": 모의고사(0056)는 학기 자리에 "모의고사" 폴더, 그 안에 바로 시험
+    key: (e) =>
+      e.collection ? COLLECTION_PREFIX + e.collection : e.folder_kind === "모의고사" ? "모의고사" : e.folder_term ? `${e.folder_term}학기` : "학기 미지정",
+    order: ["1학기", "2학기", "모의고사", "학기 미지정"],
+    branch: (label) => (label.startsWith(COLLECTION_PREFIX) ? [SCHOOL_LEVEL] : label === "모의고사" ? [] : undefined),
   },
-  { key: (e) => e.folder_kind ?? "구분 미지정", order: ["중간", "기말", "기타", "구분 미지정"] },
+  { key: (e) => e.folder_kind ?? "구분 미지정", order: ["중간", "기말", "기타", "모의고사", "구분 미지정"] },
 ];
 
 function Counts({ exams }: { exams: StoreExam[] }) {
