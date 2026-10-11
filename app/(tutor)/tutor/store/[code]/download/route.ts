@@ -12,8 +12,9 @@ export const dynamic = "force-dynamic";
 // 기출 스토어 "다운로드" — purchase_exam_download RPC로 이미 구매(포인트 차감)한 시험만 통과시킨다.
 // 이 GET 라우트 자체는 조회만 하고 아무것도 차감하지 않으므로 몇 번을 다시 받아도 안전.
 //
-// #4 (2026-09-28): 원본 PDF를 그대로 주던 것을, 앞에 메딕수학 표지·뒤에 메딕수학 로고 + 이 과외선생님
-// 전용 답안 제출 QR(/s/코드?t=토큰)을 반드시 붙여서 준다(정오표가 있으면 QR 쪽 앞에 함께).
+// #4 (2026-09-28): 원본 PDF를 그대로 주던 것을, 뒤에 메딕수학 로고 + 이 과외선생님 전용 답안 제출 QR
+// (/s/코드?t=토큰)을 반드시 붙여서 준다(정오표가 있으면 QR 쪽 앞에 함께).
+// 2026-10-11 원장님 "PDF 다운할 때 앞표지는 붙이지 말고 제일 뒤에 QR하고 학원 로고만" — 앞 표지(+백지)는 뺌.
 // 과외선생님은 exam-pdfs 버킷·정오표 테이블 RLS를 통과하지 못하므로, 구매 확인 뒤 서비스롤로 읽는다.
 export async function GET(request: Request, { params }: { params: { code: string } }) {
   const auth = await requireTutorApi();
@@ -78,7 +79,7 @@ export async function GET(request: Request, { params }: { params: { code: string
   let bytes: Uint8Array;
   try {
     bytes = await buildStampedExamPdf(admin, exam.id, {
-      cover: true,
+      cover: false, // 2026-10-11: 앞 표지 없이(맨 뒤 로고·QR 쪽만)
       addFixPage: true,
       excludePages: [],
       // #7: 뒤에 붙은 정답·해설·OMR 쪽은 빼고 문제만(과외선생님 배포용이라 항상)
