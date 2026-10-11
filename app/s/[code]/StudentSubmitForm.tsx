@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { LEVELS, type Level } from "@/lib/classLabel";
 import PromoBanner from "@/app/_components/PromoBanner";
 import { choiceOfLabel, displayNo } from "@/lib/exams/mockCsat";
+import type { StudentResult } from "@/lib/report/studentResult";
 
 type ClassRow = { level: string; grade: number; name: string };
 type Item = { item_label: string; type: "객관식" | "주관식" };
@@ -53,7 +54,7 @@ export default function StudentSubmitForm({
   const [guessed, setGuessed] = useState<boolean[]>(() => items.map(() => false));
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; msg: string; submissionId?: string } | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; msg: string; submissionId?: string; mine?: StudentResult | null } | null>(null);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const gradesForLevel = useMemo(() => {
@@ -102,6 +103,7 @@ export default function StudentSubmitForm({
         ok: !!json.ok,
         msg: json.msg ?? (json.ok ? "제출 완료" : "제출하지 못했습니다."),
         submissionId: typeof json.submissionId === "string" ? json.submissionId : undefined,
+        mine: json.result && typeof json.result === "object" ? (json.result as StudentResult) : null,
       });
     } catch {
       setResult({ ok: false, msg: "네트워크 오류로 제출하지 못했습니다. 다시 시도해 주세요." });
@@ -118,6 +120,7 @@ export default function StudentSubmitForm({
           <p className="font-medium">제출 완료했습니다.</p>
           <p className="text-sm text-slate-500 mt-1">{name} 학생, 수고했어요.</p>
         </div>
+        {result.mine && <MyResult r={result.mine} />}
         {/* 2026-10-05 원장님: 틀린 문제와 같은 논리 유형의 다른 학교 문제(app/r/[sid]) — 입학테스트는 제외.
             같은 날 "학생이 아니라 선생님이 선택": 문제는 선생님이 골라 주고, 학생은 이 링크(또는 보고서 QR)로 연다. */}
         {!endpoint && result.submissionId && (
@@ -344,6 +347,107 @@ function BackBar({ onBack, title }: { onBack: () => void; title: string }) {
       </button>
       <span>/</span>
       <span>{title}</span>
+    </div>
+  );
+}
+
+// 2026-10-11 원장님 "학생 제출 화면에서도 점수 및 어떤 문제 틀렸고 이런 통계 결과는 볼 수 있게(해설은 못 보게)".
+// 정답·풀이는 보여 주지 않는다(제출 API가 애초에 보내지 않음 — lib/report/studentResult.ts).
+function MyResult({ r }: { r: StudentResult }) {
+  const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
+  const chips = (list: string[], cls: string) => (
+    <div className="flex flex-wrap gap-1.5">
+      {list.map((x) => (
+        <span key={x} className={"inline-flex min-w-[2.25rem] justify-center rounded-md px-2 py-0.5 text-sm tabular-nums " + cls}>
+          {x}번
+        </span>
+      ))}
+    </div>
+  );
+  return (
+    <div className="mb-4 space-y-4 rounded-lg border border-slate-200 px-4 py-4">
+      <div className="flex flex-wrap items-end justify-center gap-x-6 gap-y-2 text-center">
+        <div>
+          <div className="text-3xl font-semibold tabular-nums">
+            {r.total}
+            <span className="text-base font-normal text-slate-500"> / {r.max}점</span>
+          </div>
+          <div className="text-xs text-slate-500">내 점수</div>
+        </div>
+        <div>
+          <div className="text-xl font-semibold tabular-nums">
+            {r.correct}
+            <span className="text-sm font-normal text-slate-500"> / {r.n}</span>
+          </div>
+          <div className="text-xs text-slate-500">맞힌 문항</div>
+        </div>
+        {r.grade && (
+          <div>
+            <div className="text-xl font-semibold">{r.grade.label}</div>
+            <div className="text-xs text-slate-500">예상 등급({r.grade.choice})</div>
+          </div>
+        )}
+      </div>
+      {r.grade && (
+        <p className="text-center text-xs text-slate-500">
+          해설지의 전국 예상 등급컷 {r.grade.cuts.map((c, i) => `${i + 1}컷 ${c}`).join(" · ")}점 기준 — 실제 등급과 다를 수 있어요.
+        </p>
+      )}
+
+      <div className="space-y-2">
+        <div>
+          <div className="mb-1 text-sm font-medium">틀린 문항 {r.wrong.length}개</div>
+          {r.wrong.length ? chips(r.wrong, "bg-red-50 text-red-700") : <p className="text-sm text-slate-500">없어요. 잘했어요!</p>}
+        </div>
+        {r.blank.length > 0 && (
+          <div>
+            <div className="mb-1 text-sm font-medium">답을 안 적은 문항 {r.blank.length}개</div>
+            {chips(r.blank, "bg-slate-100 text-slate-600")}
+          </div>
+        )}
+        {r.guessedRight.length > 0 && (
+          <div>
+            <div className="mb-1 text-sm font-medium">찍어서 맞힌 문항 {r.guessedRight.length}개</div>
+            {chips(r.guessedRight, "bg-amber-50 text-amber-800")}
+            <p className="mt-1 text-xs text-slate-500">맞았지만 확실하지 않았던 문항이에요. 수업에서 다시 확인해 보세요.</p>
+          </div>
+        )}
+      </div>
+
+      {r.areas.length > 0 && (
+        <div>
+          <div className="mb-1 text-sm font-medium">영역별 득점</div>
+          <ul className="space-y-1.5">
+            {r.areas.map((a) => (
+              <li key={a.area} className="text-sm">
+                <div className="flex justify-between gap-2">
+                  <span className="truncate">{a.area}</span>
+                  <span className="shrink-0 tabular-nums text-slate-600">
+                    {a.earned} / {a.total}점 ({pct(a.earned, a.total)}%)
+                  </span>
+                </div>
+                <div className="mt-0.5 h-1.5 rounded-full bg-slate-100">
+                  <div className="h-1.5 rounded-full bg-indigo-500" style={{ width: `${pct(a.earned, a.total)}%` }} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {r.byPoints.length > 1 && (
+        <div>
+          <div className="mb-1 text-sm font-medium">배점별 맞힌 문항</div>
+          <div className="flex flex-wrap gap-2 text-sm">
+            {r.byPoints.map((b) => (
+              <span key={b.points} className="rounded-md bg-slate-50 px-2 py-1 tabular-nums">
+                {b.points}점 문항 {b.correct}/{b.n}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      <p className="text-xs text-slate-500">정답과 풀이는 선생님 수업에서 함께 확인해요.</p>
     </div>
   );
 }
