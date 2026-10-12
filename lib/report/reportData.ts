@@ -5,6 +5,7 @@ import "server-only";
 // opts.tutorId가 있으면 그 과외선생님 전용 링크로 들어온 제출(submissions.tutor_id)만 담는다.
 
 import { cleanGradeCuts, cleanPageMap, hasChoices, mockItemMeta } from "@/lib/exams/mockCsat";
+import { groupGichul } from "@/lib/exams/gichulLinks";
 
 type Client = any;
 
@@ -35,6 +36,10 @@ export async function buildReportData(
     supabase.from("exams").select("mock_csat, solution_pdf_path, solution_page_map, grade_cuts").eq("id", exam.id).maybeSingle(),
   ]);
   const mock = !!examRow?.mock_csat || hasChoices(((keys as any[]) ?? []).map((k) => String(k.item_label)));
+  // 2026-10-12 기출 아이디어 연결(0057) — 문항표에 출처, 틀린·빈 문항에 기출 그림(표가 없으면 오류 → 빈 목록)
+  const gichulRows = mock
+    ? (((await supabase.from("mock_gichul_links").select("item_label, rank, source, idea, image").eq("exam_id", exam.id)) as any).data ?? [])
+    : [];
 
   const explByLabel = new Map<string, any>();
   for (const e of (explanations as any[]) ?? []) explByLabel.set(e.item_label, e);
@@ -87,6 +92,7 @@ export async function buildReportData(
       solutionPages: examRow?.solution_pdf_path ? cleanPageMap(examRow?.solution_page_map) : {},
       // 0055 예상 등급컷(원점수, 선택과목별) — 보고서가 예상 등급을 낸다
       gradeCuts: cleanGradeCuts(examRow?.grade_cuts),
+      gichul: groupGichul(gichulRows as any[]),
     },
     items,
     students,

@@ -26,6 +26,8 @@ import { pageRangeLabel, trailingAnswerPages } from "@/lib/ai/answerPages";
 import { getQrBoxes } from "@/lib/ai/qrMask";
 import QrScanButton from "./QrScanButton";
 import MockCsatPanel from "./MockCsatPanel";
+import GichulLinksPanel from "./GichulLinksPanel";
+import { groupGichul } from "@/lib/exams/gichulLinks";
 import { answersFromKeys, cleanGradeCuts, cleanPageMap, examMaxPoints } from "@/lib/exams/mockCsat";
 
 // 고3 사설 모의고사 "해설지에서 AI로 정답 읽기"(서버 액션 readMockAnswers)가 이 화면에서 돈다 — 기본 실행 시간으로 끊기지 않게(2026-10-11)
@@ -76,6 +78,17 @@ export default async function ExamDetailPage({
   // 2026-10-11: 고3 사설 모의고사는 선택과목 중 하나만 풀므로 만점 = 공통 + 한 과목(lib/exams/mockCsat.ts)
   const totalPoints = examMaxPoints(((keys as any[]) ?? []).map((k) => ({ item_label: String(k.item_label), points: k.points })));
   const isMock = !!exam.mock_csat;
+  // 2026-10-12 기출 아이디어 연결(0057) — 모의고사만. 표가 없으면(0057 전) 빈 목록
+  const gichul =
+    canEdit && isMock
+      ? groupGichul(
+          (((await (supabase.from("mock_gichul_links") as any)
+            .select("id, item_label, rank, source, idea, image")
+            .eq("exam_id", exam.id)
+            .order("item_label")
+            .order("rank")) as any).data ?? []) as any[]
+        )
+      : {};
   // 2026-10-03: 문항 해설 줄에서 정답 표시가 정답표와 다른지 보여 주기 위해 번호별 정답표 칸을 넘긴다.
   const keyByLabel: Record<string, { type: string; correct_answers: string }> = {};
   for (const k of (keys as any[]) ?? []) keyByLabel[k.item_label] = { type: k.type, correct_answers: String(k.correct_answers ?? "") };
@@ -214,6 +227,14 @@ export default async function ExamDetailPage({
           pageMap={cleanPageMap((exam as any).solution_page_map)}
           gradeCuts={cleanGradeCuts((exam as any).grade_cuts)}
           autoAi={searchParams?.new === "1"}
+        />
+      )}
+      {canEdit && isMock && (
+        <GichulLinksPanel
+          code={exam.code}
+          labels={((keys as any[]) ?? []).map((k) => String(k.item_label))}
+          links={gichul}
+          isAdmin={isAdmin}
         />
       )}
 
