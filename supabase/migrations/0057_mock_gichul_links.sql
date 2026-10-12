@@ -20,6 +20,7 @@ alter table public.mock_gichul_links enable row level security;
 drop policy if exists "mock_gichul_links_select_staff" on public.mock_gichul_links;
 create policy "mock_gichul_links_select_staff" on public.mock_gichul_links for select to authenticated
   using (coalesce(public.is_staff(), false));
+grant select on public.mock_gichul_links to authenticated;
 
 comment on table public.mock_gichul_links is '고3 사설 모의고사 문항 ↔ 기출 아이디어 연결(출처·공통 아이디어·기출 그림) — lib/exams/gichulLinks.ts';
 
