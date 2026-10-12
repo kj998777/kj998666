@@ -7,6 +7,7 @@ import { CONTENT_KIND_LABEL, MEDIC_PDF_CREDIT } from "@/lib/content/kinds";
 import { PROMO, promoReportHtml } from "@/lib/content/promo";
 import { CHOICES, choiceFromLabels, choiceOfLabel, displayNo, examMaxPoints, expectedGrade, gradeCutsText, hasGradeCuts, pagesForLabels } from "@/lib/exams/mockCsat";
 import QRCode from "qrcode";
+import { gichulCellText, type GichulLink } from "@/lib/exams/gichulLinks";
 // 브라우저에서 "성적 보고서"(종합/개별) PDF를 만든다.
 //
 // 옛 Apps Script 시스템의 파이썬 스크립트(claude/dg2025-report-content.md의 content.py/build.py/
@@ -54,7 +55,9 @@ export type ReportStudent = {
 
 export type ReportData = {
   /** mock: 고3 사설 모의고사(2026-10-11, 0053) — AI 해설 없음, 난이도는 배점 기준, 풀이는 해설지 PDF. solutionUrl: 그 해설지 받기 주소 */
-  exam: { code: string; name: string; mock?: boolean; solutionUrl?: string | null; solutionPages?: Record<string, number[]>; gradeCuts?: Record<string, number[]> };
+  exam: { code: string; name: string; mock?: boolean; solutionUrl?: string | null; solutionPages?: Record<string, number[]>; gradeCuts?: Record<string, number[]>;
+    /** 2026-10-12 기출 아이디어 연결(0057) — 문항별 같은 아이디어의 평가원 기출(출처·아이디어·그림) */
+    gichul?: Record<string, GichulLink[]> };
   items: ReportItem[];
   students: ReportStudent[];
   notes: string[];
@@ -303,6 +306,8 @@ function injectReportStyles(): void {
 .rpt .rpt-pill.mine.blank { background:${C.amberTint}; border-color:${C.amberLine}; }
 .rpt .rpt-pill.key { background:${C.sand}; border:1px solid ${C.line2}; }
 .rpt .rpt-sol { font-size:12px; border-top:1px dashed ${C.line2}; padding-top:3px; margin-top:3px; }
+.rpt .rpt-gichul { font-size:12px; border-top:1px dashed ${C.line2}; padding-top:4px; margin-top:4px; }
+.rpt .rpt-gichul img { display:block; max-width:78%; max-height:520px; width:auto; height:auto; margin-top:4px; border:1px solid ${C.line}; }
 .rpt .rpt-small { font-size:10.5px; color:${C.muted}; }
 .rpt .rpt-foot { color:${C.soft}; font-size:10px; }
 .rpt .rpt-brand { display:flex; flex-direction:column; align-items:flex-end; gap:5px; flex:none; }
@@ -738,6 +743,23 @@ export function buildSummaryHtml(katex: any, data: ReportData): string {
   b.push("</tbody></table>");
   b.push(methodNote(items, !!data.exam.mock, anyCuts));
 
+  // 9. 문항별 관련 기출(2026-10-12, 0057) — 수업 준비용 대응표(그림은 시험 화면·개별 보고서에)
+  const gm = data.exam.gichul ?? {};
+  const gLabels = items.map((it) => it.label).filter((l) => gm[l]?.length);
+  if (gLabels.length) {
+    b.push('<h2 class="rpt-pagebreak">9. 문항별 관련 기출</h2>');
+    b.push('<table><colgroup><col style="width:10%"><col style="width:32%"><col style="width:58%"></colgroup><thead><tr><th>문항</th><th>기출 출처</th><th>공통 아이디어</th></tr></thead><tbody>');
+    for (const l of gLabels) {
+      const c = data.exam.mock ? choiceOfLabel(l) : null;
+      const name = data.exam.mock ? (c ? `${CHOICES.find((x) => x.key === c)?.name ?? ""} ` : "") + displayNo(l) : l;
+      for (const [i, g] of gm[l].entries()) {
+        const first = i === 0 ? `<b>${esc(name)}</b>` : "";
+        b.push(`<tr><td class="c">${first}</td><td class="l rpt-small">${esc(g.source)}</td><td class="l rpt-small">${esc(g.idea)}</td></tr>`);
+      }
+    }
+    b.push("</tbody></table>");
+  }
+
   b.push(MEDIC_FOOT);
   return `<div class="rpt">${b.join("")}</div>`;
 }
@@ -889,18 +911,21 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
   }
   b.push("</tr></tbody></table>");
 
+  // 2026-10-12 고3 사설 모의고사에 기출 연결(0057)이 있으면 '난이도 근거'(모의고사는 비어 있음) 칸에 관련 기출 출처를 싣는다
+  const gmap = data.exam.gichul ?? {};
+  const useG = !!data.exam.mock && Object.keys(gmap).length > 0;
   b.push("<h2>3. 문항별 난이도와 결과</h2>");
   b.push(
     // 2026-10-02: 칸 폭을 내용에 맞춤(같은 폭 8칸이면 '난이도 근거'가 3~4줄로 늘어 쪽이 길어졌다)
     '<table><colgroup><col style="width:6%"><col style="width:17%"><col style="width:6%"><col style="width:8%"><col style="width:35%"><col style="width:9%"><col style="width:10%"><col style="width:9%"></colgroup>' +
-      "<thead><tr><th>번호</th><th>단원</th><th>배점</th><th>난이도</th><th>난이도 근거</th><th>내 답</th><th>정답</th><th>결과</th></tr></thead><tbody>"
+      `<thead><tr><th>번호</th><th>단원</th><th>배점</th><th>난이도</th><th>${useG ? "관련 기출" : "난이도 근거"}</th><th>내 답</th><th>정답</th><th>결과</th></tr></thead><tbody>`
   );
   for (const it of items) {
     const r = statusOf(idx, it.label);
     b.push(
       `<tr class="${rowClass(r)}"><td class="c"><b>${esc(it.label)}</b></td><td class="l rpt-small">${esc(it.unit)}</td><td class="c">${fmt(
         it.points
-      )}${it.points_assigned ? "*" : ""}</td><td class="c">${badge(it.difficulty)}</td><td class="l rpt-small">${mathHtml(
+      )}${it.points_assigned ? "*" : ""}</td><td class="c">${badge(it.difficulty)}</td><td class="l rpt-small">${useG ? esc(gichulCellText(gmap[it.label])) : mathHtml(
         katex,
         it.difficulty_reason
       )}</td><td class="c"><code class="v">${esc(givenDisplay(it, idx))}</code></td><td class="c">${keyDisplay(katex, it)}</td><td class="c ${statusClass(r)}">${statusMark(r)}${idx.get(it.label)?.guessed ? '<div class="rpt-small">찍음</div>' : ""}</td></tr>`
@@ -926,7 +951,7 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
           `<div class="row"><span class="rpt-pill mine${r === "blank" ? " blank" : ""}">내 답: <b>${esc(
             givenDisplay(it, idx)
           )}</b>${r === "blank" ? "" : " (오답)"}</span><span class="rpt-pill key">정답: <b>${keyDisplay(katex, it)}</b></span></div>` +
-          `${solBlock(katex, it, data)}</div>`
+          `${solBlock(katex, it, data)}${gichulBlock(it, data)}</div>`
       );
     }
     const easyFirst = rate < 0.5;
@@ -991,6 +1016,20 @@ export function buildIndividualHtml(katex: any, data: ReportData, student: Repor
 // 학생 제출과 상관없이 시험의 모든 문항(문제·정답·풀이)을 모은 해설 PDF. 관리자·과외선생님 보고서
 // 패널에서 같은 데이터(report-data)를 그대로 쓴다.
 // ---------------------------------------------------------------------
+
+/** 2026-10-12 틀린·빈 문항의 관련 기출(0057) — 출처·공통 아이디어와 기출 문제 그림(복습용) */
+function gichulBlock(it: ReportItem, data: ReportData): string {
+  const list = data.exam.gichul?.[it.label];
+  if (!list?.length) return "";
+  return list
+    .map(
+      (g) =>
+        `<div class="rpt-gichul"><b>같은 아이디어의 기출</b> — ${esc(g.source)}${g.idea ? ` · ${esc(g.idea)}` : ""}${
+          g.image && /^data:image\//.test(g.image) ? `<img src="${g.image}" alt="">` : ""
+        }</div>`
+    )
+    .join("");
+}
 
 /** 풀이 칸 — 풀이 글이 없으면(고3 사설 모의고사 등) 해설지를 보라고만 적는다(2026-10-11) */
 function solBlock(katex: any, it: ReportItem, data?: ReportData): string {
