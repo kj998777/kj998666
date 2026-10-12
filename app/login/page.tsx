@@ -38,7 +38,7 @@ export default function LoginPage() {
   const [password2, setPassword2] = useState("");
   // 회원가입 때만: 기수·이름(2026-09-28) — 관리자가 계정 관리 화면에서 누구인지 바로 알아보도록
   const [cohort, setCohort] = useState("");
-  // 2026-09-29: 과(의대·수의대·약대 — 간호대는 뺌). 의대는 기수, 나머지는 학번(둘 다 cohort 칸에 저장)
+  // 2026-09-29: 과(의대·수의대·약대 — 간호대는 뺌, 2026-10-12 수학교육과 더함). 의대는 기수, 나머지는 학번(둘 다 cohort 칸에 저장)
   const [department, setDepartment] = useState<Department | "">("");
   const isMed = department === "의대";
   const cohortValue = isMed ? normalizeCohort(cohort) : normalizeStudentNo(cohort);
@@ -246,7 +246,7 @@ export default function LoginPage() {
           {mode === "signup" && (
             <div>
               <span className="label">과</span>
-              <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${DEPARTMENTS.length}, minmax(0, 1fr))` }} role="radiogroup" aria-label="과">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="radiogroup" aria-label="과">
                 {DEPARTMENTS.map((d) => (
                   <button
                     key={d}
