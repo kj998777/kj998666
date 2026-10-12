@@ -13,6 +13,7 @@ const DEPT_BADGE: Record<string, string> = {
   수의대: "bg-emerald-100 text-emerald-800",
   약대: "bg-sky-100 text-sky-800",
   간호대: "bg-violet-100 text-violet-800",
+  수학교육과: "bg-amber-100 text-amber-800",
 };
 
 export default function UserRow({
