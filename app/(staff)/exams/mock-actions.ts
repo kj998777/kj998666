@@ -8,6 +8,7 @@ import { guessFolder } from "@/lib/exams/guessFolder";
 import { readMockAnswersFromPdf } from "@/lib/ai/mockAnswers";
 import { buildKeyRows, cleanGradeCuts, cleanPageMap, type CsatAnswers, type GradeCuts, type PageMap } from "@/lib/exams/mockCsat";
 import { regradeExam } from "@/lib/review/regrade";
+import { cleanGichulInput, parseGichulImport, type GichulLink } from "@/lib/exams/gichulLinks";
 
 // 고3 사설 모의고사(0053 exams.mock_csat) — 2026-10-11 원장님 "디지털화·해설 작성 없이 문제지·해설지를 내가 둘 다 올리게".
 // 흐름: createMockExam(행) → 브라우저가 문제지(exam-pdfs/<id>/<시각>.pdf)·해설지(exam-pdfs/_solutions/<id>/<시각>.pdf)를
@@ -149,4 +150,94 @@ export async function saveGradeCuts(code: string, cuts: GradeCuts): Promise<Res<
   if (error) return { ok: false, msg: "저장하지 못했습니다: " + error.message };
   revalidatePath(`/exams/${code}`);
   return { ok: true, subjects: n };
+}
+
+// ---------------------------------------------------------------------
+// 기출 아이디어 연결(0057 mock_gichul_links) — 2026-10-12 원장님 "4점 문항만, 사이트에 등록"
+// 문항마다 같은 아이디어의 평가원 기출(출처·공통 아이디어 한 줄·기출 문제 그림). 보고서가 출처와 그림을 싣는다.
+// ---------------------------------------------------------------------
+
+const GICHUL = "mock_gichul_links";
+
+/** 기출 연결 하나 추가 — 그림은 화면에서 작게 줄인 data URL */
+export async function addGichulLink(code: string, input: Partial<GichulLink>): Promise<Res<{ id: string }>> {
+  await requireRole("editor");
+  const exam = await examByCode(code);
+  if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
+  const c = cleanGichulInput(input);
+  if (!c) return { ok: false, msg: "문항 번호와 기출 출처를 적어 주세요." };
+  const admin = createAdminClient();
+  const { data, error } = await (admin.from(GICHUL) as any)
+    .insert({ exam_id: exam.id, item_label: c.label, rank: c.rank, source: c.source, idea: c.idea, image: c.image })
+    .select("id")
+    .single();
+  if (error) return { ok: false, msg: "저장하지 못했습니다: " + error.message };
+  revalidatePath(`/exams/${code}`);
+  return { ok: true, id: data.id as string };
+}
+
+/** 출처·아이디어·순서 고치기(그림은 그대로, image를 주면 바꿈) */
+export async function updateGichulLink(code: string, id: string, input: Partial<GichulLink>): Promise<Res> {
+  await requireRole("editor");
+  const exam = await examByCode(code);
+  if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
+  const c = cleanGichulInput({ ...input, label: input.label ?? "x" });
+  if (!c) return { ok: false, msg: "기출 출처를 적어 주세요." };
+  const patch: Record<string, unknown> = { source: c.source, idea: c.idea, rank: c.rank };
+  if (input.image !== undefined) patch.image = c.image;
+  if (input.label) patch.item_label = c.label;
+  const admin = createAdminClient();
+  const { error } = await (admin.from(GICHUL) as any).update(patch).eq("id", id).eq("exam_id", exam.id);
+  if (error) return { ok: false, msg: "저장하지 못했습니다: " + error.message };
+  revalidatePath(`/exams/${code}`);
+  return { ok: true };
+}
+
+export async function deleteGichulLink(code: string, id: string): Promise<Res> {
+  await requireRole("editor");
+  const exam = await examByCode(code);
+  if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
+  const admin = createAdminClient();
+  const { error } = await (admin.from(GICHUL) as any).delete().eq("id", id).eq("exam_id", exam.id);
+  if (error) return { ok: false, msg: "지우지 못했습니다: " + error.message };
+  revalidatePath(`/exams/${code}`);
+  return { ok: true };
+}
+
+/** JSON 파일로 한꺼번에 넣기(관리자) — 같은 문항·같은 출처가 이미 있으면 건너뜀. replace면 이 시험의 연결을 먼저 모두 지움 */
+export async function importGichulLinks(code: string, text: string, replace = false): Promise<Res<{ added: number; skipped: number }>> {
+  await requireRole("admin");
+  const exam = await examByCode(code);
+  if (!exam) return { ok: false, msg: "시험을 찾을 수 없습니다." };
+  let parsed: { links: GichulLink[]; skipped: number };
+  try {
+    parsed = parseGichulImport(text);
+  } catch (e: any) {
+    return { ok: false, msg: String(e?.message ?? e) };
+  }
+  const admin = createAdminClient();
+  if (replace) {
+    const { error } = await (admin.from(GICHUL) as any).delete().eq("exam_id", exam.id);
+    if (error) return { ok: false, msg: "기존 연결을 지우지 못했습니다: " + error.message };
+  }
+  const { data: have } = await (admin.from(GICHUL) as any).select("item_label, source").eq("exam_id", exam.id);
+  const seen = new Set(((have as any[]) ?? []).map((r) => `${r.item_label}\u0000${r.source}`));
+  let skipped = parsed.skipped;
+  const rows = [];
+  for (const l of parsed.links) {
+    const k = `${l.label}\u0000${l.source}`;
+    if (seen.has(k)) {
+      skipped++;
+      continue;
+    }
+    seen.add(k);
+    rows.push({ exam_id: exam.id, item_label: l.label, rank: l.rank, source: l.source, idea: l.idea, image: l.image });
+  }
+  // 그림이 커서 몇 개씩 나눠 넣는다
+  for (let i = 0; i < rows.length; i += 8) {
+    const { error } = await (admin.from(GICHUL) as any).insert(rows.slice(i, i + 8));
+    if (error) return { ok: false, msg: `${i}번째부터 넣지 못했습니다: ` + error.message };
+  }
+  revalidatePath(`/exams/${code}`);
+  return { ok: true, added: rows.length, skipped };
 }
