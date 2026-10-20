@@ -108,6 +108,9 @@ for num in sorted(qs):
     m = re.match(r'\[(원문|변형)[^·\]]*·\s*([^,\]]+)', t)
     kind, topic = (m.group(1), m.group(2).strip()) if m else ('변형', '상지')
     c = 'J1' if kind == '원문' else 'J2'
+    pos = qpart.index(f'**{num}.**')
+    sec = [m.group(1) for m in re.finditer(r'^## ([A-Z])\. ', qpart, flags=re.M) if m.start() < pos][-1]
+    c = {'F': 'J5', 'G': 'J6'}.get(sec, c)
     s = ('학생발표 원문' if kind == '원문' else '학생발표 변형') + f' · {topic}'
     Q.append(make(92000 + num, c, topic, s, t, ans[num]))
 
@@ -220,10 +223,19 @@ for q in Q:
 regions = {'K': '김정태p (하지·가슴)', 'J': '김진우p (상지·등·학생발표)'}
 subs = {'K1': '골학(다리뼈·가슴우리뼈)', 'K2': '넙다리·볼기', 'K3': '종아리·발', 'K4': '다리의 관절', 'K5': '가슴우리·가슴벽',
         'K6': '실습·임상 주관식(카땡 대비)', 'K7': '심장·허파·가슴막·젖',
-        'J1': '학생발표 문제 원문', 'J2': '학생발표 문제 변형', 'J3': '상지 조합형', 'J4': '총론·등'}
+        'J1': '학생발표 문제 원문', 'J2': '학생발표 문제 변형', 'J3': '상지 조합형', 'J4': '총론·등', 'J5': '학생발표 원문 · 등', 'J6': '학생발표 원문 · 골반'}
 if any(q['c'][0] == 'Y' for q in Q):
     regions['Y'] = '윤상필p (배·총론 · 길라잡이)'
     subs.update({'Y1': '총론', 'Y2': '배벽·샅굴', 'Y3': '복막·창자', 'Y4': '소화기 부속샘', 'Y5': '혈관·신경·임상 연계 (2026 원문)', 'Y6': '실습 녹음 기반'})
+
+MEDIA = Path(__file__).with_name('kjw_media.json')
+if MEDIA.exists():
+    med = json.loads(MEDIA.read_text())
+    for q in Q:
+        m = med.get(str(q['id']))
+        if m:
+            if m.get('qi'): q['qi'] = m['qi']
+            if m.get('xi'): q['xi'] = m['xi']
 
 ids = [q['id'] for q in Q]
 assert len(ids) == len(set(ids)), 'duplicate ids'
