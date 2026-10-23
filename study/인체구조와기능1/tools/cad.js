@@ -488,44 +488,117 @@ function resCard(r, k){
 }
 
 /* ---------- study ---------- */
+/* ---------- 사진으로 공부하기: 큰 부위 폴더 + 검색 ----------
+   주차마다 부위가 섞여 있어서(3주차 = 팔신경얼기 + 넙다리삼각 등) 사진 설명과 핀 이름의 낱말로 부위를 정함.
+   그 주차에서 나올 수 있는 부위 안에서만 고르고, 비기면 그 주차의 첫 부위 */
+const REGS = ['등', '상지', '하지', '가슴', '배'];
+const REG_KW = {
+  '등': /등|척추|뒤통수|trapez|latissim|rhomboid|erector|suboccip|thoracolumbar|spinous|vertebr|levator scapulae/gi,
+  '상지': /팔|손|겨드랑|어깨|팔꿉|노신경|자신경|정중신경|노동맥|자동맥|노쪽|자쪽|빗장|세모근|두갈래근|세갈래근|부리위팔|brachi|axill|radial|ulnar|median|humer|forearm|hand|palm|cubital|deltoid|biceps|triceps|cephalic|basilic|scapul|clavic|subclavian|carp|thenar|musculocutaneous|thoracoacromial|pectoral|serratus anterior/gi,
+  '하지': /샅고랑|고샅|엉덩|넙다리|다리|종아리|발|무릎|볼기|오금|정강|두렁|궁둥|샅인대|모음근|두덩정강|장딴지|가자미|복사|femor|thigh|\bleg\b|foot|pedis|plantar|knee|patell|glute|poplit|sciatic|tibia|fibula|saphenous|sartorius|gracilis|adductor|hamstring|semiten|semimem|gastrocnem|soleus|calcane|hallucis|malleol|iliopsoas|pectineus|quadriceps|vastus|rectus femoris|sural|talus|tarsal|metatars/gi,
+  '가슴': /가슴|심장|심방|심실|빗살|타원오목|판막|허파|젖|갈비|세로칸|가로막신경|대동맥|대정맥|기관|식도|미주|heart|lung|pulmon|cardi|coronar|aort|intercost|thorac|pleur|pericard|phrenic|vagus|breast|mammary|\brib|costal|stern|mediastin|atri|ventric|trache|esophag|azygos/gi,
+  '배': /배|복막|창자|이자|지라|콩팥|쓸개|막창자|잘록|샘창자|그물막|간(?=[\s,(]|$)|peritone|abdomin|stomach|gastr|hepat|liver|pancrea|splen|kidney|renal|colon|cecum|duoden|jejun|ileum|omentum|mesenter|gall|bile|inguinal canal|rectus abdominis|oblique|transversus abdominis|umbilic|portal/gi};
+const REG_WEEK = {w1:['등'], w2:['상지', '가슴'], w3:['상지', '하지', '등'], w4:['하지'], w5:['하지', '가슴', '상지'], w6:['가슴', '배'], w7:['배']};
+function regionOf(w, st){
+  if (st._reg) return st._reg;
+  const c = REG_WEEK[w.id] || REGS;
+  if (c.length === 1) return st._reg = c[0];
+  const t = (st.cap + ' ' + st.pins.map(p => `${p.ko || ''} ${p.en || ''}`).join(' ')).toLowerCase();
+  let best = c[0], bs = -1;
+  for (const r of c){ const n = (t.match(REG_KW[r]) || []).length; if (n > bs){ bs = n; best = r; } }
+  return st._reg = best;
+}
+function studyCard(st, wrong, pre, hit){
+  const shown = new Set(pre || []);
+  const names = h('ol', {class:'cadNames'}), wrapP = h('div', {});
+  const draw = () => {
+    wrapP.replaceChildren(photo(st, st.pins, {reveal:i => shown.has(i), onPin:i => { shown.has(i) ? shown.delete(i) : shown.add(i); draw(); }}));
+    names.replaceChildren(...st.pins.map((p, i) => h('li', {class:(wrong.has(`${st.id}#${i}`) ? 'w' : '') + (hit && hit.has(i) ? ' hit' : '')},
+      h('button', {type:'button', class:'cadName' + (shown.has(i) ? ' on' : ''), onclick:() => { shown.has(i) ? shown.delete(i) : shown.add(i); draw(); }},
+        shown.has(i) ? [h('b', {}, p.ko), ' ', h('span', {}, p.en), p.est ? h('small', {}, ' (추정)') : null] : h('span', {class:'cadHid'}, '눌러서 보기')))));
+  };
+  const card = h('div', {class:'panel cadSt'},
+    h('div', {class:'cadStCap'}, st.cap),
+    wrapP, names,
+    h('div', {class:'cadBtns'},
+      h('button', {type:'button', class:'btn sm', onclick:() => { st.pins.forEach((_, i) => shown.add(i)); draw(); }}, '모두 보기'),
+      h('button', {type:'button', class:'btn sm', onclick:() => { shown.clear(); draw(); }}, '모두 가리기')),
+    st.note ? h('p', {class:'cadNote'}, st.note) : null);
+  draw();
+  return card;
+}
+// 카데바 → 주차 → 조 순서로 묶어서 보여 줌
+function studySecs(list, wrong, hits){
+  const out = [], by = new Map();
+  for (const x of list){ const k = `${x.st.cad || 0}|${x.w.id}|${x.st.g}`; if (!by.has(k)) by.set(k, []); by.get(k).push(x); }
+  for (const xs of by.values()){
+    const {w, st} = xs[0];
+    out.push(h('section', {class:'cadGrp'},
+      h('h3', {}, `${st.cad ? st.cad + '번 카데바 · ' : ''}${w.name} (${st.g}조)`),
+      w.groups && w.groups[st.g] && !hits ? h('p', {class:'cadFeat'}, w.groups[st.g]) : null,
+      ...xs.map(x => studyCard(x.st, wrong, hits && hits.get(x.st.id), hits && hits.get(x.st.id)))));
+  }
+  return out;
+}
+let STUDY_UI = {q:'', reg:'', open:{}};
 function renderStudy(P){
   stopTimer();
   STATE = {view:'study'};
   const wrong = getWrong();
-  const box = h('div', {class:'cadStudy'});
-  const cs = cadsOf(P.weeks).filter(c => !P.cads.length || P.cads.includes(c));
-  for (const c of cs) for (const w of DATA.weeks){
+  const all = [];
+  for (const c of cadsOf(P.weeks).filter(c => !P.cads.length || P.cads.includes(c))) for (const w of DATA.weeks){
     if (!P.weeks.includes(w.id)) continue;
-    const gs = [...new Set(w.stations.filter(s => s.cad === c).map(s => s.g))];
-    for (const g of gs){
-      const sec = h('section', {class:'cadGrp'}, h('h3', {}, `${c}번 카데바 · ${w.name} (${g}조)`), w.groups && w.groups[g] ? h('p', {class:'cadFeat'}, w.groups[g]) : null);
-      for (const st of w.stations.filter(s => s.g === g && s.cad === c)){
-        const shown = new Set();
-        const names = h('ol', {class:'cadNames'});
-        const draw = () => {
-          const ph = photo(st, st.pins, {reveal:i => shown.has(i), onPin:i => { shown.has(i) ? shown.delete(i) : shown.add(i); draw(); }});
-          wrapP.replaceChildren(ph);
-          names.replaceChildren(...st.pins.map((p, i) => h('li', {class:wrong.has(`${st.id}#${i}`) ? 'w' : ''},
-            h('button', {type:'button', class:'cadName' + (shown.has(i) ? ' on' : ''), onclick:() => { shown.has(i) ? shown.delete(i) : shown.add(i); draw(); }},
-              shown.has(i) ? [h('b', {}, p.ko), ' ', h('span', {}, p.en), p.est ? h('small', {}, ' (추정)') : null] : h('span', {class:'cadHid'}, '눌러서 보기')))));
-        };
-        const wrapP = h('div', {});
-        sec.append(h('div', {class:'panel cadSt'},
-          h('div', {class:'cadStCap'}, st.cap),
-          wrapP, names,
-          h('div', {class:'cadBtns'},
-            h('button', {type:'button', class:'btn sm', onclick:() => { st.pins.forEach((_, i) => shown.add(i)); draw(); }}, '모두 보기'),
-            h('button', {type:'button', class:'btn sm', onclick:() => { shown.clear(); draw(); }}, '모두 가리기')),
-          st.note ? h('p', {class:'cadNote'}, st.note) : null));
-        draw();
-      }
-      box.append(sec);
-    }
+    for (const st of w.stations) if (st.cad === c) all.push({w, st, r:regionOf(w, st)});
   }
+  const byReg = r => all.filter(x => x.r === r);
+  const body = h('div', {class:'cadStudy'}), info = h('p', {class:'cadFoot'});
+  const inp = h('input', {type:'search', class:'cadIn cadSearch', placeholder:'구조물 검색 — 한글·영어 (예: 정중신경, sciatic, 빗살근)', value:STUDY_UI.q, 'aria-label':'구조물 검색'});
+  const chips = h('div', {class:'cadChips'});
+  const drawChips = () => chips.replaceChildren(
+    h('button', {type:'button', class:'cadChip' + (!STUDY_UI.reg ? ' on' : ''), onclick:() => { STUDY_UI.reg = ''; draw(); }}, '전체', h('small', {}, all.length)),
+    ...REGS.filter(r => byReg(r).length).map(r => h('button', {type:'button', class:'cadChip' + (STUDY_UI.reg === r ? ' on' : ''), onclick:() => { STUDY_UI.reg = STUDY_UI.reg === r ? '' : r; if (STUDY_UI.reg) STUDY_UI.open[r] = true; draw(); }}, r, h('small', {}, byReg(r).length))));
+  let more = 40;
+  const draw = () => {
+    drawChips();
+    const regs = REGS.filter(r => (!STUDY_UI.reg || STUDY_UI.reg === r) && byReg(r).length);
+    const q = norm(STUDY_UI.q), raw = STUDY_UI.q.trim().toLowerCase();
+    if (q){
+      // 검색: 핀 이름(한글·영어·다른 이름)이나 사진 설명에 들어 있으면 → 맞은 핀은 미리 펼쳐 둠
+      const hits = new Map(), res = [];
+      for (const x of all){
+        if (!regs.includes(x.r)) continue;
+        const m = new Set();
+        x.st.pins.forEach((p, i) => { if ([p.ko, p.en, ...(p.acc || [])].some(a => norm(a).includes(q))) m.add(i); });
+        if (m.size || String(x.st.cap).toLowerCase().includes(raw)){ hits.set(x.st.id, m); res.push(x); }
+      }
+      const np = [...hits.values()].reduce((a, m) => a + m.size, 0);
+      info.textContent = res.length ? `"${STUDY_UI.q.trim()}" — 사진 ${res.length}장 · 핀 ${np}개 (맞은 이름은 펼쳐 두고 노란 표시)` : (STUDY_UI.reg ? `${STUDY_UI.reg} 폴더에는 "${STUDY_UI.q.trim()}"이(가) 없어요. 위의 '전체'를 눌러 보세요.` : `"${STUDY_UI.q.trim()}"와 맞는 핀이 없어요. 글자를 줄이거나 한글/영어로 바꿔 보세요.`);
+      const parts = [];
+      for (const r of regs){
+        const xs = res.filter(x => x.r === r); if (!xs.length) continue;
+        parts.push(h('h2', {class:'cadRegH'}, `${r} · ${xs.length}장`), ...studySecs(xs.slice(0, more), wrong, hits));
+        if (xs.length > more) parts.push(h('button', {type:'button', class:'btn sm', onclick:() => { more += 40; draw(); }}, `${r} 결과 더 보기 (${xs.length - more}장 더)`));
+      }
+      body.replaceChildren(...parts);
+      return;
+    }
+    info.textContent = '폴더를 누르면 그 부위 사진이 열려요. 번호를 누르면 이름이 보이고, 빨간 번호는 지난 땡시에서 틀린 핀이에요.';
+    body.replaceChildren(...regs.map(r => {
+      const xs = byReg(r), n = new Set(xs.flatMap(x => x.st.pins.map(p => norm(p.ko)))).size;
+      const d = h('details', {class:'panel cadFold'},
+        h('summary', {}, h('span', {class:'cadFoldN'}, '📁 ' + r), h('small', {}, `사진 ${xs.length}장 · 구조물 약 ${n}개 · 카데바 ${new Set(xs.map(x => x.st.cad)).size}구`)));
+      const fill = () => { if (!d.dataset.done){ d.dataset.done = 1; d.append(h('div', {class:'cadFoldB'}, ...studySecs(xs, wrong))); } };
+      if (STUDY_UI.open[r] || STUDY_UI.reg === r){ d.open = true; fill(); }
+      d.addEventListener('toggle', () => { STUDY_UI.open[r] = d.open; if (d.open) fill(); });
+      return d;
+    }));
+  };
+  let tm = 0;
+  inp.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(() => { STUDY_UI.q = inp.value; more = 40; draw(); }, 220); });
   root.replaceChildren(
     h('div', {class:'cadTop'}, h('button', {type:'button', class:'btn sm', onclick:() => renderHome()}, '← 땡시로'), h('span', {class:'cadNo'}, P.cads.length ? `사진으로 공부하기 · ${P.cads.join('·')}번 카데바` : '사진으로 공부하기'), h('span', {})),
-    h('p', {class:'cadFoot'}, '번호를 누르면 이름이 보여요. 빨간 줄 표시는 지난 땡시에서 틀린 핀이에요.'),
-    box);
+    h('div', {class:'panel cadSBar'}, inp, chips), info, body);
+  draw();
 }
 
 /* ---------- style ---------- */
@@ -612,6 +685,17 @@ const CSS = `
 .cadName.on{border-style:solid;background:var(--surface)}
 .cadName span{color:var(--ink2);font-size:13px}.cadHid{color:var(--ink3)!important}
 .cadNote{margin:0;color:var(--ink2);font-size:13px}
+.cadSBar{padding:10px 12px;display:grid;gap:8px;position:sticky;top:0;z-index:4}
+.cadSearch{width:100%}
+.cadFold{padding:0;overflow:hidden}
+.cadFold>summary{list-style:none;cursor:pointer;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:12px 14px}
+.cadFold>summary::-webkit-details-marker{display:none}
+.cadFold>summary::after{content:'▶';margin-left:auto;color:var(--ink3);font-size:12px;transition:transform .15s}
+.cadFold[open]>summary::after{transform:rotate(90deg)}
+.cadFoldN{font-weight:700;font-size:16px}.cadFold>summary small{color:var(--ink3);font-size:12.5px}
+.cadFoldB{display:grid;gap:16px;padding:4px 12px 14px;border-top:1px solid var(--line)}
+.cadRegH{margin:6px 0 0;font-size:16px}
+.cadNames li.hit .cadName{background:var(--warn-soft);border-color:var(--warn)}
 .cadInfo details{border-top:1px solid var(--line);padding:6px 0}.cadInfo summary{cursor:pointer}.cadInfo ul{margin:4px 0 0;padding-left:18px;display:grid;gap:3px}.cadInfo li{font-size:13.5px;line-height:1.5}.cadInfoOne{font-weight:600}.cadStar{color:var(--warn)}
 @media (max-width:520px){.cadRow{grid-template-columns:1fr}.cadLbl{padding-top:0}.cadCardTop{grid-template-columns:96px 1fr}}
 `;
