@@ -543,7 +543,7 @@ function studySecs(list, wrong, hits){
 let STUDY_UI = {q:'', reg:'', open:{}};
 /* 조별 실습리뷰 원본(문제로 만들지 않은 사진까지): tools/rv_build.py가 쪽 그대로 다시 저장한 PDF + 쪽별 글자·부위 목록.
    자료 저장소(/_blob)에 있고, 누르면 채점기의 옆 창(📖)에서 그 쪽부터 열림 */
-const RV_URL = '__RV_INDEX_URL__';
+const RV_URL = '/_blob/6179c2318cb86b9af8eb2ca4aee94f0f';
 let RV = null, RV_P = null;
 function loadRV(){ if (!RV_P) RV_P = fetch(RV_URL).then(r => { if (!r.ok) throw 0; return r.json(); }).then(j => { RV = j; return j; }).catch(e => { RV_P = null; throw e; }); return RV_P; }
 const rvName = v => `${v.week ? v.week + '주차 · ' : ''}${v.cad ? v.cad + '번 카데바 · ' : ''}${v.g ? v.g + '조' : ''}`.replace(/ · $/, '') || v.title;

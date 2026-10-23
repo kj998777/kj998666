@@ -1,7 +1,7 @@
 """실습리뷰 PDF → 땡시 「사진으로 공부하기」용 가벼운 PDF + 검색 목록
 
 문제(핀)로 만들지 않은 사진까지 볼 수 있게, 조별 실습리뷰를 쪽 그대로(사진 + 학생들이 적은 화살표·설명) 보여 준다.
-- 각 쪽을 폭 1000px JPEG(q50)로 다시 그려 새 PDF로 저장 (원본 수십 MB → 수 MB)
+- 각 쪽을 폭 1400px JPEG(q55)로 다시 그려 새 PDF로 저장 (원본 수십 MB → 수 MB)
 - 쪽마다 글자를 뽑아 검색 목록(rv_index.json)에 넣고, 낱말로 부위(등·상지·하지·가슴·배·골반)를 정함
 - 제목에서 주차·조를 읽고, stations.json의 주차별 조 → 카데바 번호표로 카데바를 붙임
 
@@ -18,6 +18,16 @@ OUT.mkdir(parents=True, exist_ok=True)
 files = {f['id']: f for f in json.loads(LIST.read_text())}
 sta = json.loads(STA.read_text())
 CADS = {int(w['id'][1:]): {int(g): c for g, c in (w.get('cads') or {}).items()} for w in sta['weeks']}
+for w in sta['weeks']:            # 1주차처럼 cads 표가 비어 있으면 정거장의 조 → 카데바로 채움
+    for st in w['stations']:
+        if st.get('cad'): CADS[int(w['id'][1:])].setdefault(int(st['g']), st['cad'])
+# 제목에 주차가 없으면 실습 날짜(26MMDD)로: 9/3 1주차부터 일주일 간격
+def week_of_date(t):
+    m = re.search(r'26(\d\d)(\d\d)', t)
+    if not m: return None
+    import datetime
+    d = datetime.date(2026, int(m.group(1)), int(m.group(2)))
+    return (d - datetime.date(2026, 9, 1)).days // 7 + 1
 
 KW = {
   '등': r'등세모|척추|뒤통수|trapez|latissim|rhomboid|erector|suboccip|thoracolumbar|spinous|vertebr|청진삼각|넓은등근|마름근',
@@ -44,7 +54,7 @@ for p in sorted(PDF.glob('*.pdf')):
     if not meta: continue
     title = unicodedata.normalize('NFC', meta['title']).replace('.pdf', '').strip()
     mw, mg, mc = re.search(r'(\d+)\s*주차', title), re.search(r'(\d+)\s*조', title), re.search(r'(\d+)\s*번\s*카데바', title)
-    week = int(mw.group(1)) if mw else None
+    week = int(mw.group(1)) if mw else week_of_date(title)
     g = int(mg.group(1)) if mg else None
     cad = int(mc.group(1)) if mc else (CADS.get(week, {}).get(g) if week and g else None)
     try:
@@ -54,9 +64,9 @@ for p in sorted(PDF.glob('*.pdf')):
     dst = pymupdf.open()
     pages = []
     for i, pg in enumerate(src):
-        z = 1000 / max(pg.rect.width, 1)
+        z = 1400 / max(pg.rect.width, 1)
         pix = pg.get_pixmap(matrix=pymupdf.Matrix(z, z))
-        jpg = pix.tobytes('jpeg', jpg_quality=50)
+        jpg = pix.tobytes('jpeg', jpg_quality=55)
         npg = dst.new_page(width=pg.rect.width, height=pg.rect.height)
         npg.insert_image(npg.rect, stream=jpg)
         t = unicodedata.normalize('NFC', re.sub(r'\s+', ' ', pg.get_text()).strip())
