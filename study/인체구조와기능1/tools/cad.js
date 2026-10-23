@@ -491,7 +491,7 @@ function resCard(r, k){
 /* ---------- 사진으로 공부하기: 큰 부위 폴더 + 검색 ----------
    주차마다 부위가 섞여 있어서(3주차 = 팔신경얼기 + 넙다리삼각 등) 사진 설명과 핀 이름의 낱말로 부위를 정함.
    그 주차에서 나올 수 있는 부위 안에서만 고르고, 비기면 그 주차의 첫 부위 */
-const REGS = ['등', '상지', '하지', '가슴', '배'];
+const REGS = ['등', '상지', '하지', '가슴', '배', '골반'];
 const REG_KW = {
   '등': /등|척추|뒤통수|trapez|latissim|rhomboid|erector|suboccip|thoracolumbar|spinous|vertebr|levator scapulae/gi,
   '상지': /팔|손|겨드랑|어깨|팔꿉|노신경|자신경|정중신경|노동맥|자동맥|노쪽|자쪽|빗장|세모근|두갈래근|세갈래근|부리위팔|brachi|axill|radial|ulnar|median|humer|forearm|hand|palm|cubital|deltoid|biceps|triceps|cephalic|basilic|scapul|clavic|subclavian|carp|thenar|musculocutaneous|thoracoacromial|pectoral|serratus anterior/gi,
@@ -541,6 +541,44 @@ function studySecs(list, wrong, hits){
   return out;
 }
 let STUDY_UI = {q:'', reg:'', open:{}};
+/* 조별 실습리뷰 원본(문제로 만들지 않은 사진까지): tools/rv_build.py가 쪽 그대로 다시 저장한 PDF + 쪽별 글자·부위 목록.
+   자료 저장소(/_blob)에 있고, 누르면 채점기의 옆 창(📖)에서 그 쪽부터 열림 */
+const RV_URL = '__RV_INDEX_URL__';
+let RV = null, RV_P = null;
+function loadRV(){ if (!RV_P) RV_P = fetch(RV_URL).then(r => { if (!r.ok) throw 0; return r.json(); }).then(j => { RV = j; return j; }).catch(e => { RV_P = null; throw e; }); return RV_P; }
+const rvName = v => `${v.week ? v.week + '주차 · ' : ''}${v.cad ? v.cad + '번 카데바 · ' : ''}${v.g ? v.g + '조' : ''}`.replace(/ · $/, '') || v.title;
+function rvOpen(v, n){
+  if (window.__bvDoc) window.__bvDoc(v.u, '실습리뷰 · ' + rvName(v), n || 1);
+  else window.open(v.u + '#page=' + (n || 1), '_blank');
+}
+// 한 부위 폴더 안의 실습리뷰 목록: 리뷰마다 그 부위 쪽 번호를 눌러 바로 열기
+function rvList(r, P){
+  if (!RV) return h('p', {class:'cadFoot'}, '실습리뷰 원본 불러오는 중…');
+  const L = RV.filter(v => (!P.cads.length || P.cads.includes(v.cad)) && v.pages.some(x => x.r === r));
+  if (!L.length) return null;
+  return h('section', {class:'cadGrp cadRv'},
+    h('h3', {}, `📄 실습리뷰 원본 — 문제로 만들지 않은 사진까지 (${L.length}개 조)`),
+    h('p', {class:'cadFeat'}, '조별 실습리뷰를 쪽 그대로 보여 줘요. 사진 위 화살표·설명은 그 조 학생들이 적은 것이에요. 쪽 번호를 누르면 옆 창에서 열리고, 두 손가락으로 넘길 수 있어요.'),
+    ...L.map(v => { const ps = v.pages.filter(x => x.r === r && x.img);
+      return h('div', {class:'cadRvRow'},
+        h('button', {type:'button', class:'btn sm', onclick:() => rvOpen(v, (ps[0] || v.pages.find(x => x.r === r)).n)}, rvName(v)),
+        h('span', {class:'cadRvPs'}, ...ps.map(x => h('button', {type:'button', class:'cadRvP', title:x.t.slice(0, 120), onclick:() => rvOpen(v, x.n)}, x.n))),
+        h('small', {}, `사진 있는 쪽 ${ps.length} / 전체 ${v.n}쪽`)); }));
+}
+// 검색어가 들어 있는 실습리뷰 쪽 (앞뒤 글자와 함께)
+function rvHits(q, regs, P){
+  if (!RV) return [];
+  const out = [];
+  for (const v of RV){
+    if (P.cads.length && !P.cads.includes(v.cad)) continue;
+    for (const x of v.pages){
+      if (!regs.includes(x.r)) continue;
+      const t = x.t.toLowerCase(), i = t.indexOf(q);
+      if (i >= 0) out.push({v, x, i});
+    }
+  }
+  return out;
+}
 function renderStudy(P){
   stopTimer();
   STATE = {view:'study'};
@@ -551,16 +589,18 @@ function renderStudy(P){
     for (const st of w.stations) if (st.cad === c) all.push({w, st, r:regionOf(w, st)});
   }
   const byReg = r => all.filter(x => x.r === r);
+  const rvN = r => RV ? RV.filter(v => (!P.cads.length || P.cads.includes(v.cad))).reduce((a, v) => a + v.pages.filter(x => x.r === r && x.img).length, 0) : 0;
+  const has = r => byReg(r).length || rvN(r);
   const body = h('div', {class:'cadStudy'}), info = h('p', {class:'cadFoot'});
   const inp = h('input', {type:'search', class:'cadIn cadSearch', placeholder:'구조물 검색 — 한글·영어 (예: 정중신경, sciatic, 빗살근)', value:STUDY_UI.q, 'aria-label':'구조물 검색'});
   const chips = h('div', {class:'cadChips'});
   const drawChips = () => chips.replaceChildren(
     h('button', {type:'button', class:'cadChip' + (!STUDY_UI.reg ? ' on' : ''), onclick:() => { STUDY_UI.reg = ''; draw(); }}, '전체', h('small', {}, all.length)),
-    ...REGS.filter(r => byReg(r).length).map(r => h('button', {type:'button', class:'cadChip' + (STUDY_UI.reg === r ? ' on' : ''), onclick:() => { STUDY_UI.reg = STUDY_UI.reg === r ? '' : r; if (STUDY_UI.reg) STUDY_UI.open[r] = true; draw(); }}, r, h('small', {}, byReg(r).length))));
+    ...REGS.filter(has).map(r => h('button', {type:'button', class:'cadChip' + (STUDY_UI.reg === r ? ' on' : ''), onclick:() => { STUDY_UI.reg = STUDY_UI.reg === r ? '' : r; if (STUDY_UI.reg) STUDY_UI.open[r] = true; draw(); }}, r, h('small', {}, byReg(r).length || '원본'))));
   let more = 40;
   const draw = () => {
     drawChips();
-    const regs = REGS.filter(r => (!STUDY_UI.reg || STUDY_UI.reg === r) && byReg(r).length);
+    const regs = REGS.filter(r => (!STUDY_UI.reg || STUDY_UI.reg === r) && has(r));
     const q = norm(STUDY_UI.q), raw = STUDY_UI.q.trim().toLowerCase();
     if (q){
       // 검색: 핀 이름(한글·영어·다른 이름)이나 사진 설명에 들어 있으면 → 맞은 핀은 미리 펼쳐 둠
@@ -571,9 +611,14 @@ function renderStudy(P){
         x.st.pins.forEach((p, i) => { if ([p.ko, p.en, ...(p.acc || [])].some(a => norm(a).includes(q))) m.add(i); });
         if (m.size || String(x.st.cap).toLowerCase().includes(raw)){ hits.set(x.st.id, m); res.push(x); }
       }
+      const rh = rvHits(raw, regs, P);
       const np = [...hits.values()].reduce((a, m) => a + m.size, 0);
-      info.textContent = res.length ? `"${STUDY_UI.q.trim()}" — 사진 ${res.length}장 · 핀 ${np}개 (맞은 이름은 펼쳐 두고 노란 표시)` : (STUDY_UI.reg ? `${STUDY_UI.reg} 폴더에는 "${STUDY_UI.q.trim()}"이(가) 없어요. 위의 '전체'를 눌러 보세요.` : `"${STUDY_UI.q.trim()}"와 맞는 핀이 없어요. 글자를 줄이거나 한글/영어로 바꿔 보세요.`);
+      info.textContent = res.length || rh.length ? `"${STUDY_UI.q.trim()}" — 문제 사진 ${res.length}장 · 핀 ${np}개 (맞은 이름은 펼쳐 두고 노란 표시)${rh.length ? ` · 실습리뷰 원본 ${rh.length}쪽` : ''}` : (STUDY_UI.reg ? `${STUDY_UI.reg} 폴더에는 "${STUDY_UI.q.trim()}"이(가) 없어요. 위의 '전체'를 눌러 보세요.` : `"${STUDY_UI.q.trim()}"와 맞는 핀이 없어요. 글자를 줄이거나 한글/영어로 바꿔 보세요.`);
       const parts = [];
+      if (rh.length) parts.push(h('section', {class:'cadGrp cadRv'}, h('h3', {}, `📄 실습리뷰 원본에서 찾은 쪽 ${rh.length}개`),
+        ...rh.slice(0, 60).map(({v, x, i}) => h('button', {type:'button', class:'cadRvHit', onclick:() => rvOpen(v, x.n)},
+          h('b', {}, `${rvName(v)} · ${x.n}쪽`), h('span', {}, '…' + x.t.slice(Math.max(0, i - 30), i), h('mark', {}, x.t.slice(i, i + raw.length)), x.t.slice(i + raw.length, i + raw.length + 50) + '…'))),
+        rh.length > 60 ? h('p', {class:'cadFoot'}, `${rh.length - 60}쪽 더 있어요. 검색어를 더 길게 써 보세요.`) : null));
       for (const r of regs){
         const xs = res.filter(x => x.r === r); if (!xs.length) continue;
         parts.push(h('h2', {class:'cadRegH'}, `${r} · ${xs.length}장`), ...studySecs(xs.slice(0, more), wrong, hits));
@@ -582,12 +627,12 @@ function renderStudy(P){
       body.replaceChildren(...parts);
       return;
     }
-    info.textContent = '폴더를 누르면 그 부위 사진이 열려요. 번호를 누르면 이름이 보이고, 빨간 번호는 지난 땡시에서 틀린 핀이에요.';
+    info.textContent = '폴더를 누르면 그 부위 사진이 열려요. 번호를 누르면 이름이 보이고, 빨간 번호는 지난 땡시에서 틀린 핀이에요. 폴더 맨 아래에는 문제로 만들지 않은 사진까지 담긴 조별 실습리뷰 원본이 있어요.';
     body.replaceChildren(...regs.map(r => {
-      const xs = byReg(r), n = new Set(xs.flatMap(x => x.st.pins.map(p => norm(p.ko)))).size;
+      const xs = byReg(r), n = new Set(xs.flatMap(x => x.st.pins.map(p => norm(p.ko)))).size, rn = rvN(r);
       const d = h('details', {class:'panel cadFold'},
-        h('summary', {}, h('span', {class:'cadFoldN'}, '📁 ' + r), h('small', {}, `사진 ${xs.length}장 · 구조물 약 ${n}개 · 카데바 ${new Set(xs.map(x => x.st.cad)).size}구`)));
-      const fill = () => { if (!d.dataset.done){ d.dataset.done = 1; d.append(h('div', {class:'cadFoldB'}, ...studySecs(xs, wrong))); } };
+        h('summary', {}, h('span', {class:'cadFoldN'}, '📁 ' + r), h('small', {}, (xs.length ? `문제 사진 ${xs.length}장 · 구조물 약 ${n}개 · 카데바 ${new Set(xs.map(x => x.st.cad)).size}구` : '문제 사진 없음') + (rn ? ` · 실습리뷰 원본 사진 쪽 ${rn}` : ''))));
+      const fill = () => { if (!d.dataset.done){ d.dataset.done = 1; const rl = rvList(r, P); d.append(h('div', {class:'cadFoldB'}, ...studySecs(xs, wrong), rl)); } };
       if (STUDY_UI.open[r] || STUDY_UI.reg === r){ d.open = true; fill(); }
       d.addEventListener('toggle', () => { STUDY_UI.open[r] = d.open; if (d.open) fill(); });
       return d;
@@ -599,6 +644,7 @@ function renderStudy(P){
     h('div', {class:'cadTop'}, h('button', {type:'button', class:'btn sm', onclick:() => renderHome()}, '← 땡시로'), h('span', {class:'cadNo'}, P.cads.length ? `사진으로 공부하기 · ${P.cads.join('·')}번 카데바` : '사진으로 공부하기'), h('span', {})),
     h('div', {class:'panel cadSBar'}, inp, chips), info, body);
   draw();
+  if (!RV) loadRV().then(() => { if (STATE.view === 'study' && root.contains(body)) draw(); }, () => {});
 }
 
 /* ---------- style ---------- */
@@ -695,6 +741,14 @@ const CSS = `
 .cadFoldN{font-weight:700;font-size:16px}.cadFold>summary small{color:var(--ink3);font-size:12.5px}
 .cadFoldB{display:grid;gap:16px;padding:4px 12px 14px;border-top:1px solid var(--line)}
 .cadRegH{margin:6px 0 0;font-size:16px}
+.cadRv{border-top:1px dashed var(--line);padding-top:12px}
+.cadRvRow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.cadRvRow small{color:var(--ink3);font-size:12px}
+.cadRvPs{display:flex;flex-wrap:wrap;gap:4px}
+.cadRvP{border:1px solid var(--line);background:var(--surface);border-radius:6px;min-width:30px;padding:2px 6px;font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--ink2)}
+.cadRvP:hover{border-color:var(--accent);color:var(--accent)}
+.cadRvHit{display:grid;gap:2px;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 10px;font-size:13.5px}
+.cadRvHit span{color:var(--ink2);font-size:13px;overflow-wrap:anywhere}.cadRvHit mark{background:var(--warn-soft);color:inherit}
 .cadNames li.hit .cadName{background:var(--warn-soft);border-color:var(--warn)}
 .cadInfo details{border-top:1px solid var(--line);padding:6px 0}.cadInfo summary{cursor:pointer}.cadInfo ul{margin:4px 0 0;padding-left:18px;display:grid;gap:3px}.cadInfo li{font-size:13.5px;line-height:1.5}.cadInfoOne{font-weight:600}.cadStar{color:var(--warn)}
 @media (max-width:520px){.cadRow{grid-template-columns:1fr}.cadLbl{padding-top:0}.cadCardTop{grid-template-columns:96px 1fr}}
