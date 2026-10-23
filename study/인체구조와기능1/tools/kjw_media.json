@@ -2148,5 +2148,601 @@
     "cap": "Heart·lung 강의 45쪽"
    }
   ]
+ },
+ "94001": {
+  "xi": [
+   {
+    "f": "kjt-os-4.jpg",
+    "cap": "골학(하지) 강의 4쪽"
+   },
+   {
+    "f": "kjt-os-6.jpg",
+    "cap": "골학(하지) 강의 6쪽"
+   }
+  ]
+ },
+ "94002": {
+  "xi": [
+   {
+    "f": "kjt-os-15.jpg",
+    "cap": "골학(하지) 강의 15쪽"
+   },
+   {
+    "f": "kjt-os-16.jpg",
+    "cap": "골학(하지) 강의 16쪽"
+   }
+  ]
+ },
+ "94003": {
+  "xi": [
+   {
+    "f": "kjt-os-15.jpg",
+    "cap": "골학(하지) 강의 15쪽"
+   },
+   {
+    "f": "kjt-os-16.jpg",
+    "cap": "골학(하지) 강의 16쪽"
+   }
+  ]
+ },
+ "94004": {
+  "xi": [
+   {
+    "f": "kjt-os-25.jpg",
+    "cap": "골학(하지) 강의 25쪽"
+   }
+  ]
+ },
+ "94005": {
+  "xi": [
+   {
+    "f": "kjt-os-27.jpg",
+    "cap": "골학(하지) 강의 27쪽"
+   }
+  ]
+ },
+ "94006": {
+  "xi": [
+   {
+    "f": "kjt-l2-12.jpg",
+    "cap": "Lower limb II 강의 12쪽"
+   }
+  ]
+ },
+ "94007": {
+  "xi": [
+   {
+    "f": "kjt-l1-23.jpg",
+    "cap": "Lower limb I 강의 23쪽"
+   }
+  ]
+ },
+ "94008": {
+  "xi": [
+   {
+    "f": "kjt-l2-8.jpg",
+    "cap": "Lower limb II 강의 8쪽"
+   }
+  ]
+ },
+ "94009": {
+  "xi": [
+   {
+    "f": "kjt-l1-18.jpg",
+    "cap": "Lower limb I 강의 18쪽"
+   }
+  ]
+ },
+ "94010": {
+  "xi": [
+   {
+    "f": "kjt-l2-11.jpg",
+    "cap": "Lower limb II 강의 11쪽"
+   }
+  ]
+ },
+ "94011": {
+  "xi": [
+   {
+    "f": "kjt-l2-44.jpg",
+    "cap": "Lower limb II 강의 44쪽"
+   }
+  ]
+ },
+ "94012": {
+  "xi": [
+   {
+    "f": "kjt-l2-37.jpg",
+    "cap": "Lower limb II 강의 37쪽"
+   }
+  ]
+ },
+ "94013": {
+  "xi": [
+   {
+    "f": "kjt-l2-39.jpg",
+    "cap": "Lower limb II 강의 39쪽"
+   }
+  ]
+ },
+ "94014": {
+  "xi": [
+   {
+    "f": "kjt-l2-45.jpg",
+    "cap": "Lower limb II 강의 45쪽"
+   },
+   {
+    "f": "kjt-l2-55.jpg",
+    "cap": "Lower limb II 강의 55쪽"
+   }
+  ]
+ },
+ "94015": {
+  "xi": [
+   {
+    "f": "kjt-l2-46.jpg",
+    "cap": "Lower limb II 강의 46쪽"
+   }
+  ]
+ },
+ "94016": {
+  "xi": [
+   {
+    "f": "kjt-l3-20.jpg",
+    "cap": "Lower limb III 강의 20쪽"
+   },
+   {
+    "f": "kjt-l4-42.jpg",
+    "cap": "Lower limb IV 강의 42쪽"
+   }
+  ]
+ },
+ "94017": {
+  "xi": [
+   {
+    "f": "kjt-l2-21.jpg",
+    "cap": "Lower limb II 강의 21쪽"
+   },
+   {
+    "f": "kjt-l2-45.jpg",
+    "cap": "Lower limb II 강의 45쪽"
+   }
+  ]
+ },
+ "94018": {
+  "xi": [
+   {
+    "f": "kjt-l2-45.jpg",
+    "cap": "Lower limb II 강의 45쪽"
+   }
+  ]
+ },
+ "94019": {
+  "xi": [
+   {
+    "f": "kjt-l2-67.jpg",
+    "cap": "Lower limb II 강의 67쪽"
+   }
+  ]
+ },
+ "94020": {
+  "xi": [
+   {
+    "f": "kjt-l2-45.jpg",
+    "cap": "Lower limb II 강의 45쪽"
+   },
+   {
+    "f": "kjt-l4-29.jpg",
+    "cap": "Lower limb IV 강의 29쪽"
+   }
+  ]
+ },
+ "94021": {
+  "xi": [
+   {
+    "f": "kjt-l2-21.jpg",
+    "cap": "Lower limb II 강의 21쪽"
+   },
+   {
+    "f": "kjt-l2-25.jpg",
+    "cap": "Lower limb II 강의 25쪽"
+   }
+  ]
+ },
+ "94022": {
+  "xi": [
+   {
+    "f": "kjt-l4-4.jpg",
+    "cap": "Lower limb IV 강의 4쪽"
+   }
+  ]
+ },
+ "94023": {
+  "xi": [
+   {
+    "f": "kjt-l4-16.jpg",
+    "cap": "Lower limb IV 강의 16쪽"
+   }
+  ]
+ },
+ "94024": {
+  "xi": [
+   {
+    "f": "kjt-l4-27.jpg",
+    "cap": "Lower limb IV 강의 27쪽"
+   }
+  ]
+ },
+ "94025": {
+  "xi": [
+   {
+    "f": "kjt-l3-11.jpg",
+    "cap": "Lower limb III 강의 11쪽"
+   }
+  ]
+ },
+ "94026": {
+  "xi": [
+   {
+    "f": "kjt-l2-68.jpg",
+    "cap": "Lower limb II 강의 68쪽"
+   },
+   {
+    "f": "kjt-l4-29.jpg",
+    "cap": "Lower limb IV 강의 29쪽"
+   }
+  ]
+ },
+ "94027": {
+  "xi": [
+   {
+    "f": "kjt-os-25.jpg",
+    "cap": "골학(하지) 강의 25쪽"
+   },
+   {
+    "f": "kjt-l2-45.jpg",
+    "cap": "Lower limb II 강의 45쪽"
+   }
+  ]
+ },
+ "94028": {
+  "xi": [
+   {
+    "f": "kjt-l4-6.jpg",
+    "cap": "Lower limb IV 강의 6쪽"
+   }
+  ]
+ },
+ "94029": {
+  "xi": [
+   {
+    "f": "kjt-l4-34.jpg",
+    "cap": "Lower limb IV 강의 34쪽"
+   }
+  ]
+ },
+ "94030": {
+  "xi": [
+   {
+    "f": "kjt-l4-47.jpg",
+    "cap": "Lower limb IV 강의 47쪽"
+   }
+  ]
+ },
+ "94031": {
+  "xi": [
+   {
+    "f": "kjt-l4-45.jpg",
+    "cap": "Lower limb IV 강의 45쪽"
+   },
+   {
+    "f": "kjt-l4-46.jpg",
+    "cap": "Lower limb IV 강의 46쪽"
+   }
+  ]
+ },
+ "94032": {
+  "xi": [
+   {
+    "f": "kjt-l4-42.jpg",
+    "cap": "Lower limb IV 강의 42쪽"
+   }
+  ]
+ },
+ "94033": {
+  "xi": [
+   {
+    "f": "kjt-l4-51.jpg",
+    "cap": "Lower limb IV 강의 51쪽"
+   }
+  ]
+ },
+ "94034": {
+  "xi": [
+   {
+    "f": "kjt-os-29.jpg",
+    "cap": "골학(하지) 강의 29쪽"
+   },
+   {
+    "f": "kjt-os-31.jpg",
+    "cap": "골학(하지) 강의 31쪽"
+   }
+  ]
+ },
+ "94035": {
+  "xi": [
+   {
+    "f": "kjt-tc-17.jpg",
+    "cap": "Thoracic cage 강의 17쪽"
+   }
+  ]
+ },
+ "94036": {
+  "xi": [
+   {
+    "f": "kjt-tc-49.jpg",
+    "cap": "Thoracic cage 강의 49쪽"
+   }
+  ]
+ },
+ "94037": {
+  "xi": [
+   {
+    "f": "kjt-tc-47.jpg",
+    "cap": "Thoracic cage 강의 47쪽"
+   },
+   {
+    "f": "kjt-tc-51.jpg",
+    "cap": "Thoracic cage 강의 51쪽"
+   }
+  ]
+ },
+ "94038": {
+  "xi": [
+   {
+    "f": "kjt-tc-51.jpg",
+    "cap": "Thoracic cage 강의 51쪽"
+   }
+  ]
+ },
+ "94039": {
+  "xi": [
+   {
+    "f": "kjt-tc-25.jpg",
+    "cap": "Thoracic cage 강의 25쪽"
+   }
+  ]
+ },
+ "94040": {
+  "xi": [
+   {
+    "f": "kjt-tc-3.jpg",
+    "cap": "Thoracic cage 강의 3쪽"
+   },
+   {
+    "f": "kjt-tc-28.jpg",
+    "cap": "Thoracic cage 강의 28쪽"
+   }
+  ]
+ },
+ "94041": {
+  "xi": [
+   {
+    "f": "kjt-hl-2.jpg",
+    "cap": "Heart·lung 강의 2쪽"
+   }
+  ]
+ },
+ "94042": {
+  "xi": [
+   {
+    "f": "kjt-hl-10.jpg",
+    "cap": "Heart·lung 강의 10쪽"
+   }
+  ]
+ },
+ "94043": {
+  "xi": [
+   {
+    "f": "kjt-hl-7.jpg",
+    "cap": "Heart·lung 강의 7쪽"
+   }
+  ]
+ },
+ "94044": {
+  "xi": [
+   {
+    "f": "kjt-hl-8.jpg",
+    "cap": "Heart·lung 강의 8쪽"
+   }
+  ]
+ },
+ "94045": {
+  "xi": [
+   {
+    "f": "kjt-hl-17.jpg",
+    "cap": "Heart·lung 강의 17쪽"
+   }
+  ]
+ },
+ "94046": {
+  "xi": [
+   {
+    "f": "kjt-hl-13.jpg",
+    "cap": "Heart·lung 강의 13쪽"
+   },
+   {
+    "f": "kjt-hl-17.jpg",
+    "cap": "Heart·lung 강의 17쪽"
+   }
+  ]
+ },
+ "94047": {
+  "xi": [
+   {
+    "f": "kjt-hl-19.jpg",
+    "cap": "Heart·lung 강의 19쪽"
+   }
+  ]
+ },
+ "94048": {
+  "xi": [
+   {
+    "f": "kjt-hl-16.jpg",
+    "cap": "Heart·lung 강의 16쪽"
+   }
+  ]
+ },
+ "94049": {
+  "xi": [
+   {
+    "f": "kjt-hl-13.jpg",
+    "cap": "Heart·lung 강의 13쪽"
+   }
+  ]
+ },
+ "94050": {
+  "xi": [
+   {
+    "f": "kjt-hl-22.jpg",
+    "cap": "Heart·lung 강의 22쪽"
+   }
+  ]
+ },
+ "94051": {
+  "xi": [
+   {
+    "f": "kjt-hl-30.jpg",
+    "cap": "Heart·lung 강의 30쪽"
+   }
+  ]
+ },
+ "94052": {
+  "xi": [
+   {
+    "f": "kjt-hl-37.jpg",
+    "cap": "Heart·lung 강의 37쪽"
+   },
+   {
+    "f": "kjt-hl-38.jpg",
+    "cap": "Heart·lung 강의 38쪽"
+   }
+  ]
+ },
+ "94053": {
+  "xi": [
+   {
+    "f": "kjt-hl-45.jpg",
+    "cap": "Heart·lung 강의 45쪽"
+   }
+  ]
+ },
+ "94054": {
+  "xi": [
+   {
+    "f": "kjt-l1-24.jpg",
+    "cap": "Lower limb I 강의 24쪽"
+   },
+   {
+    "f": "kjt-l2-7.jpg",
+    "cap": "Lower limb II 강의 7쪽"
+   }
+  ]
+ },
+ "94055": {
+  "xi": [
+   {
+    "f": "kjt-l1-32.jpg",
+    "cap": "Lower limb I 강의 32쪽"
+   }
+  ]
+ },
+ "94056": {
+  "xi": [
+   {
+    "f": "kjt-l1-32.jpg",
+    "cap": "Lower limb I 강의 32쪽"
+   }
+  ]
+ },
+ "94057": {
+  "xi": [
+   {
+    "f": "kjt-l2-36.jpg",
+    "cap": "Lower limb II 강의 36쪽"
+   },
+   {
+    "f": "kjt-l2-41.jpg",
+    "cap": "Lower limb II 강의 41쪽"
+   }
+  ]
+ },
+ "94058": {
+  "xi": [
+   {
+    "f": "kjt-l4-49.jpg",
+    "cap": "Lower limb IV 강의 49쪽"
+   }
+  ]
+ },
+ "94059": {
+  "xi": [
+   {
+    "f": "kjt-l4-8.jpg",
+    "cap": "Lower limb IV 강의 8쪽"
+   }
+  ]
+ },
+ "94060": {
+  "xi": [
+   {
+    "f": "kjt-os-31.jpg",
+    "cap": "골학(하지) 강의 31쪽"
+   },
+   {
+    "f": "kjt-os-32.jpg",
+    "cap": "골학(하지) 강의 32쪽"
+   }
+  ]
+ },
+ "94061": {
+  "xi": [
+   {
+    "f": "kjt-l2-8.jpg",
+    "cap": "Lower limb II 강의 8쪽"
+   }
+  ]
+ },
+ "94062": {
+  "xi": [
+   {
+    "f": "kjt-l4-36.jpg",
+    "cap": "Lower limb IV 강의 36쪽"
+   }
+  ]
+ },
+ "94063": {
+  "xi": [
+   {
+    "f": "kjt-tc-18.jpg",
+    "cap": "Thoracic cage 강의 18쪽"
+   }
+  ]
+ },
+ "94064": {
+  "xi": [
+   {
+    "f": "kjt-hl-38.jpg",
+    "cap": "Heart·lung 강의 38쪽"
+   }
+  ]
+ },
+ "94065": {
+  "xi": [
+   {
+    "f": "kjt-hl-23.jpg",
+    "cap": "Heart·lung 강의 23쪽"
+   }
+  ]
  }
 }

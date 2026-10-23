@@ -23,7 +23,9 @@ DECKS = {   # key: (파일 이름 일부, 캡션)
     'hl': ('20261007_Heart_lung', 'Heart·lung 강의'),
 }
 BY_SUB = {'K1': ['os', 'tc'], 'K2': ['l1', 'l2', 'os'], 'K3': ['l2', 'l3', 'l4', 'os'], 'K4': ['l1', 'l3', 'l4', 'os'],
-          'K5': ['tc'], 'K7': ['hl']}
+          'K5': ['tc'], 'K7': ['hl'], 'K8': list(DECKS), 'K9': list(DECKS)}
+# 글자 맞춤이 엉뚱한 쪽을 고른 문항은 손으로 고른 쪽을 쓴다 (형성평가형 941xx)
+MANUAL = {94061: [('l2', 8)], 94013: [('l2', 39)], 94014: [('l2', 45), ('l2', 55)], 94015: [('l2', 46)], 94017: [('l2', 21), ('l2', 45)], 94018: [('l2', 45)], 94019: [('l2', 67)], 94020: [('l2', 45), ('l4', 29)], 94021: [('l2', 21), ('l2', 25)], 94022: [('l4', 4)], 94025: [('l3', 11)], 94026: [('l2', 68), ('l4', 29)], 94027: [('os', 25), ('l2', 45)], 94031: [('l4', 45), ('l4', 46)], 94032: [('l4', 42)], 94033: [('l4', 51)], 94041: [('hl', 2)], 94043: [('hl', 7)], 94044: [('hl', 8)], 94047: [('hl', 19)], 94048: [('hl', 16)], 94052: [('hl', 37), ('hl', 38)], 94055: [('l1', 32)], 94056: [('l1', 32)], 94063: [('tc', 18)]}
 STOP = set('that this with from which when what have into they there their than then also only each other most more less over under between both after before about these those does were been being such some very much many used same into onto'.split())
 
 def path_of(part):
@@ -56,15 +58,19 @@ def render(k, n):
     p = OUT / name
     if not p.exists():
         pg = docs[k][n - 1]
-        z = 1300 / pg.rect.width
-        pg.get_pixmap(matrix=pymupdf.Matrix(z, z)).save(p, jpg_quality=72)
+        z = 960 / pg.rect.width             # 매니페스트 용량 때문에 960px·q62로 줄여 씀
+        pg.get_pixmap(matrix=pymupdf.Matrix(z, z)).save(p, jpg_quality=62)
     return name
 
 pred = json.loads(Path(PRED).read_text())
 media = json.loads(Path(MEDIA).read_text()) if Path(MEDIA).exists() else {}
 stats = Counter()
 for q in pred['q']:
-    if not (91001 <= q['id'] <= 91099 or 91301 <= q['id'] <= 91499) or q['c'] not in BY_SUB:
+    if not (91001 <= q['id'] <= 91099 or 91301 <= q['id'] <= 91499 or 94001 <= q['id'] <= 94099) or q['c'] not in BY_SUB:
+        continue
+    if q['id'] in MANUAL:
+        media[str(q['id'])] = {'xi': [{'f': render(k, n), 'cap': f'{DECKS[k][1]} {n}쪽'} for k, n in MANUAL[q['id']]]}
+        stats['manual'] += 1
         continue
     want = Counter()
     for t in terms(q['tx']): want[t] += 1

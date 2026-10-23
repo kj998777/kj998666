@@ -164,6 +164,24 @@ if ys.exists():
         sec = [s for s in sections if s[0] < pos][-1]
         Q.append(make(93000 + num, ycode[sec[1]], sec[2].split('(')[0].strip(), f'윤상필p 길라잡이 기반 {num}번', qs[num], ans[num]))
 
+# ---------- 김정태p 형성평가 스타일 (난이도·출제 유력/지엽) ----------
+kf = D / '김정태p_형성평가스타일_예상문제.md'
+if kf.exists():
+    t = kf.read_text()
+    qpart, apart = t.split('## 정답 및 해설', 1)
+    qpart = qpart.split('## 1. 출제 유력', 1)[1]
+    qs, ans = blocks(qpart), answers(apart)
+    jy = qpart.index('## 2. 지엽')
+    LV = {'하': 1, '중': 2, '상': 3}
+    for num in sorted(qs):
+        m = re.match(r'\[(하|중|상)·([^\]]+)\]\s*', qs[num])
+        c = 'K9' if qpart.index(f'**{num}.**') > jy else 'K8'
+        it = make(94000 + num, c, m.group(2), f'김정태p 형성평가형 {num}번', qs[num][m.end():], ans[num])
+        it['lv'] = LV[m.group(1)]
+        st = re.search(r'정리본 [\d–·]+쪽 (★+)', it['x'])
+        if st: it['st'] = len(st.group(1))
+        Q.append(it)
+
 
 OVR = {
     91003: ['adductor tubercle', '모음근결절'],
@@ -222,7 +240,7 @@ for q in Q:
 
 regions = {'K': '김정태p (하지·가슴)', 'J': '김진우p (상지·등·학생발표)'}
 subs = {'K1': '골학(다리뼈·가슴우리뼈)', 'K2': '넙다리·볼기', 'K3': '종아리·발', 'K4': '다리의 관절', 'K5': '가슴우리·가슴벽',
-        'K6': '실습·임상 주관식(카땡 대비)', 'K7': '심장·허파·가슴막·젖',
+        'K6': '실습·임상 주관식(카땡 대비)', 'K7': '심장·허파·가슴막·젖', 'K8': '형성평가형 · 출제 유력', 'K9': '형성평가형 · 지엽',
         'J1': '학생발표 문제 원문', 'J2': '학생발표 문제 변형', 'J3': '상지 조합형', 'J4': '총론·등', 'J5': '학생발표 원문 · 등', 'J6': '학생발표 원문 · 골반'}
 if any(q['c'][0] == 'Y' for q in Q):
     regions['Y'] = '윤상필p (배·총론 · 길라잡이)'
@@ -236,6 +254,13 @@ if MEDIA.exists():
         if m:
             if m.get('qi'): q['qi'] = m['qi']
             if m.get('xi'): q['xi'] = m['xi']
+
+# 형성평가형은 해설 캡처 쪽을 그대로 PPT 쪽 참조(rf)로도 씀 (PDF 묶기·옆 창 '참고 페이지')
+KJT_BOOK = {'os': 'KO', 'l1': 'K1', 'l2': 'K2', 'l3': 'K3', 'l4': 'K4', 'tc': 'KT', 'hl': 'KH'}
+for q in Q:
+    if q['c'] in ('K8', 'K9') and q.get('xi'):
+        q['rf'] = [[KJT_BOOK[m.group(1)], int(m.group(2))] for x in q['xi']
+                   for m in [re.match(r'kjt-(\w+)-(\d+)\.jpg$', x['f'])] if m]
 
 ids = [q['id'] for q in Q]
 assert len(ids) == len(set(ids)), 'duplicate ids'
