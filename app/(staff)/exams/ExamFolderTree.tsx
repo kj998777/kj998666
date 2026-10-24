@@ -4,6 +4,7 @@ import Link from "next/link";
 import { createContext, useContext, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { schoolOf } from "@/lib/exams/schoolOf";
+import { groupMocks } from "@/lib/exams/mockSource";
 import { setExamsStatus } from "./actions";
 
 export type ExamRow = {
@@ -186,7 +187,7 @@ function Folder({
 }
 
 export default function ExamFolderTree({ exams, canSelect = false }: { exams: ExamRow[]; canSelect?: boolean }) {
-  const [tab, setTab] = useState<"folder" | "school">("folder");
+  const [tab, setTab] = useState<"folder" | "school" | "mock">("folder");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const selection = useMemo<Selection | null>(
     () =>
@@ -251,6 +252,9 @@ export default function ExamFolderTree({ exams, canSelect = false }: { exams: Ex
     });
   }, [exams]);
 
+  // 2026-10-24 "모의고사만 모은 탭 — 사설과 평가원 폴더를 나눠서": 평가원 / (교육청) / 사설 → 학년도 → 시험(lib/exams/mockSource.ts)
+  const mocks = useMemo(() => groupMocks(exams).filter((g) => g.count > 0 || g.source !== "교육청"), [exams]);
+
   return (
     <SelectionCtx.Provider value={selection}>
       <div>
@@ -269,6 +273,13 @@ export default function ExamFolderTree({ exams, canSelect = false }: { exams: Ex
             className={"badge " + (tab === "school" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600")}
           >
             학교별 기출
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("mock")}
+            className={"badge " + (tab === "mock" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600")}
+          >
+            모의고사
           </button>
         </div>
 
@@ -297,6 +308,25 @@ export default function ExamFolderTree({ exams, canSelect = false }: { exams: Ex
                 </ul>
               </div>
             )}
+          </div>
+        )}
+
+        {tab === "mock" && (
+          <div>
+            {mocks.map((g) => (
+              <Folder key={g.source} id={"m:" + g.source} label={g.source === "사설" ? "사설 모의고사" : g.source === "평가원" ? "평가원 (모의평가·수능)" : "교육청 학력평가"} exams={g.years.flatMap((y) => y.exams)} defaultOpen>
+                {g.years.length === 0 && <p className="text-sm text-slate-500 py-2">아직 없습니다.</p>}
+                {g.years.map((y, idx) => (
+                  <Folder key={y.label} id={`m:${g.source}:${y.label}`} label={y.label} exams={y.exams} defaultOpen={idx === 0}>
+                    <ul className="divide-y divide-slate-100">
+                      {y.exams.map((x) => (
+                        <ExamLeafRow key={x.id} x={x} />
+                      ))}
+                    </ul>
+                  </Folder>
+                ))}
+              </Folder>
+            ))}
           </div>
         )}
 
