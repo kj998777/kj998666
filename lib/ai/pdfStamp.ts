@@ -46,6 +46,8 @@ export type StampOptions = {
   watermark?: string;
   // 2026-09-29: 원본 쪽 안에 인쇄된 QR(학교·다른 학원 등)을 흰 칸으로 가림(AI로 찾아 둔 위치, lib/ai/qrMask.ts)
   maskQr?: boolean;
+  // 2026-10-24: 앞 표지 큰 제목·옆 상자(모의고사는 "사설 모의고사"/"모의고사 기출" · "수능 대비", lib/exams/mockSource.ts mockCoverStyle). 없으면 "내신 기출 문제지 · 내신 대비"
+  coverStyle?: { title?: string; badge?: string };
 };
 
 /**
@@ -103,7 +105,7 @@ export async function buildStampedExamPdf(client: Client, examId: string, opts: 
   // 2) 표지 + 백지 — 그림(PNG) 한 장을 쪽 전체에 꽉 채워 그린다(이 시점에는 out이 비어 있으므로
   //    순서대로 addPage 하면 그대로 맨 앞이 된다)
   if (opts.cover) {
-    const coverPng = await renderCoverPng(opts.examName, PW, PH);
+    const coverPng = await renderCoverPng(opts.examName, PW, PH, opts.coverStyle ?? {});
     const coverImg = await out.embedPng(coverPng);
     const coverPage = out.addPage([PW, PH]);
     coverPage.drawImage(coverImg, { x: 0, y: 0, width: PW, height: PH });
