@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import PurchaseButton from "./PurchaseButton";
 import { schoolOf } from "@/lib/exams/schoolOf";
+import { groupMocks } from "@/lib/exams/mockSource";
 
 // 기출 스토어 폴더 보기(2026-09-28 원장님 요청: "기출스토어도 폴더기능 도입").
 // 직원 시험 목록(app/(staff)/exams/ExamFolderTree.tsx)과 같은 순서로 나눈다:
@@ -175,7 +176,9 @@ function Nested({ exams, levels }: { exams: StoreExam[]; levels: Level[] }) {
 }
 
 export default function StoreFolderTree({ exams }: { exams: StoreExam[] }) {
-  const [view, setView] = useState<"folder" | "list">("folder");
+  const [view, setView] = useState<"folder" | "list" | "mock">("folder");
+  // 2026-10-24 모의고사 탭: 평가원 / (교육청) / 사설 → 학년도 → 시험(lib/exams/mockSource.ts, 직원 시험 목록과 같음)
+  const mocks = useMemo(() => groupMocks(exams).filter((g) => g.count > 0 || g.source !== "교육청"), [exams]);
 
   const { years, unclassified, collections } = useMemo(() => {
     const byYear = new Map<string, StoreExam[]>();
@@ -220,9 +223,33 @@ export default function StoreFolderTree({ exams }: { exams: StoreExam[] }) {
         >
           전체 목록
         </button>
+        <button
+          type="button"
+          onClick={() => setView("mock")}
+          className={"badge " + (view === "mock" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600")}
+        >
+          모의고사
+        </button>
       </div>
 
-      {view === "list" ? (
+      {view === "mock" ? (
+        <div>
+          {mocks.map((g) => (
+            <Folder key={g.source} label={g.source === "사설" ? "사설 모의고사" : g.source === "평가원" ? "평가원 (모의평가·수능)" : "교육청 학력평가"} exams={g.years.flatMap((y) => y.exams)} defaultOpen>
+              {g.years.length === 0 && <p className="text-sm text-slate-500 py-2">아직 없습니다.</p>}
+              {g.years.map((y, idx) => (
+                <Folder key={y.label} label={y.label} exams={y.exams} defaultOpen={idx === 0}>
+                  <ul className="divide-y divide-slate-100">
+                    {y.exams.map((e) => (
+                      <ExamRow key={e.id} e={e} />
+                    ))}
+                  </ul>
+                </Folder>
+              ))}
+            </Folder>
+          ))}
+        </div>
+      ) : view === "list" ? (
         <Nested exams={exams} levels={[]} />
       ) : (
         <div>
