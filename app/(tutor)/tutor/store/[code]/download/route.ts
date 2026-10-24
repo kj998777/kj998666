@@ -6,6 +6,7 @@ import { ensureTutorLinkToken, tutorSubmitPath } from "@/lib/tutor/link";
 import { contentDispositionAttachment } from "@/lib/http/contentDisposition";
 import { personLabel } from "@/lib/profile/label";
 import { examCodeVariants, pickExamByCode } from "@/lib/exams/codeVariants";
+import { mockCoverStyle } from "@/lib/exams/mockSource";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export async function GET(request: Request, { params }: { params: { code: string
   const supabase = await createClient();
   const { data: examRows } = (await supabase
     .from("exams")
-    .select("id, code, name, mock_csat")
+    .select("id, code, name, mock_csat, folder_kind")
     .in("code", examCodeVariants(code))
     .limit(5)) as any;
   const exam = pickExamByCode<any>(examRows, code);
@@ -92,6 +93,7 @@ export async function GET(request: Request, { params }: { params: { code: string
       submitUrl,
       fixes,
       watermark,
+      coverStyle: mockCoverStyle(exam), // 모의고사에 표지를 붙일 때의 제목(지금은 모의고사는 표지 없음)
     });
   } catch (e: any) {
     return Response.json({ ok: false, msg: e?.message || "PDF를 만들지 못했습니다." }, { status: 404 });
