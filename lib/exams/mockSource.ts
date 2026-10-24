@@ -10,8 +10,8 @@ export const MOCK_SOURCES: MockSource[] = ["평가원", "교육청", "사설"];
 
 const clean = (s: string) => String(s ?? "").normalize("NFC");
 
-export function isMockExam(e: { folder_kind?: string | null }): boolean {
-  return e.folder_kind === "모의고사";
+export function isMockExam(e: { folder_kind?: string | null; mock_csat?: boolean | null }): boolean {
+  return e.folder_kind === "모의고사" || e.mock_csat === true;
 }
 
 export function mockSource(name: string): MockSource {
@@ -70,4 +70,14 @@ export function groupMocks<T extends { name: string; folder_year?: string | null
     out.push({ source, years, count: list.length });
   }
   return out;
+}
+
+/**
+ * 시험지 앞 표지의 큰 제목·옆 상자(lib/ai/canvasStamp.ts renderCoverPng) — 2026-10-24 사용자
+ * "표지 넣을 때 내신기출이 아니라 사설은 사설 모의고사, 평가원은 모의고사 기출로".
+ * 모의고사가 아니면 undefined(기본 "내신 기출 문제지 · 내신 대비" 그대로).
+ */
+export function mockCoverStyle(e: { name: string; folder_kind?: string | null; mock_csat?: boolean | null }): { title: string; badge: string } | undefined {
+  if (!isMockExam(e)) return undefined;
+  return { title: mockSource(e.name) === "사설" ? "사설 모의고사" : "모의고사 기출", badge: "수능 대비" };
 }

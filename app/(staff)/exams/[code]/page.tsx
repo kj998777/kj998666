@@ -28,6 +28,7 @@ import QrScanButton from "./QrScanButton";
 import MockCsatPanel from "./MockCsatPanel";
 import GichulLinksPanel from "./GichulLinksPanel";
 import { groupGichul } from "@/lib/exams/gichulLinks";
+import { mockCoverStyle } from "@/lib/exams/mockSource";
 import { answersFromKeys, cleanGradeCuts, cleanPageMap, examMaxPoints } from "@/lib/exams/mockCsat";
 
 // 고3 사설 모의고사 "해설지에서 AI로 정답 읽기"(서버 액션 readMockAnswers)가 이 화면에서 돈다 — 기본 실행 시간으로 끊기지 않게(2026-10-11)
@@ -321,7 +322,7 @@ export default async function ExamDetailPage({
           <div className="flex flex-wrap items-center gap-4 text-sm">
             <label className="flex items-center gap-1.5">
               {/* 2026-10-11 원장님 "모의고사들만 앞표지 붙이지 말고 맨 뒤 QR·로고만" — 모의고사는 기본 끔 */}
-              <input type="checkbox" name="cover" value="1" defaultChecked={!isMock} /> 표지 넣기 (표지 + 백지 1쪽)
+              <input type="checkbox" name="cover" value="1" defaultChecked={!isMock} /> 표지 넣기 (표지 + 백지 1쪽{mockCoverStyle(exam) ? ` · 제목 “${mockCoverStyle(exam)!.title}”` : ""})
             </label>
             <label className="flex items-center gap-1.5">
               <input type="checkbox" name="addFix" value="1" defaultChecked /> 정정 사항을 정정 페이지로 추가

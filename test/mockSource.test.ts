@@ -1,6 +1,6 @@
 // 모의고사 탭 분류(lib/exams/mockSource.ts) — node --experimental-strip-types test/mockSource.test.ts
 import assert from "node:assert/strict";
-import { compareMock, groupMocks, mockSource, mockYearLabel } from "../lib/exams/mockSource";
+import { compareMock, groupMocks, mockCoverStyle, mockSource, mockYearLabel } from "../lib/exams/mockSource";
 
 let n = 0;
 function check(name: string, fn: () => void) {
@@ -51,6 +51,13 @@ check("묶기: 모의고사만, 출처 → 최근 학년도 먼저", () => {
       ["사설", 1, ["2027학년도"]],
     ]
   );
+});
+
+check("표지 제목: 사설 → 사설 모의고사, 평가원 → 모의고사 기출, 학교 기출은 그대로", () => {
+  assert.deepEqual(mockCoverStyle({ name: "2027 이해원 모의고사 시즌3 1회", folder_kind: "모의고사" }), { title: "사설 모의고사", badge: "수능 대비" });
+  assert.deepEqual(mockCoverStyle({ name: "2026학년도 수능 수학", folder_kind: "모의고사" }), { title: "모의고사 기출", badge: "수능 대비" });
+  assert.deepEqual(mockCoverStyle({ name: "2027학년도 9월 모의평가 수학 (평가원)", folder_kind: null, mock_csat: true }), { title: "모의고사 기출", badge: "수능 대비" });
+  assert.equal(mockCoverStyle({ name: "제주 대기고 1학년 2학기 중간", folder_kind: "중간", mock_csat: false }), undefined);
 });
 
 console.log(`mockSource: ${n}개 통과`);

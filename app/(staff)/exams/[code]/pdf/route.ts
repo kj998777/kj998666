@@ -2,6 +2,7 @@ import { requireApiRole } from "@/lib/auth/requireRole";
 import { createClient } from "@/lib/supabase/server";
 import { buildStampedExamPdf, type Correction } from "@/lib/ai/pdfStamp";
 import { contentDispositionAttachment } from "@/lib/http/contentDisposition";
+import { mockCoverStyle } from "@/lib/exams/mockSource";
 
 // QR·정오표 포함 시험지 PDF 다운로드. AI 비용이 들지 않는 기능이라 editor 이상이면 누구나 사용 가능.
 // GET 쿼리스트링으로 옵션을 받는 이유: <form method="get">으로 만든 체크박스만으로
@@ -12,7 +13,7 @@ export async function GET(request: Request, { params }: { params: { code: string
 
   const code = decodeURIComponent(params.code);
   const supabase = await createClient();
-  const { data: exam } = (await supabase.from("exams").select("id, code, name").eq("code", code).single()) as any;
+  const { data: exam } = (await supabase.from("exams").select("id, code, name, folder_kind, mock_csat").eq("code", code).single()) as any;
   if (!exam) return Response.json({ ok: false, msg: "시험을 찾을 수 없습니다." }, { status: 404 });
 
   const url = new URL(request.url);
@@ -50,6 +51,7 @@ export async function GET(request: Request, { params }: { params: { code: string
       examCode: exam.code,
       submitUrl,
       fixes,
+      coverStyle: mockCoverStyle(exam), // 모의고사 표지 제목: 사설 모의고사 / 모의고사 기출
     });
   } catch (e: any) {
     return Response.json({ ok: false, msg: e?.message || "PDF를 만들지 못했습니다." }, { status: 400 });
