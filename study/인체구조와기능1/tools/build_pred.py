@@ -112,7 +112,8 @@ for num in sorted(qs):
     sec = [m.group(1) for m in re.finditer(r'^## ([A-Z])\. ', qpart, flags=re.M) if m.start() < pos][-1]
     c = {'F': 'J5', 'G': 'J6'}.get(sec, c)
     s = ('학생발표 원문' if kind == '원문' else '학생발표 변형') + f' · {topic}'
-    Q.append(make(92000 + num, c, topic, s, t, ans[num]))
+    # 97번부터는 92097~가 다른 묶음(921xx 상지 조합형)과 겹치므로 95000대
+    Q.append(make((92000 if num < 97 else 95000) + num, c, topic, s, t, ans[num]))
 
 # ---------- 교수님별_예상문제.md (스타일 기반 문항) ----------
 mn = (D / '교수님별_예상문제.md').read_text()

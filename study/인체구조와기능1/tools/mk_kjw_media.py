@@ -9,6 +9,7 @@ from pathlib import Path
 import pymupdf
 
 PRED, PDFD, OUT, MEDIA = sys.argv[1:5]
+FROM = int(sys.argv[5]) if len(sys.argv) > 5 else 0   # 이 번호부터만 (새로 올라온 발표만 다시 만들 때)
 PDFD, OUT = Path(PDFD), Path(OUT)
 OUT.mkdir(parents=True, exist_ok=True)
 
@@ -58,11 +59,24 @@ DECK = {
     (71, 92): ('류현지', '16rLdYMd3Yf84b271RGjjfMn6Sp7Pv9VG'),
     (72, 93): ('고유한', '1Jm1Fy15AV1twwpIV_VJC_fh8aVSMDii9'),
     (75, 96): ('이예준', '164P4DAXYOhs9Q01YkLNUNBDyEVXPSZLE'),
+    # 2026-10-22 개별발표 「3 골반」에 추가로 올라온 발표 (원문 97~109, 변형 110~122; 109·122 관절과인대는 PDF가 커서 캡처 없음)
+    (97, 110): ('강성준', '11P9eNEtKzFcdSD09zeSu_8-7zXIP3Ctz'),
+    (98, 111): ('정석원', '12OSs7mISi1X7uP45YlzBYhWOkL6LWvF_'),
+    (99, 112): ('최우혁', '1CeOIJK6xoQWKAZpcFSX0BkDbVXkQTTFb'),
+    (100, 113): ('이재원', '1IvwxJwWiTJUdjCESVogD7tUW5LzgdVYk'),
+    (101, 114): ('김정현', '1KSCyk0kFIroRvUktE6xLzdsjSxA8EWul'),
+    (102, 115): ('강승완', '1NcEB2Ndi2HiB5sXuS6JRjcYRxrANCFFK'),
+    (103, 116): ('이해인', '1UcQTuZyN_2aPlIZrVDHbn-KKDImMqMvj'),
+    (104, 117): ('전지현', '1_KLUjUO6WuH3rprHGhOEryrVAmOHC3kC'),
+    (105, 118): ('송민경', '1jTgSLIkuqMQ6qP08CdC7OPkqLwS5vbd1'),
+    (106, 119): ('김준형', '1rLjxz-sR9_ssKGKwlKDM1gjd0OeSBsKj'),
+    (107, 120): ('김연우', '1wJCyxjkVQZ1AF0a6keRezMG_5kPvgvpj'),
+    (108, 121): ('정윤서', '1dvp9OQHzuh7dMzmOxR2faUuhScjOTgJK'),
 }
 # 문제 화면에 붙일 그림: 번호 -> (쪽, 잘라낼 영역(비율 x0,y0,x1,y1))
 QIMG = {45: (9, (0, 0.1, 1, 1)), 72: (4, (0.266, 0.118, 0.68, 0.866))}
 # 자동 선택 대신 직접 고른 해설 근거 쪽 (글자가 이미지라 자동 선택이 안 되는 발표 등)
-PAGES = {7: [3, 4, 5], 8: [4], 45: [4, 8]}
+PAGES = {7: [3, 4, 5], 8: [4], 45: [4, 8], 97: [5, 2], 110: [5]}
 QUIZ = re.compile(r'문제|퀴즈|quiz|Q\s*\.', re.I)
 
 def is_quiz(t):
@@ -90,8 +104,11 @@ def toks(s):
 
 pred = json.loads(Path(PRED).read_text())
 Q = {q['id'] - 92000: q for q in pred['q'] if 92001 <= q['id'] <= 92099}
+Q.update({q['id'] - 95000: q for q in pred['q'] if 95097 <= q['id'] <= 95199})
 media = {}
 for nums, (who, fid) in DECK.items():
+    if max(nums) < FROM:
+        continue
     d = pymupdf.open(PDFD / f'{fid}.pdf')
     texts = [pg.get_text() for pg in d]
     for n in nums:
@@ -121,7 +138,7 @@ for nums, (who, fid) in DECK.items():
         if n in QIMG:
             pg, clip = QIMG[n]
             ent['qi'] = [render(fid, pg, clip)]
-        media[str(92000 + n)] = ent
+        media[str((92000 if n < 97 else 95000) + n)] = ent
 
 Path(MEDIA).write_text(json.dumps(media, ensure_ascii=False, indent=1))
 print(len(media), 'questions', len(list(OUT.glob('*.jpg'))), 'images',
