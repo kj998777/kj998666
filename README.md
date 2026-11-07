@@ -140,6 +140,9 @@ lib/auth/requireRole.ts        # 역할 검사(이중 방어: 화면 + 서버 �
 lib/supabase/{client,server,admin}.ts  # 브라우저용 / 세션용 / 서비스롤용 클라이언트
 supabase/migrations/0001_init.sql      # 전체 스키마 + RLS 정책 + 채점 기록 함수
 scripts/migrate.ts             # 구글시트 → Supabase 1회성 이전 스크립트
+app/api/mcp/                   # Claude 커넥터(MCP) — 도구는 lib/mcp/tools.ts
+app/api/oauth/[action]/, app/oauth/authorize/  # 커넥터 연결용 OAuth 2.1(승인 화면·토큰)
+app/(staff)/admin/mcp/         # 연결 방법·연결된 계정 끊기·사용 기록(관리자)
 ```
 
 ## 4. 알아두면 좋은 설계 결정
@@ -153,3 +156,14 @@ scripts/migrate.ts             # 구글시트 → Supabase 1회성 이전 스크
   있고, 익명 사용자에게는 RLS로 원천 차단되어 있습니다.
 - 이번 v1에는 AI 자동채점·PDF 보고서·QR·시험지 디지털화가 없습니다. 필요하면 이후 버전에서
   Anthropic API 연동을 추가로 붙일 수 있습니다(그때부터 API 사용료가 별도 발생).
+
+## 5. Claude 커넥터(MCP, 2026-11-07)
+
+claude.ai(웹·앱·Cowork) → 설정 → 커넥터 → **커스텀 커넥터 추가**에 `https://medicchart.vercel.app/api/mcp`를 넣고
+연결하면, 메딕차트 승인 화면에서 직원 계정으로 **허용**한 뒤 대화로 시험을 찾고·모의고사를 올리고·정답표/해설/등급컷을 고칠 수 있습니다.
+
+- 직원(관리자·편집자·열람자)만 연결됩니다. 할 수 있는 일은 계정 역할과 같습니다 — 열람자는 보기만, 편집자는 시험 만들기·PDF 올리기·정답/해설/등급컷/해설 쪽/시험 정보, 관리자는 시험 열기·닫기까지.
+- 지우는 도구는 없고, 모든 호출은 `mcp_audit`에 남습니다(관리자 화면 **Claude 연결**에서 보기·연결 끊기).
+- 도구는 AI를 부르지 않습니다. 정답표를 고치면 화면에서와 똑같이 해설의 정답 표시를 맞추고 제출을 다시 채점합니다.
+- 돌려보낼 주소는 claude.ai·claude.com·localhost만 받습니다(피싱 방지). 토큰은 sha256만 저장, access 1시간·refresh 60일(쓸 때마다 교체).
+- DB: `supabase/migrations/0059_mcp_connector.sql`.
