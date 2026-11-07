@@ -77,7 +77,7 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Re
           <li key={t}>{t}</li>
         ))}
       </ul>
-      <p className="text-xs text-slate-500">시험·제출 기록을 지우는 일은 할 수 없습니다. 고친 내용은 모두 기록되고, 관리자 화면(MCP 연결)에서 언제든 연결을 끊을 수 있습니다.</p>
+      <p className="text-xs text-slate-500">시험·제출 기록을 지우는 일은 할 수 없습니다. 고친 내용은 모두 기록되고, 관리자 화면의 &ldquo;Claude 연결&rdquo;에서 언제든 연결을 끊을 수 있습니다.</p>
       <form action={decideAuthorize} className="flex gap-2 pt-1">
         {Object.entries(p).map(([k, v]) => (
           <input key={k} type="hidden" name={k} value={v} />
