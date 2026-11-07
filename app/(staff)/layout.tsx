@@ -85,6 +85,9 @@ export default async function StaffLayout({ children }: { children: React.ReactN
               <Link href="/admin/logic-types" className="nav-link">유형 분류</Link>
             )}
             {session.role === "admin" && (
+              <Link href="/admin/mcp" className="nav-link">Claude 연결</Link>
+            )}
+            {session.role === "admin" && (
               <Link href="/admin/bug-reports" className="nav-link">
                 버그 신고
                 {bugCount > 0 && (
