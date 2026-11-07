@@ -51,9 +51,13 @@ export default function LoginPage() {
   const [msg, setMsg] = useState("");
   // 2026-10-01: 과외선생님 친구 초대(0046) — /login?invite=코드 로 들어오면 회원가입 화면으로 바로 열고, 가입 기록에 코드를 남긴다
   const [inviteCode, setInviteCode] = useState("");
+  // 2026-11-07 메딕차트 MCP 커넥터: 승인 화면(/oauth/authorize?…)에서 로그인하러 왔으면 로그인 뒤 그 화면으로 돌아간다(그 주소만 허용)
+  const [nextPath, setNextPath] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const nx = params.get("next") || "";
+    if (/^\/oauth\/authorize\?/.test(nx)) setNextPath(nx);
     const inv = (params.get("invite") || "").trim().toUpperCase();
     if (/^[A-Z0-9]{6}$/.test(inv)) {
       setInviteCode(inv);
@@ -129,6 +133,7 @@ export default function LoginPage() {
           .maybeSingle();
         if ((profile as any)?.role === "tutor") dest = "/tutor/dashboard";
         else if ((profile as any)?.role === "대기") dest = "/pending";
+        else if (nextPath) dest = nextPath;
       }
       setBusy(false);
       // 서버 컴포넌트/미들웨어가 새 세션 쿠키를 확실히 읽도록 클라이언트 라우팅 대신

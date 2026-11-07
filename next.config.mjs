@@ -40,6 +40,17 @@ const nextConfig = {
     // 2026-10-01: 입학테스트·문항 은행 시험지 앞 표지·뒤 로고(app/api/cover)
     "/api/cover": ["./assets/fonts/**", "./assets/branding/**"],
   },
+  // 2026-11-07 메딕차트 MCP 커넥터(0059): OAuth 안내 주소는 표준상 /.well-known/… 이어야 한다(뒤에 /api/mcp가 붙어 올 수도 있음).
+  // app/ 아래 점(.) 폴더 대신 API 라우트로 넘긴다.
+  async rewrites() {
+    return [
+      { source: "/.well-known/oauth-authorization-server", destination: "/api/oauth/metadata" },
+      { source: "/.well-known/oauth-authorization-server/:path*", destination: "/api/oauth/metadata" },
+      { source: "/.well-known/openid-configuration", destination: "/api/oauth/metadata" },
+      { source: "/.well-known/oauth-protected-resource", destination: "/api/oauth/resource" },
+      { source: "/.well-known/oauth-protected-resource/:path*", destination: "/api/oauth/resource" },
+    ];
+  },
 };
 
 export default nextConfig;
