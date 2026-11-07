@@ -23,7 +23,8 @@ const rpcErr = (id: Rpc["id"], code: number, message: string) => ({ jsonrpc: "2.
 function unauthorized(request: Request, desc = "메딕차트 계정으로 연결해 주세요.") {
   const origin = originOf(request);
   return json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: desc } }, 401, {
-    "WWW-Authenticate": `Bearer realm="medicchart", resource_metadata="${origin}/.well-known/oauth-protected-resource", error="invalid_token", error_description="${desc.replace(/"/g, "'")}"`,
+    // 머리말 값은 Latin-1만 된다(한글을 넣으면 Response를 만들 때 TypeError → 500). 한국어 안내는 본문에만.
+    "WWW-Authenticate": `Bearer realm="medicchart", resource_metadata="${origin}/.well-known/oauth-protected-resource", error="invalid_token", error_description="Sign in with a Medicchart staff account"`,
   });
 }
 
