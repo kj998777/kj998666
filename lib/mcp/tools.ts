@@ -9,6 +9,9 @@ import { mcChoices } from "@/lib/review/mcAnswer";
 import { guessFolder } from "@/lib/exams/guessFolder";
 import { buildKeyRows, cleanGradeCuts, cleanPageMap, isChoiceKey, type CsatAnswers } from "@/lib/exams/mockCsat";
 import { mockSource } from "@/lib/exams/mockSource";
+import { detectJejuSchool } from "@/lib/jejuSchools";
+import { startExamAiJob } from "@/lib/ai/pipeline";
+import { startDigitizeJob } from "@/lib/ai/digitize";
 import type { McpAuth, StaffRole } from "./oauth";
 import { ToolError, arr, asArgs, auditArgs, bool, examCode, int, looksLikePdf, num, obj, oneOf, searchWord, str, type Args } from "./args";
 
@@ -17,6 +20,8 @@ import { ToolError, arr, asArgs, auditArgs, bool, examCode, int, looksLikePdf, n
 // DB는 서비스롤로 쓰지만(토큰 사용자의 쿠키가 없으므로), 화면의 서버 액션과 같은 규칙을 여기서 그대로 지킨다
 // (정답표를 고치면 해설 정답 표시 맞추기 + 다시 채점, 시험 열기는 관리자 + 정답표 필수 — mcp_set_exam_status).
 // 지우는 도구는 일부러 없다. 모든 호출은 mcp_audit에 남는다.
+// 2026-11-09: AI 자동 처리 시작(start_ai_processing, 관리자 — 화면의 "AI 자동 처리"와 같은 작업, 크레딧 씀)·진행 확인(ai_status) 추가,
+//   create_exam이 이름으로 제주 학교를 알아내 is_jeju를 켠다.
 
 const BUCKET = "exam-pdfs";
 const PDF_MAX = 50 * 1024 * 1024;
@@ -336,6 +341,55 @@ export const TOOLS: ToolDef[] = [
     },
   },
 
+  {
+    name: "ai_status",
+    title: "AI 처리 진행 확인",
+    description:
+      "시험들의 AI 자동 처리(문항 읽기 → 풀이 → 검수)와 스캔본 디지털화 진행 상황. codes에 여러 시험 코드를 한 번에 줄 수 있다. 상태(검수대기·열림)와 정답표 문항 수도 같이 보여 준다.",
+    minRole: "viewer",
+    write: false,
+    inputSchema: schema({ codes: { type: "array", items: { type: "string" }, maxItems: 50, description: "시험 코드 목록" } }, ["codes"]),
+    async run(a, _ctx, db) {
+      const codes = Array.from(new Set((arr(a, "codes", { required: true, max: 50 }) ?? []).map((x) => String(x).trim()).filter(Boolean)));
+      if (!codes.length) throw new ToolError("codes에 시험 코드를 하나 이상 주세요.");
+      const { data: exams, error } = await db.from("exams").select("id, code, name, status").in("code", codes);
+      if (error) throw new ToolError("시험을 불러오지 못했습니다: " + error.message);
+      const ids = ((exams ?? []) as any[]).map((e) => e.id);
+      const [jobs, dgs, keys] = ids.length
+        ? await Promise.all([
+            db.from("exam_jobs").select("exam_id, stage, message, state, updated_at").in("exam_id", ids),
+            db.from("digitize_jobs").select("exam_id, stage, message, updated_at").in("exam_id", ids),
+            db.from("answer_key").select("exam_id").in("exam_id", ids),
+          ])
+        : [{ data: [] }, { data: [] }, { data: [] }];
+      const jobBy = new Map(((jobs.data ?? []) as any[]).map((j) => [j.exam_id, j]));
+      const dgBy = new Map(((dgs.data ?? []) as any[]).map((j) => [j.exam_id, j]));
+      const keyCount = new Map<string, number>();
+      for (const k of (keys.data ?? []) as any[]) keyCount.set(k.exam_id, (keyCount.get(k.exam_id) ?? 0) + 1);
+      const found = new Set(((exams ?? []) as any[]).map((e) => e.code));
+      return {
+        exams: ((exams ?? []) as any[])
+          .sort((x, y) => codes.indexOf(x.code) - codes.indexOf(y.code))
+          .map((e) => {
+            const j = jobBy.get(e.id);
+            const qs = Array.isArray(j?.state?.qs) ? j.state.qs.length : 0;
+            const done = typeof j?.state?.done === "number" ? j.state.done : 0;
+            const dg = dgBy.get(e.id);
+            return {
+              code: e.code,
+              name: e.name,
+              status: e.status,
+              answer_key_rows: keyCount.get(e.id) ?? 0,
+              ai: j ? { stage: j.stage, message: j.message, progress: qs ? `${done}/${qs}` : undefined, updated_at: j.updated_at } : null,
+              digitize: dg ? { stage: dg.stage, message: dg.message, updated_at: dg.updated_at } : null,
+            };
+          }),
+        not_found: codes.filter((c) => !found.has(c)),
+        note: "AI 작업은 서버가 1분 안팎마다 저절로 진행시킨다(화면을 열어 둘 필요 없음). 풀이 단계는 보통 10~40분.",
+      };
+    },
+  },
+
   // ───────────── 쓰기(편집자) ─────────────
   {
     name: "create_exam",
@@ -354,6 +408,7 @@ export const TOOLS: ToolDef[] = [
         folder_grade: { type: "integer", minimum: 1, maximum: 3 },
         folder_term: { type: "integer", minimum: 1, maximum: 2 },
         folder_kind: { type: "string", enum: ["중간", "기말", "기타", "모의고사"] },
+        is_jeju: { type: "boolean", description: "제주 학교 시험 표시(비우면 이름으로 자동 판단)" },
       },
       ["name"]
     ),
@@ -382,12 +437,12 @@ export const TOOLS: ToolDef[] = [
           };
       const { data, error } = await db
         .from("exams")
-        .insert({ code, name, status: "닫힘", created_by: ctx.auth.userId, ...row })
-        .select("id, code, name, school_level, folder_year, folder_grade, folder_term, folder_kind, mock_csat")
+        .insert({ code, name, status: "닫힘", created_by: ctx.auth.userId, is_jeju: bool(a, "is_jeju") ?? (!mock && detectJejuSchool(name).jeju), ...row })
+        .select("id, code, name, school_level, folder_year, folder_grade, folder_term, folder_kind, mock_csat, is_jeju")
         .single();
       if (error) throw new ToolError(error.code === "23505" ? `시험 코드 "${code}"는 이미 있습니다. 다른 코드를 주세요.` : "시험을 만들지 못했습니다: " + error.message);
       touch(data.code);
-      return { created: true, code: data.code, name: data.name, folder: folderLabel(data), mock: !!data.mock_csat, page: `${ctx.origin}/exams/${encodeURIComponent(data.code)}` };
+      return { created: true, code: data.code, name: data.name, folder: folderLabel(data), mock: !!data.mock_csat, is_jeju: !!data.is_jeju, page: `${ctx.origin}/exams/${encodeURIComponent(data.code)}` };
     },
   },
   {
@@ -729,6 +784,40 @@ export const TOOLS: ToolDef[] = [
   },
 
   // ───────────── 관리자 ─────────────
+  {
+    name: "start_ai_processing",
+    title: "AI 자동 처리 시작",
+    description:
+      "이미 올린 문제지 PDF로 AI 자동 처리(문항 읽기 → 정답·풀이·단원·난이도 → 검수 대기)를 시작한다 — 시험 화면의 'AI 자동 처리'와 같은 작업이며 AI 크레딧을 쓴다. 관리자만. 학교 시험용(수능형 모의고사는 안 됨). scanned=true면 스캔본으로 표시하고 디지털화(다시 조판)도 같이 시작한다. 학생 제출과 정답표가 이미 있는 시험은 막힌다. 진행은 ai_status로 본다.",
+    minRole: "admin",
+    write: true,
+    inputSchema: schema(
+      {
+        code: S.code,
+        scanned: { type: "boolean", description: "스캔본(사진·스캔 그림 PDF)이면 true — 디지털화도 같이 시작" },
+        digitize: { type: "boolean", description: "디지털화를 따로 켜고 끌 때(기본: scanned와 같음)" },
+      },
+      ["code"]
+    ),
+    async run(a, _ctx, db) {
+      const e = await examByCode(db, examCode(a));
+      if (e.mock_csat) throw new ToolError("수능형 모의고사는 AI 자동 처리 대신 set_mock_answers·해설지 PDF를 씁니다.");
+      if (e.status === "검수대기") throw new ToolError("이미 AI 처리가 끝나 검수 대기 중인 시험입니다. 화면에서 검수 확정해 주세요.");
+      const { data: meta } = await db.from("exam_pdf_meta").select("exam_id, is_scanned").eq("exam_id", e.id).maybeSingle();
+      if (!meta) throw new ToolError("문제지 PDF가 없습니다. upload_exam_pdf로 먼저 올려 주세요.");
+      const scanned = bool(a, "scanned");
+      if (scanned !== undefined && scanned !== meta.is_scanned) await db.from("exam_pdf_meta").update({ is_scanned: scanned }).eq("exam_id", e.id);
+      const r = await startExamAiJob(db, e.id);
+      if (!r.ok) throw new ToolError(r.msg);
+      let digitize: string | undefined;
+      if (bool(a, "digitize") ?? scanned === true) {
+        const d = await startDigitizeJob(db, e.id);
+        digitize = d.ok ? "디지털화도 시작했습니다." : "디지털화 시작 실패: " + d.msg;
+      }
+      touch(e.code);
+      return { ok: true, code: e.code, started: true, digitize, note: "AI 처리를 시작했습니다. 진행은 ai_status로 확인하세요(보통 10~40분)." };
+    },
+  },
   {
     name: "set_exam_status",
     title: "시험 열기·닫기",
