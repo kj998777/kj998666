@@ -15,7 +15,7 @@ const ROLE_LABEL: Record<string, string> = { admin: "관리자", editor: "편집
 const ROLE_CAN: Record<string, string[]> = {
   viewer: ["시험·정답표·문항 해설·제출 결과 보기"],
   editor: ["시험·정답표·문항 해설·제출 결과 보기", "시험 만들기, 문제지·해설지 PDF 올리기", "정답표·해설·등급컷·해설 쪽·시험 정보 고치기"],
-  admin: ["시험·정답표·문항 해설·제출 결과 보기", "시험 만들기, 문제지·해설지 PDF 올리기", "정답표·해설·등급컷·해설 쪽·시험 정보 고치기", "시험 제출 열기·닫기"],
+  admin: ["시험·정답표·문항 해설·제출 결과 보기", "시험 만들기, 문제지·해설지 PDF 올리기", "정답표·해설·등급컷·해설 쪽·시험 정보 고치기", "시험 제출 열기·닫기, AI 자동 처리 시작(크레딧 사용)"],
 };
 
 function Box({ title, children }: { title: string; children: React.ReactNode }) {
