@@ -112,7 +112,7 @@ export default async function AdminMcpPage() {
 
       <section className="card space-y-2">
         <h2 className="font-semibold">도구</h2>
-        <p className="text-xs text-slate-500">지우는 도구는 없습니다. 모든 호출은 아래 &ldquo;최근 사용 기록&rdquo;에 남습니다. 도구는 AI를 부르지 않습니다(크레딧 안 씀).</p>
+        <p className="text-xs text-slate-500">지우는 도구는 없습니다. 모든 호출은 아래 &ldquo;최근 사용 기록&rdquo;에 남습니다. AI를 쓰는 도구는 &ldquo;AI 자동 처리 시작&rdquo;(관리자만, 시험 화면의 AI 자동 처리와 같음) 하나뿐이고, 나머지는 크레딧을 쓰지 않습니다.</p>
         <div className="grid gap-3 sm:grid-cols-3 text-sm">
           {(["viewer", "editor", "admin"] as const).map((r) => (
             <div key={r}>

@@ -14,7 +14,8 @@ const SERVER_INFO = { name: "medicchart", title: "메딕차트", version: "1.0.0
 const INSTRUCTIONS =
   "메딕차트(제주 수학학원 시험·채점 관리) 도구. 시험은 code로 가리킨다 — 모르면 search_exams부터. " +
   "모의고사 올리기 순서: create_exam(mock=true, 닫힘으로 생김) → upload_exam_pdf(problem, solution) → set_mock_answers → set_grade_cuts → set_solution_pages → 관리자가 set_exam_status(open=true). " +
-  "학교 시험 정답표는 set_answer_key, 해설은 update_item. 지우는 도구는 없고, 모든 호출은 기록된다. 학생 이름·점수는 학원 밖으로 옮기지 말 것.";
+  "학교 기출 올리기: create_exam → upload_exam_pdf(problem) → (관리자) start_ai_processing(스캔본이면 scanned=true) → ai_status로 진행 확인 → 검수대기면 화면에서 검수 확정. " +
+  "학교 시험 정답표는 set_answer_key, 해설은 update_item. 지우는 도구는 없고, 모든 호출은 기록된다. AI를 쓰는 도구는 start_ai_processing뿐(크레딧 씀). 학생 이름·점수는 학원 밖으로 옮기지 말 것.";
 
 type Rpc = { jsonrpc?: string; id?: string | number | null; method?: string; params?: any };
 
