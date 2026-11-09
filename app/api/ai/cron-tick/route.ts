@@ -2,13 +2,14 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { tickExamJob } from "@/lib/ai/pipeline";
+import { tickDigitizeJob } from "@/lib/ai/digitize";
 import { isActiveStage } from "@/lib/ai/job";
 import { tickLocateJobs } from "@/lib/ai/locate";
 import { tickQrScans } from "@/lib/ai/qrMask";
 import { runBackupIfDue } from "@/lib/ops/backup";
 
 // 외부 무료 크론 서비스(cron-job.org 등)가 주기적으로 이 엔드포인트를 호출해서, 브라우저 탭을
-// 열어두지 않아도 AI 시험 자동처리(exam_jobs)가 계속 한 걸음씩 진행되게 한다.
+// 열어두지 않아도 AI 시험 자동처리(exam_jobs)와 스캔본 디지털화(digitize_jobs)가 계속 한 걸음씩 진행되게 한다.
 // 기존에는 app/(staff)/exams/ai-actions.ts의 pollAiJob()을 AiJobPanel.tsx가 4초마다 호출하는
 // 방식뿐이어서, 그 화면을 담당 선생님이 계속 열어두고 있어야만 처리가 이어졌다(탭을 닫으면 멈춤).
 export const dynamic = "force-dynamic";
@@ -66,6 +67,27 @@ async function handle(request: Request) {
 
   const stillActive = results.filter((r) => isActiveStage(r.stage as any)).length;
 
+  // 2026-11-09: 스캔본 디지털화(digitize_jobs)도 크론으로 진행 — 전에는 시험 화면을 열어 둬야만(4초 폴링) 넘어갔다.
+  // MCP(start_ai_processing scanned=true)나 여러 시험을 한꺼번에 올리면 화면을 열 사람이 없어 dg_upload에 멈춰 있었다.
+  let digitized = 0;
+  try {
+    const { data: dgs } = await (admin.from("digitize_jobs") as any)
+      .select("exam_id, stage")
+      .in("stage", ["dg_upload", "dg_submit", "dg_wait"])
+      .order("updated_at", { ascending: true })
+      .limit(20);
+    for (const d of (dgs as any[]) ?? []) {
+      if (Date.now() - started > TIME_BUDGET_MS) break;
+      try {
+        if (await tickDigitizeJob(admin, d.exam_id, 0)) digitized++;
+      } catch {
+        /* tickDigitizeJob이 오류를 저장한다 — 다음 시험으로 */
+      }
+    }
+  } catch {
+    /* 다음 크론 주기에 다시 */
+  }
+
   // 문항 잘라 보기 영역 다시 찾기(lib/ai/locate.ts, 0024) — 남은 시간 안에서만. 0024 전이면 아무것도 안 함.
   let located = 0;
   try {
@@ -89,7 +111,7 @@ async function handle(request: Request) {
       /* 다음 크론 주기에 다시 */
     }
   }
-  return NextResponse.json({ ok: true, checked: jobs?.length ?? 0, ticked: results.length, stillActive, located, qrScanned, backup });
+  return NextResponse.json({ ok: true, checked: jobs?.length ?? 0, ticked: results.length, stillActive, digitized, located, qrScanned, backup });
 }
 
 export async function GET(request: Request) {
