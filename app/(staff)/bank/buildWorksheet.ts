@@ -282,77 +282,144 @@ function dropCutOffBottomLine(cv: HTMLCanvasElement): boolean {
 }
 
 /**
- * 2026-11-26: 점 없는 번호("8  명제 …")로 시작하는 글자 PDF(매쓰플랫 조판 등)에서 오린 문항 — 첫 줄 맨 앞 숫자를 지운다.
- * 숫자 조각(각각 줄 높이의 0.72배 이하 폭)이 1~3개이고 뒤에 줄 높이의 0.6배 넘는 빈칸이 있을 때만(한글·수식 글자를 지우지 않게).
+ * 2026-11-26: 점 없는 번호("8  명제 …")로 시작하는 글자 PDF(매쓰플랫 조판 등)에서 오린 문항.
+ * 줄 [top, bot]의 맨 앞(xFrom~xTo 안에서 시작하고, 더 왼쪽엔 잉크가 없는) 덩어리가 숫자 모양인지 본다 —
+ * 조각 1~3개가 높이가 서로 비슷하고(첫 조각 높이 hd의 0.75~1.3배, 아래 끝이 나란함) 폭이 hd의 0.8배 이하이며,
+ * 뒤에 hd의 0.6배 넘는 빈칸이 있을 때만(한글·수식 글자를 번호로 보지 않게). 줄에 분수가 있어 줄이 높아도 숫자 높이로 본다.
  */
-function eraseLeadingBareNumber(cv: HTMLCanvasElement): boolean {
-  const w = cv.width;
-  const h = cv.height;
-  const ctx = cv.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
-  const d = ctx.getImageData(0, 0, w, h).data;
-  const dark = (x: number, y: number) => {
-    const p = (y * w + x) * 4;
-    return d[p] * 0.3 + d[p + 1] * 0.59 + d[p + 2] * 0.11 < 170;
-  };
-  const xLim = Math.round(w * 0.5);
-  const rowInk = (y: number) => {
-    for (let x = 0; x < xLim; x++) if (dark(x, y)) return true;
-    return false;
-  };
-  let top = -1;
-  for (let y = 0; y < Math.round(h * 0.4); y++) if (rowInk(y)) { top = y; break; }
-  if (top < 0) return false;
-  let bot = top;
-  let gapRows = 0;
-  for (let y = top; y < h; y++) {
-    if (rowInk(y)) {
-      bot = y;
-      gapRows = 0;
-    } else if (++gapRows >= 3) break;
-  }
-  const H = bot - top + 1;
-  if (H < 8 || H > h * 0.25) return false;
+function bareNumberAt(
+  dark: (x: number, y: number) => boolean,
+  w: number,
+  top: number,
+  bot: number,
+  xFrom: number,
+  xTo: number
+): { x0: number; x1: number; hd: number } | null {
   const colInk = (x: number) => {
     for (let y = top; y <= bot; y++) if (dark(x, y)) return true;
     return false;
   };
   let x0 = -1;
-  for (let x = 0; x < Math.round(w * 0.15); x++) if (colInk(x)) { x0 = x; break; }
-  if (x0 < 0) return false;
-  const parts: [number, number][] = [];
-  let a = x0;
-  let white = 0;
-  let x = x0;
-  const bigGap = Math.max(4, Math.round(H * 0.6));
-  for (; x < w; x++) {
-    if (colInk(x)) {
-      if (white > 0) {
-        parts.push([a, x - white - 1]);
-        a = x;
-      }
-      white = 0;
-    } else if (++white >= bigGap) break;
-  }
-  if (white < bigGap) return false;
-  parts.push([a, x - white]);
-  if (parts.length < 1 || parts.length > 3) return false;
-  if (parts.some(([p0, p1]) => p1 - p0 + 1 > H * 0.72 || p1 - p0 + 1 < 2)) return false;
-  // 숫자는 줄 높이의 대부분을 차지한다(괄호·점·첨자 같은 작은 기호가 아님)
-  for (const [p0, p1] of parts) {
+  for (let x = Math.max(0, xFrom); x < Math.min(w, xTo); x++) if (colInk(x)) { x0 = x; break; }
+  if (x0 < 0) return null;
+  for (let x = 0; x < x0; x++) if (colInk(x)) return null; // 더 왼쪽에 글자가 있으면 줄 맨 앞이 아님
+  const vext = (p0: number, p1: number): [number, number] => {
     let yt = -1;
     let yb = -1;
-    for (let y = top; y <= bot; y++)
+    for (let y = top; y <= bot; y++) {
       for (let xx = p0; xx <= p1; xx++)
         if (dark(xx, y)) {
           if (yt < 0) yt = y;
           yb = y;
           break;
         }
-    if (yt < 0 || yb - yt + 1 < H * 0.55) return false;
+    }
+    return [yt, yb];
+  };
+  const parts: [number, number][] = [];
+  let a = x0;
+  let x = x0;
+  let white = 0;
+  let limit = Math.max(4, Math.round((bot - top + 1) * 0.3));
+  for (; x < w; x++) {
+    if (colInk(x)) {
+      if (white > 0) {
+        parts.push([a, x - white - 1]);
+        a = x;
+        if (parts.length === 1) {
+          const [t, b] = vext(parts[0][0], parts[0][1]);
+          limit = Math.max(4, Math.round((b - t + 1) * 0.6));
+        }
+      }
+      white = 0;
+    } else if (++white >= limit) break;
   }
-  const xEnd = parts[parts.length - 1][1];
+  if (white < limit) return null;
+  parts.push([a, x - white]);
+  if (parts.length > 3) return null;
+  const ex = parts.map(([p0, p1]) => vext(p0, p1));
+  const [t0, b0] = ex[0];
+  const hd = b0 - t0 + 1;
+  if (t0 < 0 || hd < 6) return null;
+  for (let i = 0; i < parts.length; i++) {
+    const [p0, p1] = parts[i];
+    const [t, b] = ex[i];
+    const wd = p1 - p0 + 1;
+    if (wd > hd * 0.8 || wd < 2) return null;
+    if (b - t + 1 < hd * 0.75 || b - t + 1 > hd * 1.3) return null;
+    if (Math.abs(b - b0) > hd * 0.2) return null;
+  }
+  return { x0, x1: parts[parts.length - 1][1], hd };
+}
+
+/** 잉크 줄(글줄) 나누기: 빈 행이 2줄 이상이면 끊는다 */
+function inkLines(dark: (x: number, y: number) => boolean, w: number, h: number): { top: number; bot: number }[] {
+  const rowInk = (y: number) => {
+    for (let x = 0; x < w; x += 1) if (dark(x, y)) return true;
+    return false;
+  };
+  const out: { top: number; bot: number }[] = [];
+  let top = -1;
+  let blank = 0;
+  for (let y = 0; y < h; y++) {
+    if (rowInk(y)) {
+      if (top < 0) top = y;
+      blank = 0;
+    } else if (top >= 0 && ++blank >= 2) {
+      out.push({ top, bot: y - blank });
+      top = -1;
+      blank = 0;
+    }
+  }
+  if (top >= 0) out.push({ top, bot: h - 1 });
+  return out;
+}
+
+/**
+ * 점 없는 번호 양식에서 AI 자리로 오린 문항: ① 맨 앞 번호를 지우고 ② 아래쪽에 같은 왼쪽 자리에서 시작하는 다음 번호 줄이 있으면
+ * 그 위에서 자른다(본문·선택지는 번호보다 들여 써 있어 같은 자리에서 시작하지 않는다). 번호를 못 찾으면 아무것도 안 한다.
+ */
+function fixBareNumberLayout(cv: HTMLCanvasElement): boolean {
+  const w = cv.width;
+  const h = cv.height;
+  const ctx = cv.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const raw = (x: number, y: number) => {
+    const p = (y * w + x) * 4;
+    return d[p] * 0.3 + d[p + 1] * 0.59 + d[p + 2] * 0.11 < 170;
+  };
+  // 단 구분선·상자 테두리 같은 긴 세로줄은 글자가 아니므로 뺀다
+  const rule = new Uint8Array(w);
+  for (let x = 0; x < w; x++) {
+    let n = 0;
+    for (let y = 0; y < h; y += 2) if (raw(x, y)) n++;
+    if (n > h * 0.25) rule[x] = 1;
+  }
+  const dark = (x: number, y: number) => !rule[x] && raw(x, y);
+  const lines = inkLines(dark, w, h).filter((l) => l.bot - l.top >= 4);
+  if (!lines.length) return false;
+  const first = lines[0];
+  if (first.top > h * 0.4) return false;
+  const H = first.bot - first.top + 1;
+  if (H > h * 0.25) return false;
+  const num = bareNumberAt(dark, w, first.top, first.bot, 0, Math.round(w * 0.15));
+  if (!num) return false;
+  // 아래쪽 다음 번호 줄
+  for (let i = 1; i < lines.length; i++) {
+    const l = lines[i];
+    const gapAbove = l.top - lines[i - 1].bot;
+    if (gapAbove < H * 1.2) continue;
+    const lh = l.bot - l.top + 1;
+    if (lh > H * 2.2) continue;
+    const nx = bareNumberAt(dark, w, l.top, l.bot, num.x0 - Math.round(H * 0.5), num.x0 + Math.round(H * 0.5));
+    if (nx) {
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, Math.max(0, l.top - Math.round(gapAbove / 2)), w, h);
+      break;
+    }
+  }
   ctx.fillStyle = "#fff";
-  ctx.fillRect(Math.max(0, x0 - 1), Math.max(0, top - 1), xEnd - x0 + 3, H + 2);
+  ctx.fillRect(Math.max(0, num.x0 - 1), Math.max(0, first.top - 1), num.x1 - num.x0 + 3, H + 2);
   return true;
 }
 
@@ -389,7 +456,7 @@ export async function cropItem(lib: any, doc: any, it: BankDetail): Promise<{ cv
   dropCutOffBottomLine(cv); // 2026-11-26: 아래 끝에 걸친 다음 문항 첫 줄
   if (!region.labelBox) {
     // 스캔본(글자 정보 없음)·번호를 글자로 못 찾은 글자 PDF: "12." 모양, 안 되면 점 없는 번호("8 명제 …")
-    if (!eraseLeadingNumberByInk(cv) && region.source === "ai") eraseLeadingBareNumber(cv);
+    if (!eraseLeadingNumberByInk(cv) && region.source === "ai") fixBareNumberLayout(cv);
   } else {
     const lb = region.labelBox;
     eraseLabel(cv, {
