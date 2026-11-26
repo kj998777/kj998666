@@ -167,3 +167,22 @@ claude.ai(웹·앱·Cowork) → 설정 → 커넥터 → **커스텀 커넥터 �
 - AI를 쓰는 도구는 **AI 자동 처리 시작**(관리자만, 시험 화면의 AI 자동 처리와 같음, 크레딧 사용) 하나뿐이고 진행은 **AI 처리 진행 확인**으로 봅니다. 시험을 만들면 이름으로 제주 학교를 알아내 표시합니다. 정답표를 고치면 화면에서와 똑같이 해설의 정답 표시를 맞추고 제출을 다시 채점합니다.
 - 돌려보낼 주소는 claude.ai·claude.com·localhost만 받습니다(피싱 방지). 토큰은 sha256만 저장, access 1시간·refresh 60일(쓸 때마다 교체).
 - DB: `supabase/migrations/0059_mcp_connector.sql`.
+
+## 6. AI 자동 처리 진행 타이머(pg_cron, 2026-11-26)
+
+AI 자동 처리(문항 읽기 → 풀이 → 검수)와 스캔본 디지털화는 `/api/ai/cron-tick`이 1분마다 한 단계씩 진행시킵니다.
+예전에는 바깥 크론 서비스가 `AI_CRON_SECRET`으로 불렀는데(11/14~17 멈춤 사고), 이제는 **Supabase 안의 pg_cron**이
+1분마다 pg_net으로 부릅니다(`supabase/migrations/0060_pg_cron_ai_tick.sql`).
+
+- 비밀 값은 DB 안에서 만들어 `private.cron_token`(바깥에서 못 읽는 스키마)에 두고, 앱은 `public.ops_cron_token`의 sha256만 비교합니다 — Vercel 환경 변수를 따로 넣을 필요가 없습니다. 바깥 크론(`AI_CRON_SECRET`)도 그대로 받습니다.
+- 잘 도는지 보기: Supabase SQL에서 `select * from cron.job_run_details order by start_time desc limit 5;` 와 `select status_code, content from net._http_response order by created desc limit 5;`(200이면 정상).
+- 멈추기: `select cron.unschedule('medicchart-ai-tick');`
+
+## 7. 문항 은행 "시험 양식 PDF"(2026-11-26)
+
+문항 은행에서 담은 문항으로 **실제 시험지 모양**(2단·학년 반 번호 이름 줄·쪽 번호 — 디지털 시험지와 같은 양식)의 PDF를 만듭니다.
+
+- 스캔본(디지털화된 시험) 문항은 옮겨 적은 글로 **깨끗하게 다시 조판**하고 그림만 스캔본에서 오립니다 — 스캔본에 있던 낙서·채점 표시가 따라오지 않습니다.
+- 글자 PDF 문항은 원래 시험지에서 오린 그림을 그대로 넣습니다(아래 끝에 걸친 다음 문항 첫 줄·점 없는 원래 번호는 지웁니다). 오린 그림에 찍힌 원래 배점 글씨는 남습니다.
+- 예: 2022~2024 수학(하) 기말에서 경우의 수 문항을 같은 난이도·형식의 공통수학2 문항(명제·함수·유리·무리)으로 바꾼 "공통수학2 범위 재구성" 시험(폴더: 연도 → 고1 → 📚 공통수학2 범위, 코드 `원래코드-C2`). 원본 시험은 그대로 둡니다.
+- 코드: `app/(staff)/bank/buildWorksheet.ts`의 `buildExamPdf` → `app/(staff)/exams/[code]/buildDigitizedPdf.ts`의 `buildExamStylePdf`(조판은 디지털 시험지와 같은 `typesetPdf`).
