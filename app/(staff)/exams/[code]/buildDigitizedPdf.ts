@@ -40,6 +40,8 @@ type DgItem = {
   choices?: string[];
   figures?: DgFigure[];
   unsure?: string;
+  /** 2026-11-26 "시험 양식" 시험지: 글자 PDF에서 오린 문항 그림(번호만 새로 붙이고 그림을 그대로 넣는다) */
+  raw?: { src: string; dw: number; dh: number };
 };
 type DgPageData = { kind: string; title?: string; subtitle?: string; items?: DgItem[] };
 type DgPage = { page_no: number; data: DgPageData };
@@ -302,6 +304,11 @@ function dgLines(s: string | null | undefined): string[] {
 function dgItemHtml(katex: any, it: DgItem, imgs: CroppedImg[]): string {
   if (it.type === "text") return `<div class="dgx">${dgTex(katex, it.stem)}</div>`;
   const lab = it.label ? esc(it.label) : "";
+  if (it.raw) {
+    return `<div class="dgq"><div class="dgs"><b class="dgn">${lab}.</b><img src="${it.raw.src}" style="width:${Math.round(it.raw.dw)}px;height:${Math.round(
+      it.raw.dh
+    )}px;vertical-align:top"></div></div>`;
+  }
   const hang = !!(it.label && it.label.length <= 4);
   const ind = hang ? " dgi" : "";
   const pts = it.points != null ? ` <span class="dgp">[${fmt(it.points)}점]</span>` : "";
@@ -540,6 +547,63 @@ async function rasterizeNative(el: HTMLElement, css: string, scale: number): Pro
 }
 
 // ---------------------------------------------------------------------
+// 문항 하나의 그림들을 원본 쪽 캔버스에서 오리기 (2026-11-26: buildDigitizedPdf에서 떼어 냄 — "시험 양식" 시험지도 씀)
+// ---------------------------------------------------------------------
+
+function cropFigures(
+  pc: HTMLCanvasElement,
+  g: { gray: Uint8ClampedArray; w: number; h: number },
+  it: DgItem,
+  figsOnSamePage: Box[]
+): { imgs: CroppedImg[]; fixed: string[]; suspect: string[]; errors: string[] } {
+  const hang = !!(it.label && it.label.length <= 4);
+  const maxW = DGL_CW - (hang ? DGL.IND : 0);
+  const imgs: CroppedImg[] = [];
+  const fixed: string[] = [];
+  const suspect: string[] = [];
+  const errors: string[] = [];
+  for (const f of it.figures || []) {
+    try {
+      // 2026-09-29: AI가 준 그림 자리가 빗나가면(그래프 대신 선택지·다음 문제 글자가 잘려 나옴) 원본 쪽에서 실제 그림을 찾아 고친다
+      let fb: Box = f;
+      // 관리자가 "그림 자리 직접 고치기"로 지정한 그림(manual)은 자동 보정하지 않고 그대로 쓴다
+      if (!f.manual)
+        try {
+          const others = figsOnSamePage.filter((o) => o !== f);
+          const rf = refineFigureBox(g.gray, g.w, g.h, f, others);
+          fb = rf.box;
+          const lab = it.label || "?";
+          if (rf.status === "moved" || rf.status === "expanded") fixed.push(lab);
+          else if (rf.status === "suspect") suspect.push(lab);
+        } catch {
+          fb = f;
+        }
+      const padX = Math.round(pc.width * 0.008);
+      const padY = Math.round(pc.height * 0.006);
+      const x0 = Math.max(0, Math.floor((fb.x0 / 1000) * pc.width) - padX);
+      const y0 = Math.max(0, Math.floor((fb.y0 / 1000) * pc.height) - padY);
+      const x1 = Math.min(pc.width, Math.ceil((fb.x1 / 1000) * pc.width) + padX);
+      const y1 = Math.min(pc.height, Math.ceil((fb.y1 / 1000) * pc.height) + padY);
+      let cv = document.createElement("canvas");
+      cv.width = Math.max(2, x1 - x0);
+      cv.height = Math.max(2, y1 - y0);
+      (cv.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D).drawImage(pc, x0, y0, cv.width, cv.height, 0, 0, cv.width, cv.height);
+      cv = dgTrim(cv);
+      let dw = Math.max(50, Math.min(maxW, (cv.width / pc.width) * DGL.W));
+      let dh = (dw * cv.height) / cv.width;
+      if (dh > 360) {
+        dw = (dw * 360) / dh;
+        dh = 360;
+      }
+      imgs.push({ src: cv.toDataURL("image/jpeg", 0.92), dw, dh, w: f.where === "end" ? "end" : "stem" });
+    } catch (err: any) {
+      errors.push(`${it.label || ""} 그림: ${err && err.message ? err.message : err}`);
+    }
+  }
+  return { imgs, fixed, suspect, errors };
+}
+
+// ---------------------------------------------------------------------
 // 메인: 디지털 시험지 PDF 만들기
 // ---------------------------------------------------------------------
 
@@ -628,64 +692,26 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
   const figSuspect: string[] = [];
   for (let k = 0; k < items.length; k++) {
     const e = items[k];
-    const it = e.it;
-    const hang = !!(it.label && it.label.length <= 4);
-    const maxW = DGL_CW - (hang ? DGL.IND : 0);
-    const imgs: CroppedImg[] = [];
-    e.imgs = imgs;
-    for (const f of it.figures || []) {
-      try {
-        const pc = await pageCv(e.pg);
-        // 2026-09-29: AI가 준 그림 자리가 빗나가면(그래프 대신 선택지·다음 문제 글자가 잘려 나옴) 원본 쪽에서 실제 그림을 찾아 고친다
-        let fb: Box = f;
-        // 관리자가 "그림 자리 직접 고치기"로 지정한 그림(manual)은 자동 보정하지 않고 그대로 쓴다
-        if (!f.manual) try {
-          let g = grayCache.get(e.pg);
-          if (!g) {
-            g = canvasGray(pc);
-            grayCache.set(e.pg, g);
-          }
-          const others = (figsOnPage.get(e.pg) || []).filter((o) => o !== f);
-          const rf = refineFigureBox(g.gray, g.w, g.h, f, others);
-          fb = rf.box;
-          const lab = it.label || "?";
-          if (rf.status === "moved" || rf.status === "expanded") figFixed.push(lab);
-          else if (rf.status === "suspect") figSuspect.push(lab);
-        } catch {
-          fb = f;
-        }
-        const padX = Math.round(pc.width * 0.008);
-        const padY = Math.round(pc.height * 0.006);
-        const x0 = Math.max(0, Math.floor((fb.x0 / 1000) * pc.width) - padX);
-        const y0 = Math.max(0, Math.floor((fb.y0 / 1000) * pc.height) - padY);
-        const x1 = Math.min(pc.width, Math.ceil((fb.x1 / 1000) * pc.width) + padX);
-        const y1 = Math.min(pc.height, Math.ceil((fb.y1 / 1000) * pc.height) + padY);
-        let cv = document.createElement("canvas");
-        cv.width = Math.max(2, x1 - x0);
-        cv.height = Math.max(2, y1 - y0);
-        (cv.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D).drawImage(
-          pc,
-          x0,
-          y0,
-          cv.width,
-          cv.height,
-          0,
-          0,
-          cv.width,
-          cv.height
-        );
-        cv = dgTrim(cv);
-        let dw = Math.max(50, Math.min(maxW, (cv.width / pc.width) * DGL.W));
-        let dh = (dw * cv.height) / cv.width;
-        if (dh > 360) {
-          dw = (dw * 360) / dh;
-          dh = 360;
-        }
-        imgs.push({ src: cv.toDataURL("image/jpeg", 0.92), dw, dh, w: f.where === "end" ? "end" : "stem" });
-        nFig++;
-      } catch (err: any) {
-        figErrs.push(`${e.pg}쪽 ${it.label || ""} 그림: ${err && err.message ? err.message : err}`);
+    const pc = (e.it.figures || []).length
+      ? await pageCv(e.pg).catch((err) => {
+          figErrs.push(`${e.pg}쪽 ${e.it.label || ""} 그림: ${err && err.message ? err.message : err}`);
+          return null;
+        })
+      : null;
+    if (pc) {
+      let g = grayCache.get(e.pg);
+      if (!g) {
+        g = canvasGray(pc);
+        grayCache.set(e.pg, g);
       }
+      const r = cropFigures(pc, g, e.it, figsOnPage.get(e.pg) || []);
+      e.imgs = r.imgs;
+      nFig += r.imgs.length;
+      figFixed.push(...r.fixed);
+      figSuspect.push(...r.suspect);
+      figErrs.push(...r.errors.map((m) => `${e.pg}쪽 ${m}`));
+    } else {
+      e.imgs = [];
     }
     tick(`그림을 오리는 중… ${k + 1}/${items.length}`);
   }
@@ -697,6 +723,121 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
     // ignore
   }
 
+  const { bytes, pages: nPg, locations } = await typesetPdf(katex, items, title, sub, tick);
+  const qItems = items.filter((e) => e.it.type === "question").length;
+  const uniq = (a: string[]) => Array.from(new Set(a));
+  return { bytes, pages: nPg, items: qItems, figs: nFig, figErrors: figErrs.length, locations, figFixed: uniq(figFixed), figSuspect: uniq(figSuspect) };
+}
+
+
+// ---------------------------------------------------------------------
+// 2026-11-26: "시험 양식" 시험지 — 여러 시험에서 고른 문항을 디지털 시험지와 같은 양식(2단·학년 반 번호 이름 줄)으로 한 부에 모은다.
+// 스캔본(디지털화된) 문항은 옮겨 적은 글로 깨끗하게 다시 조판하고 그림만 스캔본에서 오리며(낙서·채점 표시가 따라오지 않게),
+// 글자 PDF 문항은 원래 시험지에서 오린 그림을 그대로 넣는다(문항 은행 시험지와 같은 오리기).
+// ---------------------------------------------------------------------
+
+export type ExamStyleEntry =
+  | { kind: "dg"; it: DgItem; pdfUrl: string; page: number }
+  | { kind: "img"; label: string; cv: HTMLCanvasElement; frac: number };
+
+export async function buildExamStylePdf(
+  entries: ExamStyleEntry[],
+  title: string,
+  sub: string,
+  onProgress?: BuildProgress
+): Promise<{ bytes: Uint8Array; pages: number; figs: number; figSuspect: string[] }> {
+  const tick = (m: string) => onProgress && onProgress(m);
+  tick("PDF·수식 도구를 불러오는 중…");
+  const [katex, pdfjsLib] = await Promise.all([loadKatex(), loadPdfJs(), loadHtml2Pdf()]);
+  const docs = new Map<string, Promise<any>>();
+  const docOf = (url: string) => {
+    if (!docs.has(url)) {
+      docs.set(
+        url,
+        (async () => {
+          const r = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+          if (!r.ok) throw new Error("시험지 원본 PDF를 불러오지 못했습니다.");
+          return pdfjsLib.getDocument({ data: new Uint8Array(await r.arrayBuffer()) }).promise;
+        })()
+      );
+    }
+    return docs.get(url)!;
+  };
+  const pageCache = new Map<string, HTMLCanvasElement>();
+  async function pageCv(url: string, n: number): Promise<HTMLCanvasElement> {
+    const key = `${url}#${n}`;
+    const hit = pageCache.get(key);
+    if (hit) return hit;
+    const pg = await (await docOf(url)).getPage(n);
+    const v1 = pg.getViewport({ scale: 1 });
+    const vp = pg.getViewport({ scale: Math.min(4, Math.max(1.5, 1500 / v1.width)) });
+    const cv = document.createElement("canvas");
+    cv.width = Math.ceil(vp.width);
+    cv.height = Math.ceil(vp.height);
+    const ctx = cv.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    await pg.render({ canvasContext: ctx, viewport: vp, intent: "print" }).promise;
+    pageCache.set(key, cv);
+    return cv;
+  }
+
+  const items: PackItem[] = [];
+  const figSuspect: string[] = [];
+  let nFig = 0;
+  const maxRawW = DGL_CW - DGL.IND;
+  for (let k = 0; k < entries.length; k++) {
+    const e = entries[k];
+    tick(`문항을 준비하는 중… ${k + 1}/${entries.length}`);
+    if (e.kind === "dg") {
+      let imgs: CroppedImg[] = [];
+      if ((e.it.figures || []).length) {
+        try {
+          const pc = await pageCv(e.pdfUrl, e.page);
+          const r = cropFigures(pc, canvasGray(pc), e.it, e.it.figures || []);
+          imgs = r.imgs;
+          figSuspect.push(...r.suspect);
+        } catch {
+          figSuspect.push(e.it.label || String(k + 1));
+        }
+      }
+      nFig += imgs.length;
+      items.push({ it: e.it, pg: e.page, imgs });
+    } else {
+      // 원래 쪽 본문 폭에서 차지하던 비율대로(글자 크기를 원래와 비슷하게), 단 폭(번호 칸 뺀 만큼)을 넘지 않게
+      let dw = Math.min(maxRawW, Math.max(maxRawW * 0.4, e.frac * (DGL.W - 2 * DGL.MX) * 1.05));
+      let dh = (dw * e.cv.height) / e.cv.width;
+      const maxH = DGL.H - DGL.BOT - 58 - 60;
+      if (dh > maxH) {
+        dw = (dw * maxH) / dh;
+        dh = maxH;
+      }
+      items.push({ it: { type: "question", label: e.label, raw: { src: e.cv.toDataURL("image/jpeg", 0.92), dw, dh } }, pg: 0, imgs: [] });
+    }
+  }
+  pageCache.clear();
+  for (const d of docs.values()) {
+    try {
+      (await d).destroy();
+    } catch {
+      // ignore
+    }
+  }
+  const r = await typesetPdf(katex, items, title, sub, tick);
+  return { bytes: r.bytes, pages: r.pages, figs: nFig, figSuspect: Array.from(new Set(figSuspect)) };
+}
+
+// ---------------------------------------------------------------------
+// 조판: 문항(글·그림) → 2단 A4 쪽 → PDF (2026-11-26: buildDigitizedPdf에서 떼어 냄)
+// ---------------------------------------------------------------------
+
+async function typesetPdf(
+  katex: any,
+  items: PackItem[],
+  title: string,
+  sub: string,
+  tick: (m: string) => void
+): Promise<{ bytes: Uint8Array; pages: number; locations: DgLocation[] }> {
   try {
     await document.fonts.load("16px KaTeX_Main");
     await document.fonts.load("bold 16px KaTeX_Main");
@@ -877,11 +1018,7 @@ export async function buildDigitizedPdf(code: string, examName: string, onProgre
   }
 
   document.body.removeChild(stageWrap);
-
-  const bytes = await outDoc.save();
-  const qItems = items.filter((e) => e.it.type === "question").length;
-  const uniq = (a: string[]) => Array.from(new Set(a));
-  return { bytes, pages: nPg, items: qItems, figs: nFig, figErrors: figErrs.length, locations, figFixed: uniq(figFixed), figSuspect: uniq(figSuspect) };
+  return { bytes: await outDoc.save(), pages: nPg, locations };
 }
 
 export function downloadPdfBytes(bytes: Uint8Array, filename: string): void {
