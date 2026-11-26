@@ -546,6 +546,27 @@ async function rasterizeNative(el: HTMLElement, css: string, scale: number): Pro
   return canvas;
 }
 
+/**
+ * 2026-11-26: 그림에서 빨간 펜 자국(채점 동그라미·체크·답 낙서)을 흰색으로 지운다. 학교 시험지는 검은색으로 인쇄되므로
+ * 붉은 기가 뚜렷한 픽셀(빨강이 초록·파랑보다 1.4배 넘게 강함)만 지운다. 검은 인쇄선 위에 겹친 부분은 어둡기 때문에 남는다.
+ */
+function removeRedInk(cv: HTMLCanvasElement): void {
+  const ctx = cv.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
+  const img = ctx.getImageData(0, 0, cv.width, cv.height);
+  const d = img.data;
+  let n = 0;
+  for (let p = 0; p < d.length; p += 4) {
+    const r = d[p];
+    const g = d[p + 1];
+    const b = d[p + 2];
+    if (r > 110 && r > g * 1.4 && r > b * 1.4) {
+      d[p] = d[p + 1] = d[p + 2] = 255;
+      n++;
+    }
+  }
+  if (n) ctx.putImageData(img, 0, 0);
+}
+
 // ---------------------------------------------------------------------
 // 문항 하나의 그림들을 원본 쪽 캔버스에서 오리기 (2026-11-26: buildDigitizedPdf에서 떼어 냄 — "시험 양식" 시험지도 씀)
 // ---------------------------------------------------------------------
@@ -588,6 +609,7 @@ function cropFigures(
       cv.width = Math.max(2, x1 - x0);
       cv.height = Math.max(2, y1 - y0);
       (cv.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D).drawImage(pc, x0, y0, cv.width, cv.height, 0, 0, cv.width, cv.height);
+      removeRedInk(cv); // 2026-11-26: 스캔본(학생이 푼 시험지)의 빨간 채점 표시·답 낙서를 그림에서 지운다
       cv = dgTrim(cv);
       let dw = Math.max(50, Math.min(maxW, (cv.width / pc.width) * DGL.W));
       let dh = (dw * cv.height) / cv.width;
