@@ -5,7 +5,7 @@
 // 자리를 못 찾은 문항은 AI가 옮겨 적은 문제 글(수식 포함)로 대신 넣는다.
 // 정답·해설지: 성적 보고서와 같은 도구(.rpt 양식, A4 쪽 나누기)로 만든다.
 import { PDFDocument } from "pdf-lib";
-import { loadPdfJs } from "@/app/(staff)/exams/[code]/buildDigitizedPdf";
+import { buildExamStylePdf, loadPdfJs, type ExamStyleEntry } from "@/app/(staff)/exams/[code]/buildDigitizedPdf";
 import { resolveRegion } from "@/app/(tutor)/tutor/review/[itemId]/cropLocator";
 import { badge, ensureReportTools, esc, htmlToPdfBytes, mathHtml, MEDIC_BADGE, MEDIC_FOOT } from "@/app/(staff)/exams/[code]/results/buildReportPdf";
 import type { BankDetail } from "@/lib/bank/load";
@@ -248,6 +248,114 @@ function eraseLeadingNumberByInk(cv: HTMLCanvasElement): boolean {
   return true;
 }
 
+/**
+ * 2026-11-26: 오린 아래 끝에 걸친 다음 문항 첫 줄(아래 가장자리에서 잘린 한 줄)을 지운다.
+ * 아주 좁게 본다 — 맨 아래 두 줄에 잉크가 있고(= 가장자리에서 잘림), 그 덩어리가 한 줄 높이 이하이고, 위에 뚜렷한 빈칸이 있을 때만.
+ */
+function dropCutOffBottomLine(cv: HTMLCanvasElement): boolean {
+  const w = cv.width;
+  const h = cv.height;
+  if (h < 40) return false;
+  const ctx = cv.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const rowInk = (y: number) => {
+    let n = 0;
+    for (let x = 0; x < w; x += 2) {
+      const p = (y * w + x) * 4;
+      if (d[p] * 0.3 + d[p + 1] * 0.59 + d[p + 2] * 0.11 < 200 && ++n >= 2) return true;
+    }
+    return false;
+  };
+  if (!rowInk(h - 1) && !rowInk(h - 2)) return false;
+  let y = h - 1;
+  while (y > 0 && rowInk(y)) y--;
+  const bandTop = y + 1;
+  const bandH = h - bandTop;
+  let g = y;
+  while (g > 0 && !rowInk(g)) g--;
+  const gap = y - g;
+  if (g <= 0) return false; // 위에 아무것도 없음 = 문항 전체가 이 덩어리
+  if (bandH > w * 0.09 || gap < Math.max(6, w * 0.03)) return false;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, g + 1 + Math.floor(gap / 2), w, h);
+  return true;
+}
+
+/**
+ * 2026-11-26: 점 없는 번호("8  명제 …")로 시작하는 글자 PDF(매쓰플랫 조판 등)에서 오린 문항 — 첫 줄 맨 앞 숫자를 지운다.
+ * 숫자 조각(각각 줄 높이의 0.72배 이하 폭)이 1~3개이고 뒤에 줄 높이의 0.6배 넘는 빈칸이 있을 때만(한글·수식 글자를 지우지 않게).
+ */
+function eraseLeadingBareNumber(cv: HTMLCanvasElement): boolean {
+  const w = cv.width;
+  const h = cv.height;
+  const ctx = cv.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const dark = (x: number, y: number) => {
+    const p = (y * w + x) * 4;
+    return d[p] * 0.3 + d[p + 1] * 0.59 + d[p + 2] * 0.11 < 170;
+  };
+  const xLim = Math.round(w * 0.5);
+  const rowInk = (y: number) => {
+    for (let x = 0; x < xLim; x++) if (dark(x, y)) return true;
+    return false;
+  };
+  let top = -1;
+  for (let y = 0; y < Math.round(h * 0.4); y++) if (rowInk(y)) { top = y; break; }
+  if (top < 0) return false;
+  let bot = top;
+  let gapRows = 0;
+  for (let y = top; y < h; y++) {
+    if (rowInk(y)) {
+      bot = y;
+      gapRows = 0;
+    } else if (++gapRows >= 3) break;
+  }
+  const H = bot - top + 1;
+  if (H < 8 || H > h * 0.25) return false;
+  const colInk = (x: number) => {
+    for (let y = top; y <= bot; y++) if (dark(x, y)) return true;
+    return false;
+  };
+  let x0 = -1;
+  for (let x = 0; x < Math.round(w * 0.15); x++) if (colInk(x)) { x0 = x; break; }
+  if (x0 < 0) return false;
+  const parts: [number, number][] = [];
+  let a = x0;
+  let white = 0;
+  let x = x0;
+  const bigGap = Math.max(4, Math.round(H * 0.6));
+  for (; x < w; x++) {
+    if (colInk(x)) {
+      if (white > 0) {
+        parts.push([a, x - white - 1]);
+        a = x;
+      }
+      white = 0;
+    } else if (++white >= bigGap) break;
+  }
+  if (white < bigGap) return false;
+  parts.push([a, x - white]);
+  if (parts.length < 1 || parts.length > 3) return false;
+  if (parts.some(([p0, p1]) => p1 - p0 + 1 > H * 0.72 || p1 - p0 + 1 < 2)) return false;
+  // 숫자는 줄 높이의 대부분을 차지한다(괄호·점·첨자 같은 작은 기호가 아님)
+  for (const [p0, p1] of parts) {
+    let yt = -1;
+    let yb = -1;
+    for (let y = top; y <= bot; y++)
+      for (let xx = p0; xx <= p1; xx++)
+        if (dark(xx, y)) {
+          if (yt < 0) yt = y;
+          yb = y;
+          break;
+        }
+    if (yt < 0 || yb - yt + 1 < H * 0.55) return false;
+  }
+  const xEnd = parts[parts.length - 1][1];
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(Math.max(0, x0 - 1), Math.max(0, top - 1), xEnd - x0 + 3, H + 2);
+  return true;
+}
+
 /** 오린 그림과, 그 그림 폭이 원래 쪽 폭에서 차지하던 비율(글자 크기를 원래와 비슷하게 맞추는 데 씀) */
 export async function cropItem(lib: any, doc: any, it: BankDetail): Promise<{ cv: HTMLCanvasElement; frac: number } | null> {
   const region = await resolveRegion(lib, doc, it.label, it.sourcePage, it.bbox);
@@ -278,8 +386,10 @@ export async function cropItem(lib: any, doc: any, it: BankDetail): Promise<{ cv
   ctx.fillRect(0, 0, cw, ch);
   ctx.drawImage(full, cx, cy, cw, ch, 0, 0, cw, ch);
   eraseEdgeLines(cv); // 단 구분선을 먼저 지워야 스캔본 번호 찾기가 선을 번호로 잘못 보지 않는다
+  dropCutOffBottomLine(cv); // 2026-11-26: 아래 끝에 걸친 다음 문항 첫 줄
   if (!region.labelBox) {
-    eraseLeadingNumberByInk(cv); // 스캔본(글자 정보 없음)
+    // 스캔본(글자 정보 없음)·번호를 글자로 못 찾은 글자 PDF: "12." 모양, 안 되면 점 없는 번호("8 명제 …")
+    if (!eraseLeadingNumberByInk(cv) && region.source === "ai") eraseLeadingBareNumber(cv);
   } else {
     const lb = region.labelBox;
     eraseLabel(cv, {
@@ -515,6 +625,98 @@ export async function buildWorksheetPdf(
     out.addPage([A4W, A4H]).drawImage(img, { x: (A4W - lw) / 2, y: (A4H - lh) / 2, width: lw, height: lh });
   }
   return { bytes: await out.save(), pages: out.getPageCount(), textFallback };
+}
+
+/**
+ * 2026-11-26: "시험 양식" 시험지 — 디지털 시험지와 같은 양식(2단·학년 반 번호 이름 줄·쪽 번호)으로 만든다.
+ * 스캔본(디지털화된) 문항은 옮겨 적은 글로 다시 조판(낙서·채점 표시 없이, 그림만 스캔본에서 오림),
+ * 글자 PDF 문항은 원래 시험지에서 오린 그림 그대로. 원래 배점 글씨는 넣지 않는다(오린 그림에 찍힌 배점은 남는다).
+ * 과거 기출을 새 교육과정 범위로 다시 엮은 시험(예: 수학(하) 기말 → 공통수학2 범위)을 시험지처럼 만들 때 쓴다.
+ */
+export async function buildExamPdf(
+  items: BankDetail[],
+  opts: WsOptions,
+  onProgress?: Progress
+): Promise<{ bytes: Uint8Array; pages: number; textFallback: string[]; figSuspect: string[] }> {
+  const tick = (m: string) => onProgress && onProgress(m);
+  tick("도구를 불러오는 중…");
+  const [{ katex }, lib] = await Promise.all([ensureReportTools(), loadPdfJs()]);
+  const docs = new Map<string, Promise<any>>();
+  const urlOf = (it: BankDetail) => (opts.pdfUrlOf ? opts.pdfUrlOf(it) : `/exams/${encodeURIComponent(it.examCode)}/original-pdf`);
+  const docOf = (url: string) => {
+    if (!docs.has(url)) {
+      docs.set(
+        url,
+        (async () => {
+          const r = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+          if (!r.ok) throw new Error("원본 PDF를 불러오지 못했습니다.");
+          return lib.getDocument({ data: new Uint8Array(await r.arrayBuffer()) }).promise;
+        })()
+      );
+    }
+    return docs.get(url)!;
+  };
+  const entries: ExamStyleEntry[] = [];
+  const textFallback: string[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const label = String(i + 1);
+    tick(`문항을 준비하는 중… ${i + 1}/${items.length}`);
+    const dg = it.dg;
+    if (dg && dg.pageNo && (dg.stem || "").trim()) {
+      entries.push({
+        kind: "dg",
+        it: { type: "question", label, points: null, stem: dg.stem, box_title: dg.box_title, box_lines: dg.box_lines, choices: dg.choices, figures: dg.figBoxes ?? [] },
+        pdfUrl: `/exams/${encodeURIComponent(it.examCode)}/original-pdf?scan=1`,
+        page: dg.pageNo,
+      });
+      continue;
+    }
+    let c: { cv: HTMLCanvasElement; frac: number } | null = null;
+    try {
+      c = await cropItem(lib, await docOf(urlOf(it)), it);
+    } catch {
+      c = null;
+    }
+    if (c) {
+      entries.push({ kind: "img", label, cv: c.cv, frac: c.frac });
+    } else {
+      const cv = await textItem(katex, it);
+      textFallback.push(sourceText(it));
+      entries.push({ kind: "img", label, cv, frac: 0.42 });
+    }
+  }
+  for (const d of docs.values()) {
+    try {
+      (await d).destroy();
+    } catch {
+      /* 무시 */
+    }
+  }
+  const r = await buildExamStylePdf(entries, opts.title || "메딕수학 시험지", opts.subtitle || "", tick);
+  if (!opts.cover) return { bytes: r.bytes, pages: r.pages, textFallback, figSuspect: r.figSuspect };
+  // 앞뒤 표지(문항 은행 시험지와 같은 방식)
+  tick("표지를 붙이는 중…");
+  const out = await PDFDocument.create();
+  const [front, logo] = await Promise.all([
+    fetchBytes(`/api/cover?kind=front&type=${opts.cover}&title=${encodeURIComponent(opts.title || "")}`),
+    fetchBytes("/api/cover?kind=logo"),
+  ]);
+  if (front) {
+    const img = await out.embedPng(front);
+    out.addPage([A4W, A4H]).drawImage(img, { x: 0, y: 0, width: A4W, height: A4H });
+    out.addPage([A4W, A4H]);
+  }
+  const body = await PDFDocument.load(r.bytes);
+  for (const pg of await out.copyPages(body, body.getPageIndices())) out.addPage(pg);
+  if (logo) {
+    if (out.getPageCount() % 2 === 0) out.addPage([A4W, A4H]);
+    const img = await out.embedPng(logo);
+    const lw = A4W * 0.7;
+    const lh = (lw * img.height) / img.width;
+    out.addPage([A4W, A4H]).drawImage(img, { x: (A4W - lw) / 2, y: (A4H - lh) / 2, width: lw, height: lh });
+  }
+  return { bytes: await out.save(), pages: out.getPageCount(), textFallback, figSuspect: r.figSuspect };
 }
 
 /** 입학테스트: 학생이 휴대폰으로 찍어 답을 내는 QR 쪽 */

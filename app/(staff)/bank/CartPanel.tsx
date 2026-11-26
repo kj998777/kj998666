@@ -66,7 +66,7 @@ export default function CartPanel() {
     writeCart(next);
   }
 
-  async function build(kind: "sheet" | "answer") {
+  async function build(kind: "sheet" | "exam" | "answer") {
     if (!items.length) return;
     setBusy(true);
     setMsg("");
@@ -81,6 +81,15 @@ export default function CartPanel() {
         setMsg(
           `시험지 ${r.pages}쪽을 받았습니다.` +
             (r.textFallback.length ? ` 원본에서 자리를 못 찾은 ${r.textFallback.length}문항(${r.textFallback.slice(0, 3).join(", ")}${r.textFallback.length > 3 ? " 등" : ""})은 옮겨 적은 글로 넣었어요 — 그림이 빠졌을 수 있으니 확인해 주세요.` : "")
+        );
+      } else if (kind === "exam") {
+        // 2026-11-26: 시험 양식(디지털 시험지와 같은 2단·이름 줄) — 스캔본 문항은 깨끗한 글자로 다시 조판
+        const r = await mod.buildExamPdf(items, opts, setMsg);
+        downloadBytes(r.bytes, `${safe}.pdf`);
+        setMsg(
+          `시험 양식 시험지 ${r.pages}쪽을 받았습니다.` +
+            (r.figSuspect.length ? ` 그림 자리를 확인해 주세요: ${r.figSuspect.slice(0, 5).join(", ")}번.` : "") +
+            (r.textFallback.length ? ` 원본에서 자리를 못 찾은 ${r.textFallback.length}문항은 옮겨 적은 글로 넣었어요.` : "")
         );
       } else {
         const bytes = await mod.buildAnswerPdf(items, opts, setMsg);
@@ -165,10 +174,22 @@ export default function CartPanel() {
           <button type="button" className="btn-primary" disabled={busy || !items.length} onClick={() => build("sheet")}>
             {busy ? "만드는 중…" : "시험지 PDF"}
           </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={busy || !items.length}
+            onClick={() => build("exam")}
+            title="실제 시험지처럼 2단·학년 반 번호 이름 줄로 만듭니다. 스캔본 문항은 옮겨 적은 글로 깨끗하게 다시 조판(낙서·채점 표시 없음)하고 그림만 스캔본에서 오립니다."
+          >
+            시험 양식 PDF
+          </button>
           <button type="button" className="btn-secondary" disabled={busy || !items.length} onClick={() => build("answer")}>
             정답·해설지 PDF
           </button>
         </div>
+        <p className="text-xs text-slate-500">
+          시험 양식 PDF: 실제 시험지 모양(2단·이름 줄)으로, 스캔본 문항은 깨끗한 글자로 다시 조판합니다(그림만 스캔본에서 오림). 출처 표시는 넣지 않습니다.
+        </p>
         {msg && <p className="text-xs text-slate-600">{msg}</p>}
       </div>
     </div>
