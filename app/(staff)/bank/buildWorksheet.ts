@@ -249,6 +249,88 @@ function eraseLeadingNumberByInk(cv: HTMLCanvasElement): boolean {
 }
 
 /**
+ * 2026-11-26: 오린 영역이 옆 단까지 넓게 잡혀 가운데 단 구분선과 옆 단 글자 조각이 함께 들어온 경우 — 구분선 바깥쪽을 지운다.
+ * 구분선 = 오린 높이의 85% 이상 이어진 가는 세로줄(가장자리 8%~45% 또는 55%~92% 안). 위쪽 끝에서 옆으로 긴 가로줄이 붙어 있으면
+ * 상자(보기) 테두리로 보고 건드리지 않는다. 바깥쪽 잉크가 성기고(행의 40% 미만) 안쪽보다 적을 때만.
+ */
+function cutAtInnerRule(cv: HTMLCanvasElement): boolean {
+  const w = cv.width;
+  const h = cv.height;
+  if (w < 40 || h < 40) return false;
+  const ctx = cv.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D;
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const dark = (x: number, y: number) => {
+    const p = (y * w + x) * 4;
+    return d[p] * 0.3 + d[p + 1] * 0.59 + d[p + 2] * 0.11 < 200;
+  };
+  const cover = (x: number) => {
+    let n = 0;
+    for (let y = 0; y < h; y++) if (dark(x, y)) n++;
+    return n / h;
+  };
+  const maxW = Math.max(3, Math.round(w * 0.008));
+  const boxCorner = (x0: number, x1: number) => {
+    let top = 0;
+    while (top < h && !dark(x0, top) && !dark(x1, top)) top++;
+    for (const dir of [1, -1]) {
+      let n = 0;
+      const span = Math.round(w * 0.05);
+      for (let k = 1; k <= span; k++) {
+        const x = dir > 0 ? x1 + k : x0 - k;
+        if (x < 0 || x >= w) break;
+        if (dark(x, Math.min(h - 1, top)) || dark(x, Math.min(h - 1, top + 1))) n++;
+      }
+      if (n > span * 0.8) return true;
+    }
+    return false;
+  };
+  const ruleIn = (xa: number, xb: number): [number, number] | null => {
+    for (let x = xa; x < xb; x++) {
+      if (cover(x) >= 0.85) {
+        let e = x;
+        while (e + 1 < w && cover(e + 1) >= 0.85) e++;
+        if (e - x + 1 <= maxW && !boxCorner(x, e)) return [x, e];
+        x = e;
+      }
+    }
+    return null;
+  };
+  const inkRows = (xa: number, xb: number) => {
+    let n = 0;
+    let t = 0;
+    for (let y = 0; y < h; y += 2) {
+      t++;
+      for (let x = xa; x < xb; x++)
+        if (dark(x, y)) {
+          n++;
+          break;
+        }
+    }
+    return t ? n / t : 0;
+  };
+  ctx.fillStyle = "#fff";
+  let r = ruleIn(Math.round(w * 0.08), Math.round(w * 0.45));
+  if (r) {
+    const left = inkRows(0, Math.max(0, r[0] - 2));
+    const right = inkRows(r[1] + 2, w);
+    if (left < 0.4 && right > left) {
+      ctx.fillRect(0, 0, r[1] + 2, h);
+      return true;
+    }
+  }
+  r = ruleIn(Math.round(w * 0.55), Math.round(w * 0.92));
+  if (r) {
+    const left = inkRows(0, Math.max(0, r[0] - 2));
+    const right = inkRows(r[1] + 2, w);
+    if (right < 0.4 && left > right) {
+      ctx.fillRect(Math.max(0, r[0] - 1), 0, w, h);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * 2026-11-26: 오린 아래 끝에 걸친 다음 문항 첫 줄(아래 가장자리에서 잘린 한 줄)을 지운다.
  * 아주 좁게 본다 — 맨 아래 두 줄에 잉크가 있고(= 가장자리에서 잘림), 그 덩어리가 한 줄 높이 이하이고, 위에 뚜렷한 빈칸이 있을 때만.
  */
@@ -452,6 +534,7 @@ export async function cropItem(lib: any, doc: any, it: BankDetail): Promise<{ cv
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, cw, ch);
   ctx.drawImage(full, cx, cy, cw, ch, 0, 0, cw, ch);
+  cutAtInnerRule(cv); // 2026-11-26: 옆 단까지 넓게 잡힌 영역 — 가운데 구분선 바깥 조각 지우기
   eraseEdgeLines(cv); // 단 구분선을 먼저 지워야 스캔본 번호 찾기가 선을 번호로 잘못 보지 않는다
   dropCutOffBottomLine(cv); // 2026-11-26: 아래 끝에 걸친 다음 문항 첫 줄
   if (!region.labelBox) {
