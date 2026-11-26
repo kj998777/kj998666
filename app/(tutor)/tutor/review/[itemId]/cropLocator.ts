@@ -13,7 +13,7 @@ export type Box = { x0: number; y0: number; x1: number; y1: number };
 // labelBox(2026-09-30): 글자 정보로 찾은 문항 번호("12.")가 인쇄된 자리 — 문항 은행 시험지에서 원래 번호를 지우고 새 번호를 쓰는 데 씀
 export type Region = { page: number; bbox: Box; source: "text" | "ai"; labelBox?: Box };
 
-type Anchor = { page: number; col: number; top: number; x: number; off: number; kind: "main" | "sa"; n: number; w: number; h: number };
+type Anchor = { page: number; col: number; top: number; x: number; off: number; kind: "main" | "sa"; n: number; w: number; h: number; bare?: boolean };
 type PageText = { cols: { x0: number; x1: number }[]; bottoms: number[]; anchors: Anchor[]; hasText: boolean };
 
 // ---------------------------------------------------------------------
@@ -29,6 +29,9 @@ export function parseLabel(label: string): { kind: "main" | "sa"; n: number } | 
 }
 
 const MAIN_RE = /^\s*0?(\d{1,2})\s*[.．](?!\d)/;
+// 2026-11-26: 점 없는 번호("9   x>1일 때 …" — 매쓰플랫 조판). 단 왼쪽 끝에 딱 붙은 것만(선택지 숫자는 들여 써 있음),
+// 그리고 점 있는 번호 사슬을 못 찾을 때만 쓴다(docText).
+const BARE_RE = /^\s*0?(\d{1,2})(?=\s|$)/;
 const SA_RE = /^\s*[\[【(<〈]?\s*(?:서답형|서술형|단답형|논술형|주관식)\s*0?(\d{1,2})(?!\d)/;
 
 // ---------------------------------------------------------------------
@@ -79,7 +82,9 @@ export async function readPageText(pdfjsLib: any, pg: any, pageNo: number): Prom
 
   // 단 나누기: 가운데(480~520)를 가로지르는 긴 줄이 거의 없고 양쪽에 글이 있으면 2단
   const long = ts.filter((t) => t.x1 - t.x > 40);
-  const crossing = long.filter((t) => t.x < 480 && t.x1 > 520).length;
+  // 2026-11-26: 첫 쪽 맨 위의 머리글 표(학교·과목·이름 칸)는 가운데를 여러 줄 가로질러도 2단 판단에서 뺀다 — 전에는 이 때문에
+  // 1단으로 보고 옆 단 글자까지 함께 오렸다.
+  const crossing = long.filter((t) => t.x < 480 && t.x1 > 520 && t.top > 180).length;
   const left = ts.filter((t) => t.x1 <= 510).length;
   const right = ts.filter((t) => t.x >= 490).length;
   // 제목·쪽 번호 한두 줄은 가운데를 가로질러도 2단으로 본다
@@ -109,7 +114,12 @@ export async function readPageText(pdfjsLib: any, pg: any, pageNo: number): Prom
       continue;
     }
     m = MAIN_RE.exec(t.s);
-    if (m) anchors.push({ page: pageNo, col: ci, top: t.top, x: t.x, off, kind: "main", n: Number(m[1]), w: wOf(m[0].length), h: t.bot - t.top });
+    if (m) {
+      anchors.push({ page: pageNo, col: ci, top: t.top, x: t.x, off, kind: "main", n: Number(m[1]), w: wOf(m[0].length), h: t.bot - t.top });
+      continue;
+    }
+    m = BARE_RE.exec(t.s);
+    if (m && off <= 15) anchors.push({ page: pageNo, col: ci, top: t.top, x: t.x, off, kind: "main", n: Number(m[1]), w: wOf(m[0].length), h: t.bot - t.top, bare: true });
   }
   return { cols, bottoms, anchors, hasText: true };
 }
@@ -151,7 +161,10 @@ async function docText(pdfjsLib: any, doc: any) {
       const all = pages.flatMap((pt) => pt.anchors).sort((a, b) => a.page - b.page || a.col - b.col || a.top - b.top);
       return {
         pages,
-        main: longestChain(all.filter((a) => a.kind === "main")),
+        main: (() => {
+          const dotted = longestChain(all.filter((a) => a.kind === "main" && !a.bare));
+          return dotted.length >= 3 ? dotted : longestChain(all.filter((a) => a.kind === "main"));
+        })(),
         sa: longestChain(all.filter((a) => a.kind === "sa")),
       };
     })();
