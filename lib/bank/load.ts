@@ -58,8 +58,20 @@ export type BankDetail = BankItem & {
   solution: string;
   sourcePage: number | null;
   bbox: { x0: number; y0: number; x1: number; y1: number } | null;
-  /** 디지털화한 시험이면 옮겨 적은 문제 글(원래 자리를 못 찾을 때 시험지에 대신 넣음). figures = 그림 개수 */
-  dg?: { stem: string; box_title: string; box_lines: string[]; choices: string[]; figures: number } | null;
+  /**
+   * 디지털화한 시험이면 옮겨 적은 문제 글(원래 자리를 못 찾을 때 시험지에 대신 넣음). figures = 그림 개수.
+   * 2026-11-26: pageNo·figBoxes = 그 문항이 있는 스캔본 쪽과 그림 자리(1000×1000) — "시험 양식" 시험지가 스캔본 문항을
+   * 낙서·채점 표시 없이 깨끗한 글자로 다시 조판하고 그림만 스캔본에서 오려 붙일 때 쓴다.
+   */
+  dg?: {
+    stem: string;
+    box_title: string;
+    box_lines: string[];
+    choices: string[];
+    figures: number;
+    pageNo?: number;
+    figBoxes?: { x0: number; y0: number; x1: number; y1: number; where?: "stem" | "end"; manual?: boolean }[];
+  } | null;
 };
 
 /** 담은 문항의 자세한 내용(풀이·자리) — 시험지·해설지를 만들 때 */
@@ -153,6 +165,10 @@ export async function attachDigitized(admin: Client, items: BankDetail[]): Promi
         box_lines: Array.isArray(d.box_lines) ? d.box_lines.map(String) : [],
         choices: Array.isArray(d.choices) ? d.choices.map(String) : [],
         figures: Array.isArray(d.figures) ? d.figures.length : 0,
+        pageNo: at!.pageNo,
+        figBoxes: (Array.isArray(d.figures) ? d.figures : [])
+          .filter((f: any) => f && [f.x0, f.y0, f.x1, f.y1].every((v) => typeof v === "number"))
+          .map((f: any) => ({ x0: f.x0, y0: f.y0, x1: f.x1, y1: f.y1, where: f.where === "end" ? ("end" as const) : ("stem" as const), manual: !!f.manual })),
       },
     };
   });
