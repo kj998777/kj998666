@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { tickExamJob } from "@/lib/ai/pipeline";
 import { tickDigitizeJob } from "@/lib/ai/digitize";
@@ -8,7 +8,7 @@ import { tickLocateJobs } from "@/lib/ai/locate";
 import { tickQrScans } from "@/lib/ai/qrMask";
 import { runBackupIfDue } from "@/lib/ops/backup";
 
-// 외부 무료 크론 서비스(cron-job.org 등)가 주기적으로 이 엔드포인트를 호출해서, 브라우저 탭을
+// 크론(2026-11-26부터 Supabase pg_cron, 전에는 외부 무료 크론 서비스)이 주기적으로 이 엔드포인트를 호출해서, 브라우저 탭을
 // 열어두지 않아도 AI 시험 자동처리(exam_jobs)와 스캔본 디지털화(digitize_jobs)가 계속 한 걸음씩 진행되게 한다.
 // 기존에는 app/(staff)/exams/ai-actions.ts의 pollAiJob()을 AiJobPanel.tsx가 4초마다 호출하는
 // 방식뿐이어서, 그 화면을 담당 선생님이 계속 열어두고 있어야만 처리가 이어졌다(탭을 닫으면 멈춤).
@@ -33,8 +33,25 @@ function checkSecret(request: Request): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+// 2026-11-26(0060): 외부 크론 서비스가 11월 중순부터 멈춰 AI 처리가 진행되지 않았다 → Supabase pg_cron(+pg_net)이 1분마다
+// 직접 부른다. Vercel 비밀값을 DB에 옮기지 않으려고 DB 전용 토큰을 따로 둔다: 원문은 private.cron_token(API로 안 보이는 스키마),
+// 여기서는 public.ops_cron_token의 sha256만 서비스롤로 읽어 대조한다.
+let dbTokenCache: { hash: string | null; at: number } | null = null;
+async function checkDbToken(request: Request): Promise<boolean> {
+  const provided = request.headers.get("x-cron-db-token") ?? "";
+  if (provided.length < 32) return false;
+  if (!dbTokenCache || Date.now() - dbTokenCache.at > 5 * 60 * 1000) {
+    const { data } = (await (createAdminClient().from("ops_cron_token") as any).select("token_hash").eq("id", 1).maybeSingle()) as any;
+    dbTokenCache = { hash: data?.token_hash ?? null, at: Date.now() };
+  }
+  if (!dbTokenCache.hash) return false;
+  const a = Buffer.from(createHash("sha256").update(provided).digest("hex"));
+  const b = Buffer.from(dbTokenCache.hash);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 async function handle(request: Request) {
-  if (!checkSecret(request)) {
+  if (!checkSecret(request) && !(await checkDbToken(request))) {
     return NextResponse.json({ ok: false, msg: "unauthorized" }, { status: 401 });
   }
 
